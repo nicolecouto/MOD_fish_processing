@@ -21,7 +21,7 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %                      a sibling 'L0' folder next to raw_dir
 %                      (fullfile(fileparts(raw_dir),'L0')), created if missing.
 %   raw_file_suffix - (optional) e.g. '.modraw'. Default: auto-detected
-%                      from raw_dir by MODprocess_detect_raw_suffix.m.
+%                      from raw_dir by MODsetup_detect_raw_suffix.m.
 %
 % OUTPUTS
 %   L0_files  - cell array of full paths to all .mat files in L0_dir
@@ -32,7 +32,7 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %
 % CALLS
 %   MODprocess_single_modraw_to_L0.m
-%   MODprocess_detect_raw_suffix.m
+%   MODsetup_detect_raw_suffix.m
 %
 % NOTES
 %   Deliberately takes only plain paths, not a metadata/config object -
@@ -45,7 +45,7 @@ if nargin < 2 || isempty(L0_dir)
     L0_dir = fullfile(fileparts(raw_dir), 'L0');
 end
 if nargin < 3 || isempty(raw_file_suffix)
-    raw_file_suffix = MODprocess_detect_raw_suffix(raw_dir);
+    raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir);
     fprintf('MODprocess_new_modraw_to_L0: auto-detected raw file suffix "%s" in %s\n', raw_file_suffix, raw_dir);
 end
 if ~exist(L0_dir, 'dir')
