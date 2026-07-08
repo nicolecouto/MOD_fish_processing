@@ -33,3 +33,7 @@ build/
 *.mat
 *.nc
 *.raw
+
+# Editor/tooling state - not part of the project
+*.json
+.claude/worktrees/

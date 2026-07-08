@@ -1,10 +1,10 @@
-function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir)
+function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
 % MODprocess_new_modraw_to_L0        Part of MOD_fish_processing
 %
-% L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir)
+% L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
 %
 % DESCRIPTION
-%   Converts every .modraw file in raw_dir to a .mat file in L0_dir, using
+%   Converts every raw file in raw_dir to a .mat file in L0_dir, using
 %   MODprocess_single_modraw_to_L0. No calibrations, no metadata object -
 %   each .mat file contains only the raw fields from
 %   MODprocess_single_modraw_to_L0 plus a raw_file_info field recording
@@ -16,10 +16,12 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir)
 %   being written to (e.g. during real-time acquisition).
 %
 % INPUTS
-%   raw_dir   - full path to a folder of .modraw files
-%   L0_dir    - (optional) full path to save .mat files to. Default: a
-%               sibling 'L0' folder next to raw_dir
-%               (fullfile(fileparts(raw_dir),'L0')), created if missing.
+%   raw_dir         - full path to a folder of raw data files
+%   L0_dir          - (optional) full path to save .mat files to. Default:
+%                      a sibling 'L0' folder next to raw_dir
+%                      (fullfile(fileparts(raw_dir),'L0')), created if missing.
+%   raw_file_suffix - (optional) e.g. '.modraw'. Default: auto-detected
+%                      from raw_dir by MODprocess_detect_raw_suffix.m.
 %
 % OUTPUTS
 %   L0_files  - cell array of full paths to all .mat files in L0_dir
@@ -30,6 +32,7 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir)
 %
 % CALLS
 %   MODprocess_single_modraw_to_L0.m
+%   MODprocess_detect_raw_suffix.m
 %
 % NOTES
 %   Deliberately takes only plain paths, not a metadata/config object -
@@ -38,10 +41,12 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-raw_file_suffix = '.modraw';
-
 if nargin < 2 || isempty(L0_dir)
     L0_dir = fullfile(fileparts(raw_dir), 'L0');
+end
+if nargin < 3 || isempty(raw_file_suffix)
+    raw_file_suffix = MODprocess_detect_raw_suffix(raw_dir);
+    fprintf('MODprocess_new_modraw_to_L0: auto-detected raw file suffix "%s" in %s\n', raw_file_suffix, raw_dir);
 end
 if ~exist(L0_dir, 'dir')
     mkdir(L0_dir);
