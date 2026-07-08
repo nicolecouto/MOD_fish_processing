@@ -1,6 +1,6 @@
 # L0: Converting .modraw to .mat
 
-**Status:** working, tested against real deployment files. First step of the `MOD_fish_lib` → `MOD_fish_processing` reorganization (see `MOD_fish_lib` `claude` branch `PLAN.md`).
+**Status:** working, tested against real deployment files. First step of the `MOD_fish_lib` → `MOD_fish_processing` reorganization (see `PLAN.md` at the repo root).
 
 ## What this step does
 
