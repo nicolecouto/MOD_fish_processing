@@ -1,7 +1,7 @@
-function raw_file_suffix = MODprocess_detect_raw_suffix(raw_dir)
-% MODprocess_detect_raw_suffix        Part of MOD_fish_processing
+function raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir)
+% MODsetup_detect_raw_suffix        Part of MOD_fish_processing
 %
-% raw_file_suffix = MODprocess_detect_raw_suffix(raw_dir)
+% raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir)
 %
 % DESCRIPTION
 %   Guesses the raw data file suffix in raw_dir by listing every file,
@@ -48,7 +48,7 @@ listing = listing(~[listing.isdir]);
 listing = listing(~startsWith({listing.name}, '.'));
 
 if isempty(listing)
-    error('MODprocess_detect_raw_suffix:noFiles', ...
+    error('MODsetup_detect_raw_suffix:noFiles', ...
         'No files found in %s', raw_dir);
 end
 
@@ -57,7 +57,7 @@ ext = lower(ext);
 ext = ext(~ismember(ext, exclude_ext));
 
 if isempty(ext)
-    error('MODprocess_detect_raw_suffix:onlyNonRawFiles', ...
+    error('MODsetup_detect_raw_suffix:onlyNonRawFiles', ...
         ['Only non-raw file types (.mat, .json, etc.) found in %s.\n' ...
          'This may be an L0/ folder rather than raw/ - or pass ' ...
          'raw_file_suffix explicitly to MODprocess_new_modraw_to_L0.'], raw_dir);
@@ -69,7 +69,7 @@ counts = accumarray(ic(:), 1);
 
 if sum(counts == max_count) > 1
     tied = strjoin(uniq_ext(counts == max_count), ', ');
-    error('MODprocess_detect_raw_suffix:ambiguous', ...
+    error('MODsetup_detect_raw_suffix:ambiguous', ...
         ['Cannot auto-detect raw file suffix in %s - multiple file ' ...
          'types are equally common (%s). Pass raw_file_suffix ' ...
          'explicitly to MODprocess_new_modraw_to_L0.'], raw_dir, tied);
