@@ -43,30 +43,27 @@ CTD format is auto-detected per file: the function checks the length of the firs
 ### `MODprocess_new_modraw_to_L0.m`
 
 ```matlab
-obj = MODprocess_new_modraw_to_L0(modraw_path)
+L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir)
 ```
 
-Orchestrator: loops over every `.modraw` file in a folder and calls `MODprocess_single_modraw_to_L0` on each, saving one `.mat` per raw file into a sibling `L0/` folder (created if it doesn't exist — assumes `raw/` and `L0/` are siblings under a common data root).
+Orchestrator: loops over every `.modraw` file in `raw_dir` and calls `MODprocess_single_modraw_to_L0` on each, saving one `.mat` per raw file into `L0_dir`. `L0_dir` is optional — defaults to a sibling `L0/` folder next to `raw_dir` (created if it doesn't exist).
 
-`modraw_path` can be:
-- a folder path (string) — this is the typical way to call it for now
-- a `mod_class` object with `Meta_Data.paths.data.raw` set — for later integration with the full metadata/YAML pipeline
+Both inputs are plain paths — no metadata object, no `mod_class`, nothing else required. Each saved `.mat` file contains only the raw data-type fields from `MODprocess_single_modraw_to_L0` plus a small `raw_file_info` field (`bytes`, `filename`) used to detect whether the raw file has changed since it was last converted. Returns `L0_files`, a cell array of full paths to every `.mat` file in `L0_dir` after the call.
 
 Skips re-converting a file if its `.mat` already exists and the raw file hasn't grown since (checked by byte size) — except the most recent file, which is always reconverted in case it's still being written to (useful for real-time/at-sea processing).
 
 ## How to run it
 
 ```matlab
-addpath('/path/to/MOD_fish_processing/processing/matlab');
+addpath('/path/to/MOD_fish_processing/processing');
 
 data_root  = '/path/to/your/deployment';   % must contain a raw/ subfolder
 modraw_dir = fullfile(data_root, 'raw');
-L0_dir     = fullfile(data_root, 'L0');    % created automatically if missing
 
-MODprocess_new_modraw_to_L0(modraw_dir);
+L0_files = MODprocess_new_modraw_to_L0(modraw_dir);  % L0/ created automatically next to raw/
 
 % Visualize
-app = L0ExplorerApp(L0_dir);  % from MOD_fish_processing/visualization/matlab
+app = L0ExplorerApp(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization/matlab
 ```
 
 To process a single file directly (e.g. for debugging one file without the folder machinery):
@@ -88,3 +85,4 @@ figure; plot(L0_data.ctd.dnum, L0_data.ctd.T_raw);         % raw CTD temperature
 Adapted from `mod_som_read_epsi_files_v4.m` in the old `MOD_fish_lib` monolith, with all calibration/metadata-dependent steps stripped out. Originally developed and tested on `nicole` branch of `MOD_fish_lib` (as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`, later renamed). Ported to `MOD_fish_processing` on branch `l0_modraw_conversion`:
 - Removed dependency on the legacy JLAB `make.m`/`use.m` toolbox functions (replaced with explicit struct field assignment) so the scripts are self-contained.
 - Fixed CTD format detection: the SBE49→SBE41 fallback described in a code comment was never actually implemented, so any SBE41-format CTD (e.g. APEX float profiles) silently produced all-NaN `ctd` output. Now detected from the first block's length.
+- Removed the `mod_class`/`Meta_Data` object branch from `MODprocess_new_modraw_to_L0.m` entirely. The original accepted either a folder path or a `mod_class` object, and even in the folder-path case it built a throwaway `Meta_Data` struct and saved it into every `.mat` file. Both functions now take only plain paths (a file for the single-file parser, a folder for the orchestrator) and save only raw data — this is a deliberate move away from the class-based `epsi_class_yaml` approach (see PLAN.md Section 2).
