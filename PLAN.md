@@ -411,6 +411,7 @@ Run the full twist pipeline on the TLC WW minnow example files:
 | `Meta_Data.AFE` vs `Meta_Data.epsi` inconsistency | Scattered throughout codebase | Medium — fix in L1 refactor |
 | Wrong calibration paths in `epsi_class_MetaData_doesnot_exist.m` | Lines 32–34 | Medium |
 | Hard-coded `a3_g` as coherent acc channel | `mod_epsilometer_calc_turbulence_v2.m` line ~226 | Low — move to manifest |
+| Regex block-splitting drops a block when binary payload starts with `\r\n` | `MODprocess_single_modraw_to_L0.m` (inherited from `mod_som_read_epsi_files_v4.m`): the lazy `\$EFE(...+?)\*hh\r\n` regex ends a block early whenever a record timestamp's low bytes are `0x0D 0x0A`, so that block fails the length check and is skipped (~0.25 s lost each time, recurs every 800 blocks while the ms counter lines up). Fix: parse by the declared hex block-length field instead of regex terminators. | Low — ~11 s lost per 16 h of data, but systematic |
 
 ---
 
@@ -456,11 +457,12 @@ Reverse-chronological. Each step of the reorganization gets tested against real 
 - `data_for_reorg/` subfolders are populated now (4 of 7: `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `fctd_w_ucond_fluor`; `fctd`, `epsi_mako`, `fctd_w_ucond` still empty). Ran `MODprocess_new_modraw_to_L0` on all four, converting straight into a sibling `L0/` folder next to each deployment's `raw/`. All 393 raw files across all four deployments converted successfully (0 failures):
   | Deployment | Files | Time | Fields present | Notes |
   |---|---|---|---|---|
-  | `epsi_on_wirewalker/25_0408_tlc_ww1_navo2` | 193 | 524.5s | epsi only | 44 scattered EFE block-length errors (~0.2/file) — normal |
+  | `epsi_on_wirewalker/25_0408_tlc_ww1_navo2` | 193 | 524.5s | epsi only | 44 EFE blocks skipped — parser artifact, not corruption (see below) |
   | `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` | 96 | 79.7s | epsi, ctd, isap, vnav | clean, 0 block errors |
   | `epsi_minnow/23_1114_epsi01_minnow1` | 7 | 35.0s | epsi, ctd | see below |
   | `fctd_w_ucond_fluor/25_0409_d05_fctd1_dye_survey` | 97 | 50.3s | epsi, ctd, isap, vnav | clean, 2 block errors total |
-- **`epsi_minnow` (NORSE 2023) has two damaged raw files**, not a code bug: `modsom_1.modraw` (14.5 MB, 8251 EFE block-length errors) and `modsom_6.modraw` (3.4 MB, 1958 errors) are both dramatically smaller than their siblings (~37.9 MB each). Both still converted without crashing — the per-block length check correctly skipped bad blocks instead of producing garbage — but their `epsi` data will be mostly gaps. `modsom_6` is the last file in the sequence, consistent with being a recording cut short (acquisition stopped/power loss mid-write); `modsom_1`'s truncation mid-deployment is unexplained. Worth a visual check in L0ExplorerApp before using this deployment for anything downstream.
+- **The `epsi_on_wirewalker` block errors are a parser artifact, not corruption.** Dissecting the raw bytes showed each "bad" block is one whose first record timestamp has low bytes `0x0D 0x0A` (= `\r\n`), which makes the lazy block-splitting regex end the match right at the header checksum; the length check then fails and the block is skipped (~0.25 s each). The exact 800-block spacing between errors is the ms-counter's low 16 bits cycling (800 blocks × 245.76 ms = 3 × 65,536 ms). Total loss: ~11 s across 16+ h. Logged in Section 9; proper fix is to parse by the declared hex block-length field.
+- **`epsi_minnow` (NORSE 2023) has two genuinely damaged raw files** (distinct from the artifact above): `modsom_1.modraw` (14.5 MB vs ~37.9 MB siblings) and `modsom_6.modraw` (3.4 MB) show a broad smear of random payload lengths — bytes dropped mid-stream (likely comms dropouts), misaligning blocks. Both converted without crashing; `modsom_1` still yielded 1,120 intact blocks, `modsom_6` 291. Their `epsi` records will have gaps — check in L0ExplorerApp before using downstream. (`modsom_0` in the same deployment is pristine: 14,638/14,638 blocks clean.)
 
 ### 2026-07-08 — PLAN.md moved to MOD_fish_processing
 
