@@ -446,6 +446,22 @@ Wiki: https://app.notion.com/p/nicolecouto/MOD-Fish-Wiki-0c1a74e213a4447eae5c8f8
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-07-08 — Auto-detect raw file suffix
+
+- `raw_file_suffix` was hardcoded to `.modraw` in `MODprocess_new_modraw_to_L0`. Added `MODprocess_detect_raw_suffix.m`: lists a folder, excludes known non-raw extensions (`.mat`, `.json`, etc.) and hidden/system files, and picks whichever extension is most common among what's left — errors instead of guessing wrong if there's no candidate or a tie. `MODprocess_new_modraw_to_L0` now takes `raw_file_suffix` as an optional third argument, auto-detected if omitted.
+- Added `*.json` and `.claude/worktrees/` to `.gitignore` (editor/tooling noise, not project files) — currently only on branch `l0_modraw_conversion`, will land on `main` when that branch merges.
+
+### 2026-07-08 — L0 conversion tested against full data_for_reorg dataset
+
+- `data_for_reorg/` subfolders are populated now (4 of 7: `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `fctd_w_ucond_fluor`; `fctd`, `epsi_mako`, `fctd_w_ucond` still empty). Ran `MODprocess_new_modraw_to_L0` on all four, converting straight into a sibling `L0/` folder next to each deployment's `raw/`. All 393 raw files across all four deployments converted successfully (0 failures):
+  | Deployment | Files | Time | Fields present | Notes |
+  |---|---|---|---|---|
+  | `epsi_on_wirewalker/25_0408_tlc_ww1_navo2` | 193 | 524.5s | epsi only | 44 scattered EFE block-length errors (~0.2/file) — normal |
+  | `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` | 96 | 79.7s | epsi, ctd, isap, vnav | clean, 0 block errors |
+  | `epsi_minnow/23_1114_epsi01_minnow1` | 7 | 35.0s | epsi, ctd | see below |
+  | `fctd_w_ucond_fluor/25_0409_d05_fctd1_dye_survey` | 97 | 50.3s | epsi, ctd, isap, vnav | clean, 2 block errors total |
+- **`epsi_minnow` (NORSE 2023) has two damaged raw files**, not a code bug: `modsom_1.modraw` (14.5 MB, 8251 EFE block-length errors) and `modsom_6.modraw` (3.4 MB, 1958 errors) are both dramatically smaller than their siblings (~37.9 MB each). Both still converted without crashing — the per-block length check correctly skipped bad blocks instead of producing garbage — but their `epsi` data will be mostly gaps. `modsom_6` is the last file in the sequence, consistent with being a recording cut short (acquisition stopped/power loss mid-write); `modsom_1`'s truncation mid-deployment is unexplained. Worth a visual check in L0ExplorerApp before using this deployment for anything downstream.
+
 ### 2026-07-08 — PLAN.md moved to MOD_fish_processing
 
 - Moved this file from the `claude` branch of `MOD_fish_lib` to `MOD_fish_processing` (branch `main`), now that `MOD_fish_processing` is where active work happens. The `MOD_fish_lib` copy is now a stub pointing here.
