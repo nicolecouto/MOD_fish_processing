@@ -174,9 +174,9 @@ deployment_root/
 | **L2** | L1 `.mat` + profile indices | `Profile####.mat` per cast | Per-scan spectra, epsilon, chi, QC flags |
 | **L3** | L2 profiles | Gridded sections | Interpolate onto standard pressure grid |
 
-**Done and ported to `MOD_fish_processing` (branch `l0_modraw_conversion`):** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see Section 12 for what changed on the port. Documented in `MOD_fish_processing/docs/L0_modraw_conversion.md`.
+**Done and merged to `main`:** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see Section 12 for what changed on the port. Documented in `MOD_fish_processing/docs/L0_modraw_conversion.md`.
 
-**Next target:** L0 → L1
+**Next target:** fix the regex block-splitting artifact in `MODprocess_single_modraw_to_L0.m` (Section 9 — parse by declared hex block length instead of regex terminators), then L0 → L1
 
 ---
 
