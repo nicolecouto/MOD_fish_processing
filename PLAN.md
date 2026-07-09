@@ -13,7 +13,7 @@ We are splitting the monolithic `MOD_fish_lib` into three purpose-built repos:
 
 | Repo | Purpose | Status |
 |------|---------|--------|
-| `MOD_fish_processing` | Processing algorithms and pipeline scripts | Active — has L0ExplorerApp, SpectraExplorerApp |
+| `MOD_fish_processing` | Processing algorithms and pipeline scripts | Active — has MODvis_timeseries, SpectraExplorerApp |
 | `MOD_fish_acquisition` | Data acquisition software | Active — has fctd_epsi_acq |
 | `MOD_fish_calibrations` | SBE `.cal` files, probe Sv values (git-tagged by date) | Active — tags: 2023-03, 2023-12, 2024-09, 2025-03 |
 | `MOD_fish_lib` | Legacy monolith — gradually deprecated | Staying alive during transition |
@@ -439,7 +439,7 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 - [ ] Add "Instrument configuration" section: YAML sensor manifest → `metadata.manifest`
 - [ ] Add "Calibrations" section pointing to `MOD_fish_calibrations` and git tags
 - [ ] Add "Twist counting" to field operations — how to run, what the plot means, spool swap procedure
-- [ ] Update visualization section: L0ExplorerApp, SpectraExplorerApp, twist plot
+- [ ] Update visualization section: MODvis_timeseries, SpectraExplorerApp, twist plot
 
 ---
 
@@ -470,7 +470,7 @@ Reverse-chronological. Each step of the reorganization gets tested against real 
   | `epsi_minnow/23_1114_epsi01_minnow1` | 7 | 35.0s | epsi, ctd | see below |
   | `fctd_w_ucond_fluor/25_0409_d05_fctd1_dye_survey` | 97 | 50.3s | epsi, ctd, isap, vnav | clean, 2 block errors total |
 - **The `epsi_on_wirewalker` block errors are a parser artifact, not corruption.** Dissecting the raw bytes showed each "bad" block is one whose first record timestamp has low bytes `0x0D 0x0A` (= `\r\n`), which makes the lazy block-splitting regex end the match right at the header checksum; the length check then fails and the block is skipped (~0.25 s each). The exact 800-block spacing between errors is the ms-counter's low 16 bits cycling (800 blocks × 245.76 ms = 3 × 65,536 ms). Total loss: ~11 s across 16+ h. Logged in Section 9; proper fix is to parse by the declared hex block-length field.
-- **`epsi_minnow` (NORSE 2023) has two genuinely damaged raw files** (distinct from the artifact above): `modsom_1.modraw` (14.5 MB vs ~37.9 MB siblings) and `modsom_6.modraw` (3.4 MB) show a broad smear of random payload lengths — bytes dropped mid-stream (likely comms dropouts), misaligning blocks. Both converted without crashing; `modsom_1` still yielded 1,120 intact blocks, `modsom_6` 291. Their `epsi` records will have gaps — check in L0ExplorerApp before using downstream. (`modsom_0` in the same deployment is pristine: 14,638/14,638 blocks clean.)
+- **`epsi_minnow` (NORSE 2023) has two genuinely damaged raw files** (distinct from the artifact above): `modsom_1.modraw` (14.5 MB vs ~37.9 MB siblings) and `modsom_6.modraw` (3.4 MB) show a broad smear of random payload lengths — bytes dropped mid-stream (likely comms dropouts), misaligning blocks. Both converted without crashing; `modsom_1` still yielded 1,120 intact blocks, `modsom_6` 291. Their `epsi` records will have gaps — check in MODvis_timeseries before using downstream. (`modsom_0` in the same deployment is pristine: 14,638/14,638 blocks clean.)
 
 ### 2026-07-08 — PLAN.md moved to MOD_fish_processing
 

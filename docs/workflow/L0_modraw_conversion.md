@@ -78,7 +78,7 @@ modraw_dir = fullfile(data_root, 'raw');
 L0_files = MODprocess_new_modraw_to_L0(modraw_dir);  % L0/ created automatically next to raw/
 
 % Visualize
-app = L0ExplorerApp(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization/matlab
+app = MODvis_timeseries(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization/matlab
 ```
 
 To process a single file directly (e.g. for debugging one file without the folder machinery):
@@ -91,7 +91,7 @@ figure; plot(L0_data.ctd.dnum, L0_data.ctd.T_raw);         % raw CTD temperature
 
 ## Known limitations / things to check visually
 
-- **Flatlined channels are possible and not necessarily a bug.** In one bench-test file, `epsi.channel1` and `channel2` came back pegged at the ADC's max value (2^24) for the entire record — channels 3-7 varied normally. This turned out to be consistent with those probes being disconnected/unpowered during that particular bench test, not a parsing error. Always eyeball a new file in L0ExplorerApp before trusting it.
+- **Flatlined channels are possible and not necessarily a bug.** In one bench-test file, `epsi.channel1` and `channel2` came back pegged at the ADC's max value (2^24) for the entire record — channels 3-7 varied normally. This turned out to be consistent with those probes being disconnected/unpowered during that particular bench test, not a parsing error. Always eyeball a new file in MODvis_timeseries before trusting it.
 - This function has no error handling for corrupted/truncated `.modraw` files beyond per-block length checks (prints `"<TYPE> block N has incorrect length"` and skips that block). A file with many of these messages is worth a closer look.
 - `L0_data.ctd.S_raw` is left as `NaN` for SBE49 'eng'-format CTDs — salinity isn't transmitted raw by that CTD mode, it's derived from P/T/C, which only happens at L1.
 

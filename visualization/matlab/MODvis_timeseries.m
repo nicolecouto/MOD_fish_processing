@@ -1,7 +1,11 @@
-classdef L0ExplorerApp < handle
-    % L0ExplorerApp
-    % Browse L0 *.mat files, click a file, choose up to 6 signals to plot
-    % as dnum vs data. Supports nested fields like epsi.chan1, ctd.P_raw, gps.latitude, etc.
+classdef MODvis_timeseries < handle
+    % MODvis_timeseries        Part of MOD_fish_processing
+    % Browse a folder of *.mat files (L0, L1, L2, or Profile - any file
+    % whose structures (epsi, ctd, vnav, gps, ...) carry a dnum field),
+    % click a file, choose up to 6 signals to plot as dnum vs data.
+    % Supports nested fields like epsi.chan1, ctd.P_raw, gps.latitude, etc.
+    %
+    % Formerly named L0ExplorerApp.
 
     properties
         Fig matlab.ui.Figure
@@ -17,7 +21,7 @@ classdef L0ExplorerApp < handle
         SignalDrop
         YMinField
         YMaxField
-        YLockCheck
+        YResetBtn
 
         AxesTickFontSize double = 10
         AxesLabelFontSize double = 11
@@ -59,7 +63,7 @@ classdef L0ExplorerApp < handle
 
 
     methods
-        function app = L0ExplorerApp(folder)
+        function app = MODvis_timeseries(folder)
             if nargin >= 1 && ~isempty(folder)
                 app.Folder = string(folder);
             else
@@ -202,7 +206,7 @@ classdef L0ExplorerApp < handle
             app.SignalDrop = gobjects(app.NRows,1);
             app.YMinField = gobjects(app.NRows,1);
             app.YMaxField = gobjects(app.NRows,1);
-            app.YLockCheck = gobjects(app.NRows,1);
+            app.YResetBtn = gobjects(app.NRows,1);
             app.LastStruct = ["epsi"; "epsi"; "epsi"; "epsi"; "ctd"; "ctd"];
             app.LastSignal = ["t1_volt"; "t2_volt"; "s1_volt"; "s2_volt"; "z"; "T"];
             app.YTickTextHandles = cell(app.NRows, 1);
@@ -280,10 +284,9 @@ classdef L0ExplorerApp < handle
                     'ValueChangedFcn', @(~,~)app.onYLimitChanged(i));
                 app.YMaxField(i).Layout.Row = 3; app.YMaxField(i).Layout.Column = 3;
 
-                app.YLockCheck(i) = uicheckbox(ctrl,'Text','fix y-limits', ...
-                    'Value', false, ...
-                    'ValueChangedFcn', @(~,~)app.plotRow(i));
-                app.YLockCheck(i).Layout.Row = 4; app.YLockCheck(i).Layout.Column = [2 3];
+                app.YResetBtn(i) = uibutton(ctrl,'Text','Reset y-limits', ...
+                    'ButtonPushedFcn', @(~,~)app.onYLimitReset(i));
+                app.YResetBtn(i).Layout.Row = 4; app.YResetBtn(i).Layout.Column = [2 3];
 
             end
 
@@ -357,6 +360,11 @@ classdef L0ExplorerApp < handle
             catch ME
                 uialert(app.Fig, "Failed to load: " + fp + newline + ME.message, "Load error");
                 return;
+            end
+
+            % Unwrap Profile wrapper (profiles directory format)
+            if isfield(S, 'Profile') && isstruct(S.Profile)
+                S = S.Profile;
             end
 
             app.CurrentData = S;
@@ -481,7 +489,7 @@ classdef L0ExplorerApp < handle
             [isIn, loc] = ismember(pref, structs);     % loc indexes into 'structs'
             ordered = structs(loc(isIn));              % keep only those found, in pref order
             rest = setdiff(structs, ordered, 'stable');
-            structs = [ordered; rest];
+            structs = [ordered(:); rest(:)];           % force columns; ordered is row-shaped when pref (a row) drives the indexing
 
         end
 
@@ -668,6 +676,14 @@ classdef L0ExplorerApp < handle
                 keepX = all(isfinite(xlim0)) && xlim0(2) > xlim0(1) && xlim0(2) > 1000;
             end
 
+            % Preserve y-limits if the user has manually set them (via the
+            % fields), so they carry over across signal/file changes until
+            % explicitly reset.
+            keepY = strcmp(ax.YLimMode, 'manual');
+            if keepY
+                ylim0 = ax.YLim;
+            end
+
             cla(ax);
 
             clr = app.getSignalColor(sigPath);
@@ -715,13 +731,16 @@ classdef L0ExplorerApp < handle
                 ax.XLim = xlim0;
             end
 
-            % Apply fixed y-limits if the user has enabled them for this row
-            if app.YLockCheck(rowIdx).Value
-                ymin = app.YMinField(rowIdx).Value;
-                ymax = app.YMaxField(rowIdx).Value;
-                if isfinite(ymin) && isfinite(ymax) && ymax > ymin
-                    ax.YLim = [ymin ymax];
-                end
+            if keepY
+                % Re-apply the user's manual y-limits over the new data.
+                ax.YLim = ylim0;
+            else
+                % Auto-scale to the freshly plotted data and sync the
+                % y-limit fields to show the current view.
+                ax.YLimMode = 'auto';
+                autoYLim = ax.YLim;
+                app.YMinField(rowIdx).Value = autoYLim(1);
+                app.YMaxField(rowIdx).Value = autoYLim(2);
             end
 
             % Apply x-window (overrides zoom/pan-preserved limits)
@@ -818,9 +837,19 @@ classdef L0ExplorerApp < handle
         end
 
         function onYLimitChanged(app, rowIdx)
-            if app.YLockCheck(rowIdx).Value
-                app.plotRow(rowIdx);
+            ymin = app.YMinField(rowIdx).Value;
+            ymax = app.YMaxField(rowIdx).Value;
+            if isfinite(ymin) && isfinite(ymax) && ymax > ymin
+                app.Axes(rowIdx).YLim = [ymin ymax];
             end
+        end
+
+        function onYLimitReset(app, rowIdx)
+            ax = app.Axes(rowIdx);
+            ax.YLimMode = 'auto';
+            autoYLim = ax.YLim;
+            app.YMinField(rowIdx).Value = autoYLim(1);
+            app.YMaxField(rowIdx).Value = autoYLim(2);
         end
 
         function clr = getSignalColor(app, sigPath)

@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-L0ExplorerApp.py
+MODvis_timeseries.py
 
-Browse L0 *.mat files and plot up to 6 signals simultaneously.
-Python/PyQt5 + matplotlib replacement for L0ExplorerApp.m.
+Browse a folder of *.mat files (L0, L1, L2, or Profile - any file whose
+structures carry a dnum field) and plot up to 6 signals simultaneously.
+Python/PyQt5 + matplotlib replacement for MODvis_timeseries.m.
+Formerly named L0ExplorerApp.py.
 
 Key advantage: ax.set_position() in matplotlib is absolute and permanent —
 no layout manager can override it, so all 6 axes have identical left edges
 at all times, even after zoom/pan.
 
 Usage:
-    python L0ExplorerApp.py [folder]
+    python MODvis_timeseries.py [folder]
 
 Dependencies:
     pip install PyQt5 matplotlib scipy numpy
@@ -346,7 +348,7 @@ class RowWidget(QWidget):
 
 # ── Main window ────────────────────────────────────────────────────────────────
 
-class L0ExplorerApp(QMainWindow):
+class MODvis_timeseries(QMainWindow):
 
     def __init__(self, folder=None):
         super().__init__()
@@ -538,6 +540,10 @@ class L0ExplorerApp(QMainWindow):
             QMessageBox.warning(self, "Load error",
                                 f"Failed to load:\n{filepath}\n\n{exc}")
             return
+
+        # Unwrap Profile wrapper (profiles directory format)
+        if 'Profile' in data and isinstance(data['Profile'], dict):
+            data = data['Profile']
 
         self.current_data = data
         self.current_file = filename
@@ -856,7 +862,7 @@ def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else None
     app    = QApplication(sys.argv)
     app.setStyle('Fusion')
-    win    = L0ExplorerApp(folder)
+    win    = MODvis_timeseries(folder)
     win.show()
     sys.exit(app.exec_())
 
