@@ -15,6 +15,12 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   file in the folder, which is always reconverted in case it's still
 %   being written to (e.g. during real-time acquisition).
 %
+%   If raw filenames end in unpadded numbers (modsom_0, ..., modsom_192),
+%   offers to rename them in place with zero-padded numbers (modsom_000,
+%   ...) via MODsetup_pad_raw_filenames.m, so raw and L0 listings sort
+%   chronologically. Contents are untouched; renames are logged to
+%   meta/FilenamePadLog.csv.
+%
 % INPUTS
 %   raw_dir         - full path to a folder of raw data files
 %   L0_dir          - (optional) full path to save .mat files to. Default:
@@ -33,6 +39,7 @@ function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 % CALLS
 %   MODprocess_single_modraw_to_L0.m
 %   MODsetup_detect_raw_suffix.m
+%   MODsetup_pad_raw_filenames.m
 %
 % NOTES
 %   Deliberately takes only plain paths, not a metadata/config object -
@@ -52,6 +59,11 @@ if ~exist(L0_dir, 'dir')
     mkdir(L0_dir);
 end
 
+% Zero-pad trailing-number filenames (modsom_1 -> modsom_001) so listings
+% sort chronologically. No-op when names are date-based or already padded;
+% prompts before renaming (and skips, with a warning, under -batch).
+MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir);
+
 % Get list of raw files in the data path
 list_rawfile = dir(fullfile(raw_dir, ['*', raw_file_suffix]));
 nfiles = length(list_rawfile);
@@ -62,6 +74,11 @@ if nfiles == 0
     L0_files = {};
     return
 end
+
+% The newest file by modification time (NOT the last one alphabetically -
+% with unpadded numbered names that would be e.g. modsom_99) is always
+% reconverted in case it is still being written to.
+[~, i_newest] = max([list_rawfile.datenum]);
 
 % Loop through files and convert to L0 .mat files
 for i = 1:nfiles
@@ -90,9 +107,9 @@ for i = 1:nfiles
     % Convert to .mat if:
     %   (1) there is no .mat file to match the current raw file, or
     %   (2) the current raw file is larger than what is saved in raw_file_info, or
-    %   (3) this is the last (most recent) file in the folder, in case it's
-    %       still being written to
-    if already_converted && i ~= nfiles
+    %   (3) this is the most recently modified file in the folder, in case
+    %       it's still being written to
+    if already_converted && i ~= i_newest
         continue
     end
 
