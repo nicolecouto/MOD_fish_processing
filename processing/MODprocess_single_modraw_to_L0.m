@@ -1,29 +1,56 @@
 function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
-% [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
+% MODprocess_single_modraw_to_L0        Part of MOD_fish_processing
 %
-% INPUTS 
-%    modraw_file - full path to a single .modraw file
+% L0_data = MODprocess_single_modraw_to_L0(modraw_file)
 %
-% OUTPUTS 
-%    L0_data - structure containing L0 data
+% DESCRIPTION
+%   Parses a single .modraw file into raw L0 data: regex-matches each
+%   $-tagged block type, decodes the shared header (sync/timestamp/length/
+%   checksum), and converts each block type's payload from raw bytes/hex
+%   into per-type structs of raw counts/volts. No calibrations applied, no
+%   metadata object used - takes and returns plain data only.
 %
-% This function processes a single .modraw file to L0 format.           
-
-
-% OUTPUTS (possible fields in L0_data structure):
-%   epsi  (intermediate variables are in 'efe' structure)
-%   ctd   (intermediate variables are in 'sbe' structure)
-%   alt   (intermediate variables are in 'alti' structure)
-%   isap   (intermediate variables are in 'isap' structure)
-%   act   (intermediate variables are in 'actu' structure)
-%   vnav  (intermediate variables are in 'vecnav' structure)
-%   gps   (intermediate variables are in 'gpsmeta' structure
-%   seg   (intermediate processing in 'seg' structure)
-%   spec  (intermediate processing in 'spec' structure)
-%   ttv  (intermediate processing in 'ttv' structure)
-%   fluor (intermediate processing in 'ecop' structure)
+% INPUTS
+%   modraw_file - full path to a single .modraw file
 %
-% -------------------------------------------------------------------------
+% OUTPUTS
+%   L0_data - struct with one field per data type found in the file.
+%             Fields for data types not present in the file are set to [].
+%             Possible fields (raw/uncalibrated):
+%               epsi     - EFE data (intermediate vars in 'efe')
+%               ctd      - SBE49/SBE41 data (intermediate vars in 'sbe')
+%               alt      - MOD altimeter data (intermediate vars in 'alti')
+%               isap     - ISA500 altimeter data (intermediate vars in 'isa')
+%               act      - actuator data (currently always [])
+%               vnav     - VecNav compass/gyro/accel data (intermediate vars in 'vecnav')
+%               gps      - GPGGA/INGGA data (intermediate vars in 'gpsmeta')
+%               seg      - per-segment raw spectra input (intermediate vars in 'seg')
+%               spec     - per-segment spectra (intermediate vars in 'spec')
+%               avgspec  - averaged spectra (intermediate vars in 'avgspec')
+%               dissrate - onboard dissipation-rate estimates (intermediate vars in 'dissrate')
+%               apf      - APEX float (APF0/1/2) data (intermediate vars in 'apf')
+%               fluor    - ECOP fluorometer data (intermediate vars in 'ecop')
+%               ttv      - TTV1 data (intermediate vars in 'ttv')
+%
+% CALLED BY
+%   MODprocess_new_modraw_to_L0.m
+%
+% CALLS
+%   toolbox/correctNegativeTime.m
+%   (local subfunctions: convert_timestamp, FastCTD_ASCII_parseheader,
+%    FastCTD_ASCII_parseheadline, parse_epsi_channel_string,
+%    parse_single_epsi_channel)
+%
+% NOTES
+%   Block splitting uses a lazy regex terminated on the header checksum
+%   pattern rather than the declared hex block-length field. This drops a
+%   block whenever a record's timestamp low bytes happen to be 0x0D 0x0A
+%   (see PLAN.md Section 9) - fix is to parse by declared length instead.
+%   Deliberately takes only a plain file path, not a metadata/config
+%   object - meant to run standalone with no dependency on Meta_Data,
+%   YAML setup, or the old mod_class.
+%
+% Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 %% Open file and save contents as 'str'
 %fprintf("   Open %s \r\n",filename)
@@ -131,8 +158,9 @@ else
     ind_time_start = ind_gps_start-10;
     ind_time_stop  = ind_gps_start-1;
 
-    % San added these GPS steps. Here, he reads the file header to get system time.
-    % You'll use this to correct the gps timestamp.
+    % San added these GPS steps. Here, he reads the file header to get
+    % offset_time, which anchors each GPS record's truncated timestamp
+    % into an absolute datenum below.
     FID = fopen(modraw_file,'r');
     if FID<0
         error('MATLAB:FastCTD_ReadASCII:FileError', 'Could not open file %s',fname);
@@ -148,11 +176,6 @@ else
         FCTD.header.offset_time = correctNegativeTime(FCTD.header.offset_time)/86400+datenum(1970,1,1);
     else
         FCTD.header.offset_time = FCTD.header.offset_time/86400+datenum(1970,1,1);
-    end
-    if FCTD.header.system_time < 0
-        FCTD.header.system_time = correctNegativeTime(FCTD.header.system_time)/86400/100+FCTD.header.offset_time;
-    else
-        FCTD.header.system_time = FCTD.header.system_time/86400/100+FCTD.header.offset_time;
     end
 
     fclose(FID);
