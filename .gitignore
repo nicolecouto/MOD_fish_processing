@@ -37,3 +37,6 @@ build/
 # Editor/tooling state - not part of the project
 *.json
 .claude/worktrees/
+
+# MkDocs build output
+site/

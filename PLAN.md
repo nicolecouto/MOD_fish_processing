@@ -430,9 +430,9 @@ Run the full twist pipeline on the TLC WW minnow example files:
 
 ## 11. Wiki Update Checklist
 
-Wiki: https://app.notion.com/p/nicolecouto/MOD-Fish-Wiki-0c1a74e213a4447eae5c8f826a1c34cd
+Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via `.github/workflows/docs.yml` — see Session Log 2026-07-09). Superseded the Notion wiki as the source of truth; pages live in-repo under `docs/workflow/` (what scripts do, how to run them) and `docs/concepts/` (physics/math background).
 
-- [x] Draft "L0: converting .modraw to .mat" — drafted in-repo at `MOD_fish_processing/docs/L0_modraw_conversion.md`; paste into Notion wiki when ready
+- [x] Draft "L0: converting .modraw to .mat" — `docs/workflow/L0_modraw_conversion.md`
 - [ ] Update "Setup during cruise" to reflect YAML-based config and new folder structure
 - [ ] Add "Data levels" section (L0/L1/L2/L3)
 - [ ] Update "How to process data" to use `MOD_fish_processing` workflow
@@ -446,6 +446,14 @@ Wiki: https://app.notion.com/p/nicolecouto/MOD-Fish-Wiki-0c1a74e213a4447eae5c8f8
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-07-09 - Docs site scaffolded (MkDocs Material -> GitHub Pages)
+
+- Moved documentation off the Notion wiki (ugly personal-account URL, and reluctance to keep piling pages onto the internal MOD wiki) and in-repo instead: `docs/` is now a MkDocs Material site, version-controlled and reviewable alongside code changes - matters once there are more GitHub contributors, since docs changes go through the same PR flow as everything else.
+- Structure: `docs/workflow/` (what each script does, how to run it - existing `L0_modraw_conversion.md` moved here) and `docs/concepts/` (physics/math background: epsilon from shear, profile picking, figure of merit, noise spectrum - stub page only for now, filled in over time). `docs/index.md` is the landing page.
+- `mkdocs.yml` at repo root: Material theme, search, MathJax via `pymdownx.arithmatex` for the concept pages' equations, `edit_uri` pointing at GitHub so any page has an "edit this page" link straight into a PR.
+- `.github/workflows/docs.yml` builds and deploys to GitHub Pages (`mkdocs gh-deploy`) on every push to `main` that touches `docs/` or `mkdocs.yml`. Site will be live at `https://modscripps.github.io/MOD_fish_processing/` once GitHub Pages is enabled in repo settings (Settings -> Pages -> source: `gh-pages` branch) - not yet done; the first push to `main` after this merges creates the `gh-pages` branch for that setting to point at.
+- Verified locally: `mkdocs build --strict` succeeds with no warnings.
 
 ### 2026-07-08 — Auto-detect raw file suffix
 
