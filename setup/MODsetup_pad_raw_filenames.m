@@ -14,7 +14,7 @@ function n_renamed = MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir
 %
 %   If a sibling L0 folder already holds converted .mat files under the
 %   old names, those are renamed to match and the raw_file_info.filename
-%   field inside each is updated, so MODprocess_new_modraw_to_L0 still
+%   field inside each is updated, so MODprocess_all_modraw_to_L0 still
 %   recognizes them as already converted.
 %
 %   Does nothing (and says so) when names are date-based or already
@@ -36,7 +36,7 @@ function n_renamed = MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir
 %               force was not set)
 %
 % CALLED BY
-%   MODprocess_new_modraw_to_L0.m
+%   MODprocess_all_modraw_to_L0.m
 %
 % CALLS
 %   MODsetup_detect_raw_suffix.m
@@ -189,7 +189,7 @@ for k = changed'
 end
 
 % Rename any matching L0 .mat files and update raw_file_info.filename so
-% the already-converted check in MODprocess_new_modraw_to_L0 still matches
+% the already-converted check in MODprocess_all_modraw_to_L0 still matches
 n_L0 = 0;
 if isfolder(L0_dir)
     for k = changed'

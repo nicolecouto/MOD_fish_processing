@@ -40,10 +40,10 @@ Returns `L0_data` with whichever of these fields are present in the file (missin
 
 CTD format is auto-detected per file: the function checks the length of the first `$SB49`/`$SB41` block against the known SBE49 (24-byte 'eng') and SBE41 (28-byte 'PTS') formats and picks whichever matches, so both CTD types parse correctly without needing a Meta_Data/calibration file to tell it which one is connected.
 
-### `MODprocess_new_modraw_to_L0.m`
+### `MODprocess_all_modraw_to_L0.m`
 
 ```matlab
-L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
+L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
 ```
 
 Orchestrator: loops over every raw file in `raw_dir` and calls `MODprocess_single_modraw_to_L0` on each, saving one `.mat` per raw file into `L0_dir`. `L0_dir` is optional — defaults to a sibling `L0/` folder next to `raw_dir` (created if it doesn't exist).
@@ -64,7 +64,7 @@ Guesses the raw file suffix for a folder instead of hardcoding `.modraw`, so a f
 
 This is extension-frequency based, not a binary-vs-text content sniff. That's deliberate: `.mat` files are binary too (it's MATLAB's own format), so checking "is this file binary" wouldn't actually distinguish raw data from L0 output sitting in the wrong folder — excluding known non-raw extensions and taking the dominant remainder is simpler and more reliable.
 
-Errors instead of guessing wrong if `raw_dir` has no candidate files (e.g. you pointed it at an `L0/` folder full of `.mat` files), or if two extensions are equally common. In either case, pass `raw_file_suffix` explicitly to `MODprocess_new_modraw_to_L0`.
+Errors instead of guessing wrong if `raw_dir` has no candidate files (e.g. you pointed it at an `L0/` folder full of `.mat` files), or if two extensions are equally common. In either case, pass `raw_file_suffix` explicitly to `MODprocess_all_modraw_to_L0`.
 
 ## How to run it
 
@@ -75,7 +75,7 @@ addpath('/path/to/MOD_fish_processing/setup');    % for MODsetup_detect_raw_suff
 data_root  = '/path/to/your/deployment';   % must contain a raw/ subfolder
 modraw_dir = fullfile(data_root, 'raw');
 
-L0_files = MODprocess_new_modraw_to_L0(modraw_dir);  % L0/ created automatically next to raw/
+L0_files = MODprocess_all_modraw_to_L0(modraw_dir);  % L0/ created automatically next to raw/
 
 % Visualize
 app = MODvis_timeseries(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization/matlab
@@ -100,6 +100,6 @@ figure; plot(L0_data.ctd.dnum, L0_data.ctd.T_raw);         % raw CTD temperature
 Adapted from `mod_som_read_epsi_files_v4.m` in the old `MOD_fish_lib` monolith, with all calibration/metadata-dependent steps stripped out. Originally developed and tested on `nicole` branch of `MOD_fish_lib` (as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`, later renamed). Ported to `MOD_fish_processing` on branch `l0_modraw_conversion`:
 - Removed dependency on the legacy JLAB `make.m`/`use.m` toolbox functions (replaced with explicit struct field assignment) so the scripts are self-contained.
 - Fixed CTD format detection: the SBE49→SBE41 fallback described in a code comment was never actually implemented, so any SBE41-format CTD (e.g. APEX float profiles) silently produced all-NaN `ctd` output. Now detected from the first block's length.
-- Removed the `mod_class`/`Meta_Data` object branch from `MODprocess_new_modraw_to_L0.m` entirely. The original accepted either a folder path or a `mod_class` object, and even in the folder-path case it built a throwaway `Meta_Data` struct and saved it into every `.mat` file. Both functions now take only plain paths (a file for the single-file parser, a folder for the orchestrator) and save only raw data — this is a deliberate move away from the class-based `epsi_class_yaml` approach (see PLAN.md Section 2).
+- Removed the `mod_class`/`Meta_Data` object branch from `MODprocess_all_modraw_to_L0.m` entirely. The original accepted either a folder path or a `mod_class` object, and even in the folder-path case it built a throwaway `Meta_Data` struct and saved it into every `.mat` file. Both functions now take only plain paths (a file for the single-file parser, a folder for the orchestrator) and save only raw data — this is a deliberate move away from the class-based `epsi_class_yaml` approach (see PLAN.md Section 2).
 - Replaced the hardcoded `raw_file_suffix = '.modraw'` with auto-detection (`MODsetup_detect_raw_suffix.m`), still overridable via an optional argument, so a future acquisition file type doesn't require a code change.
 - Tested against the full real dataset in `mod_fish_lib/data_for_reorg/` (epsi_mako_w_fluor, epsi_minnow, epsi_on_wirewalker, fctd_w_ucond_fluor — several hundred files total) — see PLAN.md Session Log for results.

@@ -24,7 +24,7 @@ zero-padded width (`modsom_000.modraw`, `modsom_001.modraw`, ...,
   aren't number-based (e.g. datetime-named files).
 - If a sibling `L0/` folder already has converted `.mat` files under the old
   names, those are renamed to match and their `raw_file_info.filename` field
-  is updated, so `MODprocess_new_modraw_to_L0`'s already-converted check
+  is updated, so `MODprocess_all_modraw_to_L0`'s already-converted check
   still recognizes them.
 
 ## Function
@@ -52,7 +52,7 @@ In non-interactive MATLAB (`-batch`), the confirmation prompt can't be
 answered, so without `force=true` the function warns and does nothing rather
 than renaming files unprompted.
 
-**Called by:** `MODprocess_new_modraw_to_L0.m` (runs it after suffix
+**Called by:** `MODprocess_all_modraw_to_L0.m` (runs it after suffix
 detection, so padding happens at the modraw → L0 step and everything
 downstream sees sortable names).
 

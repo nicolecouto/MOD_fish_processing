@@ -33,7 +33,7 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
 %               ttv      - TTV1 data (intermediate vars in 'ttv')
 %
 % CALLED BY
-%   MODprocess_new_modraw_to_L0.m
+%   MODprocess_all_modraw_to_L0.m
 %
 % CALLS
 %   toolbox/correctNegativeTime.m
@@ -532,8 +532,10 @@ else
     [alt.time_s,alt.dnum] = convert_timestamp(alt_timestamp);
     
 
-    % Order alt fields
-    alt = orderfields(alt,{'dnum','time_s','dst','hab'});
+    % Order alt fields. hab (height above bottom) is not computed here -
+    % it needs instrument geometry from metadata, so it's added in
+    % MODprocess_single_L0_to_L1.m instead.
+    alt = orderfields(alt,{'dnum','time_s','dst'});
 
 end %end loop if there is alt data
 

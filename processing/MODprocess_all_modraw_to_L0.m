@@ -1,7 +1,7 @@
-function L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
-% MODprocess_new_modraw_to_L0        Part of MOD_fish_processing
+function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
+% MODprocess_all_modraw_to_L0        Part of MOD_fish_processing
 %
-% L0_files = MODprocess_new_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
+% L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
 %
 % DESCRIPTION
 %   Converts every raw file in raw_dir to a .mat file in L0_dir, using
@@ -53,7 +53,7 @@ if nargin < 2 || isempty(L0_dir)
 end
 if nargin < 3 || isempty(raw_file_suffix)
     raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir);
-    fprintf('MODprocess_new_modraw_to_L0: auto-detected raw file suffix "%s" in %s\n', raw_file_suffix, raw_dir);
+    fprintf('MODprocess_all_modraw_to_L0: auto-detected raw file suffix "%s" in %s\n', raw_file_suffix, raw_dir);
 end
 if ~exist(L0_dir, 'dir')
     mkdir(L0_dir);
@@ -70,7 +70,7 @@ nfiles = length(list_rawfile);
 
 % Stop if no raw files are found
 if nfiles == 0
-    disp(['MODprocess_new_modraw_to_L0: No ' raw_file_suffix ' files found in ' raw_dir])
+    disp(['MODprocess_all_modraw_to_L0: No ' raw_file_suffix ' files found in ' raw_dir])
     L0_files = {};
     return
 end

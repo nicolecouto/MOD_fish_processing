@@ -7,7 +7,7 @@ function raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir)
 %   Guesses the raw data file suffix in raw_dir by listing every file,
 %   excluding known non-raw extensions and hidden/system files, and
 %   picking whichever extension is most common among what's left. Lets
-%   MODprocess_new_modraw_to_L0.m find .modraw files today and something
+%   MODprocess_all_modraw_to_L0.m find .modraw files today and something
 %   else (e.g. .raw) later without a code change.
 %
 %   Deliberately extension-frequency based, not a binary-vs-text content
@@ -23,7 +23,7 @@ function raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir)
 %   raw_file_suffix - detected suffix, including the leading dot (e.g. '.modraw')
 %
 % CALLED BY
-%   MODprocess_new_modraw_to_L0.m
+%   MODprocess_all_modraw_to_L0.m
 %
 % CALLS
 %   (none)
@@ -60,7 +60,7 @@ if isempty(ext)
     error('MODsetup_detect_raw_suffix:onlyNonRawFiles', ...
         ['Only non-raw file types (.mat, .json, etc.) found in %s.\n' ...
          'This may be an L0/ folder rather than raw/ - or pass ' ...
-         'raw_file_suffix explicitly to MODprocess_new_modraw_to_L0.'], raw_dir);
+         'raw_file_suffix explicitly to MODprocess_all_modraw_to_L0.'], raw_dir);
 end
 
 [uniq_ext, ~, ic] = unique(ext);
@@ -72,7 +72,7 @@ if sum(counts == max_count) > 1
     error('MODsetup_detect_raw_suffix:ambiguous', ...
         ['Cannot auto-detect raw file suffix in %s - multiple file ' ...
          'types are equally common (%s). Pass raw_file_suffix ' ...
-         'explicitly to MODprocess_new_modraw_to_L0.'], raw_dir, tied);
+         'explicitly to MODprocess_all_modraw_to_L0.'], raw_dir, tied);
 end
 
 raw_file_suffix = uniq_ext{idx};
