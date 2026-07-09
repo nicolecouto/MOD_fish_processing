@@ -29,6 +29,7 @@ nav:
   - Workflow:
       - "L0: converting .modraw to .mat": workflow/L0_modraw_conversion.md
       - "Zero-padding numbered raw filenames": workflow/pad_raw_filenames.md
+      - "L0 to L1: converting raw counts to physical units": workflow/L0_to_L1_conversion.md
   - Concepts:
       - Overview: concepts/index.md
 
