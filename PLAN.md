@@ -176,7 +176,9 @@ deployment_root/
 
 **Done and merged to `main`:** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see Section 12 for what changed on the port. Documented in `MOD_fish_processing/docs/L0_modraw_conversion.md`.
 
-**Next target:** fix the regex block-splitting artifact in `MODprocess_single_modraw_to_L0.m` (Section 9 — parse by declared hex block length instead of regex terminators), then L0 → L1
+**In progress on branch `l0_to_l1_conversion`:** L0 → L1 (counts/hex → physical units: epsi volts/g, CTD P/T/C/S, altimeter hab). First cut ships `MODsetup_read_yaml.m` + `MODprocess_single_L0_to_L1.m` / `MODprocess_all_L0_to_L1.m`, tested end-to-end against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96/96 files, physically plausible T/P/S/C). Despike, filters, shear/FPO7 calibration, and the `twist` field are not yet in this step - see Section 6.2 and Section 7. See Section 12 session log entry 2026-07-09 for what changed.
+
+**Next target:** fix the regex block-splitting artifact in `MODprocess_single_modraw_to_L0.m` (Section 9 — parse by declared hex block length instead of regex terminators)
 
 ---
 
@@ -219,22 +221,27 @@ Processing functions loop over manifest fields — no more hardcoded channel nam
 
 ### 6.1 Setup
 
-| Function | Description |
-|----------|-------------|
-| `modSetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, manifest resolved, calibrations loaded. Saves `metadata.mat` (no paths). |
-| `modSetup_verify_paths.m` | Check required directories exist, create L0/L1/L2/grid/figures if not |
+| Function | Description | Status |
+|----------|-------------|--------|
+| `MODsetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, AFE/CTD/altimeter fields resolved, CTD calibration loaded from `MOD_fish_calibrations`. Saves `metadata.mat` (no paths). Deliberately minimal so far - only resolves what L0→L1 uses today; grows as later steps need more (full `metadata.manifest` with `shear_channels`/`fpo7_channels`/etc. from Section 5 is not built yet, since nothing consumes it yet). | Done (branch `l0_to_l1_conversion`) |
+| `MODsetup_verify_paths.m` | Check required directories exist, create L0/L1/L2/grid/figures if not | Not started |
+
+*(Naming note: this table originally used a `modSetup_`/`modProcess_L1_apply_*` lowercase-prefix convention; the actual repo convention established during the L0 port and carried through here is `MODsetup_`/`MODprocess_` - capital MOD. Table updated to match what's actually on disk.)*
 
 ### 6.2 L0 → L1
 
-| Function | Description | Source in MOD_fish_lib |
-|----------|-------------|----------------------|
-| `modProcess_L1_apply_ctd_calibration.m` | SBE cal equations → P [dbar], T [°C], C [mS/cm], S [psu] | `get_CalSBE.m` |
-| `modProcess_L1_apply_shear_calibration.m` | `Sv × volts / fall_speed` → shear, loops over `metadata.manifest.shear_channels` | `mod_som_get_shear_probe_calibration_v2.m` |
-| `modProcess_L1_apply_fpo7_calibration.m` | Fit dTdV from noise floor, loops over `metadata.manifest.fpo7_channels` | `mod_epsi_linear_calibration_FP07.m` |
-| `modProcess_L1_despike.m` | filloutliers movmedian per channel | `mod_epsilometer_calc_turbulence_v2.m` lines ~131–147 |
-| `modProcess_L1_apply_filters.m` | Apply SOM instrument transfer function | `get_filters_SOM.m` |
-| `modProcess_L1_add_twist.m` | Takes data struct, returns same struct with `twist` field added — see Section 7 | `GV_PlotUpAccumulation.m` |
-| `modProcess_L1_run.m` | Orchestrator: loads each L0 file, runs all L1 functions in sequence, saves result as L1 file | NEW |
+Shipped as `MODprocess_single_L0_to_L1.m` (per-file, pure transformation) / `MODprocess_all_L0_to_L1.m` (batch orchestrator, mirrors `MODprocess_all_modraw_to_L0.m`'s skip-unless-new-or-newest logic one level up) - **not** as separate files per row below. The sub-steps below live as local subfunctions inside `MODprocess_single_L0_to_L1.m` for now, since nothing calls them standalone yet; split any of them into its own file the moment something other than this orchestrator needs to call it (per PLAN.md Section 2's "pure transformation function" principle - the principle is about testability and reuse, which local subfunctions don't get).
+
+| Step | Description | Source in MOD_fish_lib | Status |
+|------|-------------|-------------------------|--------|
+| `convert_efe_channels` | AFE counts → volts (t*/s*) or g (a*), by manifest channel (`metadata.AFE.(ch).full_range/.ADCconf/.type`) | `mod_som_read_epsi_files_v4.m` counts→volts block | Done |
+| `calibrate_ctd` | SBE cal equations → P [dbar], T [°C], C [mS/cm], S [psu], plus derived `th`/`sgth`/`dPdt`/`z`/`dzdt`. SBE41 "PTS" format arrives from L0 already in physical units - only derived fields are computed for it. | `get_CalSBE.m`, `mod_som_read_epsi_files_v4.m` SBE block | Done |
+| `calibrate_altimeter_hab` | Raw distance → height above bottom, using `metadata.GEOMETRY.*`. Applied to both `alt` (MOD altimeter) and `isap` (ISA500) - verified against real `isap` data; no `alt` data in any `data_for_reorg` deployment yet, so that path is untested. | `mod_som_read_epsi_files_v4.m` ALTI/ISAP blocks | Done, `alt` path untested |
+| `modProcess_L1_apply_shear_calibration.m` | `Sv × volts / fall_speed` → shear, loops over `metadata.manifest.shear_channels` | `mod_som_get_shear_probe_calibration_v2.m` | Not started |
+| `modProcess_L1_apply_fpo7_calibration.m` | Fit dTdV from noise floor, loops over `metadata.manifest.fpo7_channels` | `mod_epsi_linear_calibration_FP07.m` | Not started |
+| `modProcess_L1_despike.m` | filloutliers movmedian per channel | `mod_epsilometer_calc_turbulence_v2.m` lines ~131–147 | Not started |
+| `modProcess_L1_apply_filters.m` | Apply SOM instrument transfer function | `get_filters_SOM.m` | Not started |
+| `modProcess_L1_add_twist.m` | Takes data struct, returns same struct with `twist` field added — see Section 7 | `GV_PlotUpAccumulation.m` | Not started (Ana's project) |
 
 ### 6.3 Profile detection
 
@@ -446,6 +453,18 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-07-09 — L0 → L1: yaml metadata, physical-unit conversion, L0 rename (branch `l0_to_l1_conversion`)
+
+- **Metadata now comes from yaml, read once per session.** Added `setup/MODsetup_read_yaml.m`: reads a deployment's `setup.yml`, derives `metadata.paths.*` fresh from a single `data_root` field (never saved), resolves the AFE channel manifest (`metadata.PROCESS.channels`, `metadata.AFE.(channel).full_range/.ADCconf/.type`), loads CTD calibration coefficients from `MOD_fish_calibrations/SBECAL/<SN>.CAL`, and picks the altimeter geometry block matching `fish_flag`. Saves `metadata.mat` into `meta/` with `paths` stripped out, per PLAN.md Section 2's "no paths in metadata.mat" rule. Deliberately minimal - only resolves the fields L0→L1 actually uses today (no `optional_sensors`, no full `metadata.manifest.shear_channels`-style lists from Section 5 yet, since nothing consumes them yet).
+- **MATLAB (checked in R2024b) has no built-in YAML reader** - no `yaml.*` namespace, and `readstruct` only accepts `'json'`/`'xml'`/`'auto'` as `FileType`. Vendored the same third-party MIT-licensed `YAMLMatlab_0.4.3` toolbox the old codebase used (`MODsetup_make_metadata_from_yaml.m`) into `toolbox/YAMLMatlab_0.4.3/` (full toolbox incl. the bundled `snakeyaml-1.9.jar`, minus its `Tests/` folder).
+- **Also vendored the CSIRO `seawater` toolbox** (`toolbox/seawater/`, 40 files, EOS-80) - needed for `sw_salt`/`sw_ptmp`/`sw_pden`/`sw_dpth`, used to derive `ctd.S`/`th`/`sgth`/`z` from calibrated P/T/C.
+- **Built a minimal `setup.yml`** for `data_for_reorg/epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead/meta/setup.yml`, trimmed to only the fields `MODsetup_read_yaml.m` reads (`data_root`, `calibrations_root`, `fish_flag`, `latitude`, `sn.ctd`, `afe.channels`, `ctd.type`/`.sample_per_record`, `altimeter.fctd`) - no comms/plot_properties/spectral/profiles blocks. Based on the real `MAKO1_25_0408_d03.yml` from the TLC cruise4 Dropbox project, which is the exact same deployment.
+- **Added `processing/MODprocess_single_L0_to_L1.m`** (pure transformation: `data = MODprocess_single_L0_to_L1(L0_data, metadata)`) and **`processing/MODprocess_all_L0_to_L1.m`** (batch orchestrator, mirrors `MODprocess_all_modraw_to_L0.m`'s skip-unless-new-or-newest logic one level up, plus a `reprocess_all` switch to force everything). Ported from `mod_som_read_epsi_files_v4.m`'s physical-conversion logic (the L0 port only carried over the raw-parsing half): EFE counts → volts/g, CTD raw hex → P/T/C/S + derived `th`/`sgth`/`dPdt`/`z`/`dzdt`, altimeter/ISA500 distance → height above bottom (`hab`). **Design decision:** these three conversions live as local subfunctions inside `MODprocess_single_L0_to_L1.m` rather than as separate `modProcess_L1_apply_*.m` files (see Section 6.2) - nothing calls them standalone yet, so splitting them out now would be premature; do it when something else needs to call one directly.
+- **Fixed a live bug found while doing this**: `MODprocess_single_modraw_to_L0.m`'s altimeter block called `orderfields(alt,{'dnum','time_s','dst','hab'})` but never set `alt.hab` - `hab` needs instrument geometry from metadata, which L0 deliberately doesn't have. This would have thrown a hard error on any deployment with MOD altimeter (`alt`) data; none of the four tested `data_for_reorg` deployments have any, so it was never hit. Removed `'hab'` from that `orderfields` call; `hab` is now correctly added downstream in `MODprocess_single_L0_to_L1.m` for both `alt` and `isap`.
+- **Renamed `MODprocess_new_modraw_to_L0.m` → `MODprocess_all_modraw_to_L0.m`** (`git mv` + updated all internal references, docstrings, and current-facing docs in `docs/workflow/`) so the L0 and L1 batch orchestrators follow the same `MODprocess_all_*` naming pattern. Historical Session Log entries below that mention the old name are left as-is - they describe what was true when written.
+- **Tested end-to-end** against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96 L0 files, already converted in an earlier session): all 96 converted to L1 with no errors. Spot-checked a mid-deployment file (file 30 of 96): T 9.9–15.2°C, P 1.2–112.1 dbar, S 33.7–34.2 psu, C 3.7–4.2 mS/cm - physically right for a San Diego canyon-head survey. The first file (on-deck, pre-deployment) correctly comes out near-zero C/S with P≈0, consistent with the CTD being in air. `isap.hab` ranged 0.4–83.6 m (`isap.dst` maxes out at a flat 120 - likely the ISA500's max-range/no-detection value). Re-ran the batch orchestrator a second time: correctly skipped all but the newest file; `reprocess_all=true` correctly forced all 96 to redo.
+- **Not yet in this step** (still open, tracked in Section 6.2/6.3/7): shear/FPO7 calibration, despike, SOM transfer-function filters, twist. This step only gets counts/hex to physical units - the granular calibration/QC functions PLAN.md originally scoped for L1 (Section 6.2 table) are still to be written on top of this.
 
 ### 2026-07-09 - Docs site scaffolded (MkDocs Material -> GitHub Pages)
 
