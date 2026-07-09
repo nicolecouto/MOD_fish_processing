@@ -28,6 +28,7 @@ nav:
   - Home: index.md
   - Workflow:
       - "L0: converting .modraw to .mat": workflow/L0_modraw_conversion.md
+      - "Zero-padding numbered raw filenames": workflow/pad_raw_filenames.md
   - Concepts:
       - Overview: concepts/index.md
 
