@@ -38,8 +38,7 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
 % CALLS
 %   toolbox/correctNegativeTime.m
 %   (local subfunctions: convert_timestamp, FastCTD_ASCII_parseheader,
-%    FastCTD_ASCII_parseheadline, parse_epsi_channel_string,
-%    parse_single_epsi_channel)
+%    FastCTD_ASCII_parseheadline)
 %
 % NOTES
 %   Block splitting uses a lazy regex terminated on the header checksum
@@ -49,6 +48,12 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
 %   Deliberately takes only a plain file path, not a metadata/config
 %   object - meant to run standalone with no dependency on Meta_Data,
 %   YAML setup, or the old mod_class.
+%
+%   parse_epsi_channel_string/parse_single_epsi_channel (bottom of file)
+%   are dead code inherited from mod_som_read_epsi_files_v4.m - nothing
+%   in this function's parsing flow calls them. Left in place rather than
+%   deleted in case the EPSICHANNEL header line they were meant to parse
+%   turns out to matter for L1; remove them if that never materializes.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 

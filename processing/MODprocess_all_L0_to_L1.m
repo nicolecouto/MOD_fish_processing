@@ -1,7 +1,7 @@
-function L1_files = MODprocess_all_L0_to_L1(L0_dir, L1_dir, metadata, reprocess_all)
+function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all)
 % MODprocess_all_L0_to_L1        Part of MOD_fish_processing
 %
-% L1_files = MODprocess_all_L0_to_L1(L0_dir, L1_dir, metadata, reprocess_all)
+% L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all)
 %
 % DESCRIPTION
 %   Converts every L0 .mat file in L0_dir to a physical-units .mat file in
@@ -16,11 +16,11 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, L1_dir, metadata, reprocess_
 %
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
+%   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
+%                    per session and passed through - see PLAN.md Section 2.
 %   L1_dir        - (optional) full path to save .mat files to. Default:
 %                    a sibling 'L1' folder next to L0_dir
 %                    (fullfile(fileparts(L0_dir),'L1')), created if missing.
-%   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
-%                    per session and passed through - see PLAN.md Section 2.
 %   reprocess_all - (optional) logical, default false. If true, ignores
 %                    the up-to-date check and reconverts every L0 file.
 %
@@ -41,7 +41,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, L1_dir, metadata, reprocess_
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-if nargin < 2 || isempty(L1_dir)
+if nargin < 3 || isempty(L1_dir)
     L1_dir = fullfile(fileparts(L0_dir), 'L1');
 end
 if nargin < 4 || isempty(reprocess_all)

@@ -1,6 +1,6 @@
 # MOD Fish Processing Refactor — Project Plan
 
-**Deadline: early October 2026 (before next cruise)**
+**Deadline: August 1st (burn-in for MURI and DECADES)**
 **Primary repo for new work: MOD_fish_processing**
 
 *Previously tracked on the `claude` branch of `MOD_fish_lib` during early planning; moved here 2026-07-08 now that MOD_fish_processing is where active work happens. See `MOD_fish_lib` `claude` branch history for the pre-move log.*
@@ -174,9 +174,9 @@ deployment_root/
 | **L2** | L1 `.mat` + profile indices | `Profile####.mat` per cast | Per-scan spectra, epsilon, chi, QC flags |
 | **L3** | L2 profiles | Gridded sections | Interpolate onto standard pressure grid |
 
-**Done and merged to `main`:** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see Section 12 for what changed on the port. Documented in `MOD_fish_processing/docs/L0_modraw_conversion.md`.
+**Done and merged to `main`:** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see Section 12 for what changed on the port. Documented in `MOD_fish_processing/docs/workflow/L0_modraw_conversion.md`.
 
-**In progress on branch `l0_to_l1_conversion`:** L0 → L1 (counts/hex → physical units: epsi volts/g, CTD P/T/C/S, altimeter hab). First cut ships `MODsetup_read_yaml.m` + `MODprocess_single_L0_to_L1.m` / `MODprocess_all_L0_to_L1.m`, tested end-to-end against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96/96 files, physically plausible T/P/S/C). Despike, filters, shear/FPO7 calibration, and the `twist` field are not yet in this step - see Section 6.2 and Section 7. See Section 12 session log entry 2026-07-09 for what changed.
+**In progress on branch `l0_to_l1_conversion`:** L0 → L1 (counts/hex → physical units: epsi volts/g, CTD P/T/C/S, altimeter hab). First cut ships `MODsetup_read_yaml.m` + `MODprocess_single_L0_to_L1.m` / `MODprocess_all_L0_to_L1.m`, tested end-to-end against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96/96 files, physically plausible T/P/S/C). Despike, filters, shear/FPO7 calibration, and the `twist` field are not yet in this step - see Section 6.2 and Section 7. Documented in `MOD_fish_processing/docs/workflow/L0_to_L1_conversion.md`. See Section 12 session log entry 2026-07-09 for what changed.
 
 **Next target:** fix the regex block-splitting artifact in `MODprocess_single_modraw_to_L0.m` (Section 9 — parse by declared hex block length instead of regex terminators)
 
@@ -395,11 +395,11 @@ Run the full twist pipeline on the TLC WW minnow example files:
 
 ## 8. Additional Tasks (after Ana finishes twist counter)
 
-### Task 2: CTD Calibration
-`modProcess_L1_apply_ctd_calibration.m` — SBE cal equations, raw counts → P/T/C/S. Reference `get_CalSBE.m`.
+### Task 2: CTD Calibration — done
+Shipped as the `calibrate_ctd` local subfunction inside `MODprocess_single_L0_to_L1.m` rather than a standalone `modProcess_L1_apply_ctd_calibration.m` (see Section 6.2). SBE cal equations, raw counts → P/T/C/S.
 
-### Task 3: Sensor Manifest Reader
-`modSetup_read_yaml.m` — YAML → `metadata` with `metadata.manifest`. Test on two configs.
+### Task 3: Sensor Manifest Reader — done
+Shipped as `MODsetup_read_yaml.m` — YAML → `metadata`. Deliberately minimal so far: resolves only the AFE/CTD/altimeter fields the L0→L1 step uses today, not yet the full `metadata.manifest` (`shear_channels`/`fpo7_channels`/etc.) described in Section 5 — nothing consumes those fields yet, so they haven't been added. Extend it when the shear/FPO7 calibration steps (Section 6.2) need them.
 
 ### Task 4: L1 QC Overview Plot
 `modPlot_L1_overview.m` — 4-panel figure: pressure, temperature, shear voltage, accelerometers.
@@ -440,6 +440,8 @@ Run the full twist pipeline on the TLC WW minnow example files:
 Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via `.github/workflows/docs.yml` — see Session Log 2026-07-09). Superseded the Notion wiki as the source of truth; pages live in-repo under `docs/workflow/` (what scripts do, how to run them) and `docs/concepts/` (physics/math background).
 
 - [x] Draft "L0: converting .modraw to .mat" — `docs/workflow/L0_modraw_conversion.md`
+- [x] Draft "Zero-padding numbered raw filenames" — `docs/workflow/pad_raw_filenames.md`
+- [x] Draft "L0 to L1: converting raw counts to physical units" — `docs/workflow/L0_to_L1_conversion.md`
 - [ ] Update "Setup during cruise" to reflect YAML-based config and new folder structure
 - [ ] Add "Data levels" section (L0/L1/L2/L3)
 - [ ] Update "How to process data" to use `MOD_fish_processing` workflow

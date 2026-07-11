@@ -102,7 +102,7 @@ Notes on the CTD conversion specifically:
 ### `MODprocess_all_L0_to_L1.m`
 
 ```matlab
-L1_files = MODprocess_all_L0_to_L1(L0_dir, L1_dir, metadata, reprocess_all)
+L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all)
 ```
 
 Orchestrator: loops over every `.mat` file in `L0_dir`, calls `MODprocess_single_L0_to_L1` on each, saves one `.mat` per L0 file into `L1_dir`. `L1_dir` is optional - defaults to a sibling `L1/` folder next to `L0_dir` (created if it doesn't exist). `metadata` should be read once per session with `MODsetup_read_yaml` and passed in, not re-read per file.
@@ -119,7 +119,7 @@ addpath('/path/to/MOD_fish_processing/toolbox');   % YAMLMatlab_0.4.3, seawater
 metadata = MODsetup_read_yaml('/path/to/deployment/meta/setup.yml');
 
 % L0 must already exist - see L0_modraw_conversion.md
-L1_files = MODprocess_all_L0_to_L1(metadata.paths.L0, metadata.paths.L1, metadata);
+L1_files = MODprocess_all_L0_to_L1(metadata.paths.L0, metadata, metadata.paths.L1);
 ```
 
 To process a single file directly:

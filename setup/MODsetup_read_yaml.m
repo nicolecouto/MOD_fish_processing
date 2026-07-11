@@ -7,8 +7,12 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   Reads a deployment's setup.yml and returns a metadata struct with
 %   paths derived fresh from setup.yml's data_root (never saved), the AFE
 %   channel manifest, CTD calibration coefficients, and altimeter
-%   geometry. Only resolves what the L0->L1 step currently uses - grows
-%   as later pipeline steps need more (see PLAN.md Section 2).
+%   geometry. Resolves what the L0->L1 step actually uses for computation
+%   (metadata.PROCESS.*, metadata.AFE.*, metadata.CTD.cal,
+%   metadata.GEOMETRY.*) plus a few identifying CTD fields
+%   (metadata.CTD.name/.SN/.sample_per_record) kept for the deployment
+%   record even though L0->L1 doesn't read them - grows as later pipeline
+%   steps need more (see PLAN.md Section 2).
 %
 %   Saves metadata.mat into meta/ alongside setup.yml, with metadata.paths
 %   stripped out first - metadata.mat is a portable deployment record;
@@ -40,7 +44,8 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     block, selected by fish_flag
 %
 % CALLED BY
-%   MODprocess_all_L0_to_L1.m
+%   (top-level scripts / notebooks) - called once per session, before
+%   MODprocess_all_L0_to_L1.m or MODprocess_single_L0_to_L1.m, not by them
 %
 % CALLS
 %   toolbox/YAMLMatlab_0.4.3/ReadYaml.m

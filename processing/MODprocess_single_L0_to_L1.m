@@ -25,7 +25,7 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata)
 %   metadata  - metadata struct (from MODsetup_read_yaml.m)
 %               Uses: metadata.PROCESS.channels, metadata.PROCESS.latitude,
 %                     metadata.AFE.(channel).full_range/.ADCconf/.type,
-%                     metadata.CTD.name, metadata.CTD.cal,
+%                     metadata.CTD.cal,
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
 %                     .alt_probe_dist_from_crashguard_in
 %
