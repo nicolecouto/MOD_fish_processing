@@ -60,6 +60,19 @@ This makes every processing function trivially testable: load a file in a test s
 
 4. **Only pass `metadata` when the function actually uses it.** Many functions (like `modProcess_L1_add_twist`) need only the data struct. Adding `metadata` as a reflex argument when it isn't used makes function signatures misleading. When `metadata` is used, the header must name the specific fields — not just "metadata struct".
 
+### Metadata provenance and archiving
+`metadata.mat` is not always built in one shot — it can be assembled in stages (yaml read now, calibration values merged in later once probe serial numbers resolve to a cal file — see `calibrate_ctd`/shear-cal in Section 6.2), and it can be regenerated from an edited yaml, whether that's a routine re-run or a deliberate parameter experiment. Two rules keep all of that traceable without hand-maintained logs:
+
+1. **`metadata.header` is an append-only event log.** Every function that creates or modifies `metadata` and resaves it appends one entry to `metadata.header.history`, a struct array with fields `.timestamp`, `.computer`, `.event`, `.filepath` — indexed directly as `metadata.header.history(1).timestamp`, no cell unwrapping. `MODsetup_read_yaml` appends a `created_from_yaml` event (yaml path in `.filepath`, plus a hash of the yaml's contents in `metadata.header.yaml_hash`, so two `metadata.mat` files can be checked for having come from identical or different yaml). `.filepath` is the only per-event detail today because `created_from_yaml` is the only caller — a later event type with different information to record (e.g. calibration merge, which is probe SN + cal file rather than a single path) gets the struct fields revisited then, not generalized now. Reading any single `metadata.mat` tells you its full lineage — no separate log file needed.
+2. **Only touch disk when something actually changed.** A deployment script typically calls `MODsetup_read_yaml` at the start of every run, often many times an hour as new data comes in during a cruise — the same yaml, over and over. `MODsetup_save_metadata.m` compares the metadata it's about to save (yaml hash + resolved cal values) against what's already in `meta/metadata.mat` before deciding what to do:
+   - **Unchanged** — same yaml, same cal values in effect. No-op: nothing written, nothing archived, no new history entry.
+   - **Yaml differs** from what's on disk (routine edit or a deliberate parameter experiment) — the yaml is the source of truth and may now say something genuinely different. Archives the existing `meta/metadata.mat` to `meta/archive/metadata_<timestamp>.mat`, then writes the new one.
+   - **Yaml unchanged, but a derived value is new or changed** — e.g. a probe serial number just resolved to a cal file for the first time, or a calibration tag moved. This isn't a configuration change, just a value getting filled in or corrected. Updates `meta/metadata.mat` **in place**, no archiving, and appends the corresponding event to `metadata.header.history`.
+
+All three outcomes go through one function, `MODsetup_save_metadata.m` (Section 6.1), so the decision is made in one place instead of reimplemented by every caller. `meta/archive/` only grows from the yaml-differs case — fine to ignore for now; add a prune/keep-last-N policy later only if it becomes a real nuisance.
+
+*Why keep a persisted `metadata.mat` at all, rather than always rebuilding in memory from yaml + calibration files?* Cal lookup could in principle be a pure function of deployment date vs. calibration tag dates, computed fresh every time with nothing saved. But a persisted file is the only durable record of exactly which cal values a given L1/L2 file was actually processed with — useful if a calibration tag is ever corrected after the fact, and necessary for processing without network access to `MOD_fish_calibrations`. Worth revisiting once metadata starts getting saved inside the L0/L1/L2 files themselves (see Section 6.1) — at that point a master `metadata.mat` may matter less, since each data file would carry its own record.
+
 ### Standard function header
 Every function in `MOD_fish_processing` must start with this header block. Two examples: one that uses `metadata`, one that doesn't.
 
@@ -147,7 +160,8 @@ deployment_root/
   raw/                         ← REQUIRED: raw binary files go here before processing
   meta/                        ← REQUIRED: must exist with setup.yml before processing
     setup.yml                  ← REQUIRED: deployment config (edit data_root: for each machine)
-    metadata.mat               ← created by modSetup_read_yaml — portable, no paths
+    metadata.mat               ← created by modSetup_read_yaml — portable, no paths, current state
+    archive/                   ← prior metadata.mat versions, archived on every resave (see Section 2)
     TimeIndex.mat              ← created during L0 processing
     PressureTimeseries.mat     ← created during L1/profile processing
     TwistTimeseries.mat        ← created by modProcess_L1_accumulate_twist_timeseries
@@ -225,6 +239,7 @@ Processing functions loop over manifest fields — no more hardcoded channel nam
 |----------|-------------|--------|
 | `MODsetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, AFE/CTD/altimeter fields resolved, CTD calibration loaded from `MOD_fish_calibrations`. Saves `metadata.mat` (no paths). Deliberately minimal so far - only resolves what L0→L1 uses today; grows as later steps need more (full `metadata.manifest` with `shear_channels`/`fpo7_channels`/etc. from Section 5 is not built yet, since nothing consumes it yet). | Done (branch `l0_to_l1_conversion`) |
 | `MODsetup_verify_paths.m` | Check required directories exist, create L0/L1/L2/grid/figures if not | Not started |
+| `MODsetup_save_metadata.m` | Central save wrapper for `metadata.mat`. Compares the metadata to be saved against what's on disk and picks one of three outcomes: no-op (unchanged — nothing written), `'create'` (yaml differs — archives existing file to `meta/archive/metadata_<timestamp>.mat`, then writes the new one), or `'update'` (yaml unchanged but a derived value like a calibration lookup is new/changed — writes in place). Every non-no-op outcome appends an event to `metadata.header.history`. See Section 2, "Metadata provenance and archiving." | Not started |
 
 *(Naming note: this table originally used a `modSetup_`/`modProcess_L1_apply_*` lowercase-prefix convention; the actual repo convention established during the L0 port and carried through here is `MODsetup_`/`MODprocess_` - capital MOD. Table updated to match what's actually on disk.)*
 
@@ -455,6 +470,16 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-07-16 — Metadata provenance and archiving design (branch `l0_to_l1_conversion`, plan only)
+
+- `metadata.mat` can be built in stages (yaml read now, calibration values merged in later — Section 6.2), can be regenerated from an edited yaml, and gets read at the start of nearly every script — often many times an hour during a cruise, same yaml each time. Added a design to Section 2: `metadata.header.history`, an append-only struct array (`.timestamp`, `.computer`, `.event`, `.filepath`) that every writer of `metadata.mat` appends to, plus `MODsetup_save_metadata.m` (Section 6.1, not started) as the one function all writers go through, which compares against what's on disk and picks one of three outcomes:
+  - No-op — same yaml, same cal values in effect. Nothing written.
+  - `'create'` — the yaml differs from what's on disk. Archives the existing `meta/metadata.mat` to `meta/archive/metadata_<timestamp>.mat`, then writes the new one.
+  - `'update'` — yaml unchanged, but a derived value is new or changed, e.g. a probe serial number just resolved to a cal file. Writes `meta/metadata.mat` in place, no archiving.
+- Updated the Section 3 folder diagram to show `meta/archive/`.
+- Open question noted in Section 2: once metadata starts getting saved inside individual L0/L1/L2 files, a master `metadata.mat` may matter less.
+- Design only — no code written yet.
 
 ### 2026-07-09 — L0 → L1: yaml metadata, physical-unit conversion, L0 rename (branch `l0_to_l1_conversion`)
 

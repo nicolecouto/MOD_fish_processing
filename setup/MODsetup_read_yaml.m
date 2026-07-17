@@ -17,7 +17,12 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   Saves metadata.mat into meta/ alongside setup.yml, with metadata.paths
 %   stripped out first - metadata.mat is a portable deployment record;
 %   paths are machine-specific and always re-derived from setup.yml's
-%   data_root on the next call.
+%   data_root on the next call. The save goes through
+%   MODsetup_save_metadata.m, which no-ops if nothing has changed since
+%   the last call (the common case - a deployment script re-reads the
+%   same setup.yml many times an hour during a cruise), and otherwise
+%   archives the previous metadata.mat before writing the new one. See
+%   PLAN.md Section 2, "Metadata provenance and archiving."
 %
 % INPUTS
 %   setup_yml - full path to a deployment's setup.yml
@@ -25,6 +30,10 @@ function metadata = MODsetup_read_yaml(setup_yml)
 % OUTPUTS
 %   metadata  - struct with fields:
 %     paths.data_root, .raw, .L0, .L1, .meta, .calibrations_root
+%     header.yaml_hash             - hash of setup_yml's contents
+%     header.history               - struct array (.timestamp, .computer,
+%                                     .event, .filepath) appended to by
+%                                     MODsetup_save_metadata
 %     fish_flag                    - 'FCTD' or 'EPSI', from setup.yml
 %     PROCESS.latitude             - for ctd.z when no GPS fix
 %     PROCESS.channels             - AFE channel names in ADC slot order,
@@ -49,7 +58,8 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % CALLS
 %   toolbox/YAMLMatlab_0.4.3/ReadYaml.m
-%   (local subfunction: read_sbe_cal)
+%   MODsetup_save_metadata.m
+%   (local subfunctions: read_sbe_cal, hash_file)
 %
 % NOTES
 %   MATLAB has no built-in YAML reader (checked in R2024b: no yaml.*
@@ -114,9 +124,26 @@ metadata.GEOMETRY.alt_probe_dist_from_crashguard_in = alt_geom.probe_dist_from_c
 
 %% Save metadata.mat (portable - no paths)
 metadata_to_save = rmfield(metadata, 'paths');
-save(fullfile(meta_dir, 'metadata.mat'), '-struct', 'metadata_to_save');
+metadata_to_save.header.yaml_hash = hash_file(setup_yml);
+metadata_to_save = MODsetup_save_metadata(metadata_to_save, meta_dir, ...
+    'created_from_yaml', setup_yml);
+
+metadata.header = metadata_to_save.header;
 
 end %end function
+
+%% Hash a file's contents (SHA-256, hex string)
+function h = hash_file(filename)
+fid = fopen(filename, 'rb');
+if fid < 0
+    error('MODsetup_read_yaml:fileNotFound', 'File not found: %s', filename);
+end
+bytes = fread(fid, Inf, '*uint8');
+fclose(fid);
+md = java.security.MessageDigest.getInstance('SHA-256');
+md.update(bytes);
+h = sprintf('%02x', typecast(md.digest(), 'uint8'));
+end
 
 %% Read an SBE .CAL file into a calibration coefficient struct
 function SBEcal = read_sbe_cal(filename)
