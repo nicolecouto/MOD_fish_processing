@@ -1,7 +1,7 @@
-function n_renamed = MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir, force)
+function n_renamed = MODsetup_pad_raw_filenames(raw_dir, options)
 % MODsetup_pad_raw_filenames        Part of MOD_fish_processing
 %
-% n_renamed = MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir, force)
+% n_renamed = MODsetup_pad_raw_filenames(raw_dir, Name, Value, ...)
 %
 % DESCRIPTION
 %   Renames raw files whose names end in an unpadded number (modsom_0,
@@ -20,15 +20,35 @@ function n_renamed = MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir
 %   Does nothing (and says so) when names are date-based or already
 %   padded, so it is safe to call on every processing run.
 %
+%   Confirmation, unless force is set, is a small centered dialog when a
+%   display is available - this is what to use if a terminal y/n prompt
+%   can't be answered (e.g. running MATLAB through VS Code). It lists the
+%   actual renames (up to 3 examples plus a count of the rest) and, if
+%   pad_width was not already fixed by the caller, a spinner to change
+%   the zero-padding digit count before confirming. Falls back to text
+%   prompts (digit count, then y/n) when there is no display, and to a
+%   no-op warning under -batch, where neither kind of prompt can be
+%   answered.
+%
 % INPUTS
-%   raw_dir         - full path to a folder of raw data files
-%   raw_file_suffix - (optional) e.g. '.modraw'. Default: auto-detected
-%                      by MODsetup_detect_raw_suffix.m.
-%   L0_dir          - (optional) folder of converted .mat files to rename
-%                      in step with the raw files. Default: a sibling 'L0'
-%                      folder next to raw_dir, if it exists.
-%   force           - (optional) true to skip the confirmation prompt.
-%                      Default: false.
+%   raw_dir - full path to a folder of raw data files
+%
+% NAME-VALUE ARGUMENTS (any order)
+%   raw_file_suffix - e.g. '.modraw'. Default: auto-detected by
+%                      MODsetup_detect_raw_suffix.m.
+%   L0_dir          - folder of converted .mat files to rename in step
+%                      with the raw files. Default: a sibling 'L0' folder
+%                      next to raw_dir, if it exists.
+%   force           - true to skip the confirmation prompt/dialog
+%                      entirely. Default: false.
+%   pad_width       - zero-pad to this many digits instead of the default
+%                      max(3, widest number already present). Useful when
+%                      you know the run won't grow past the current file
+%                      count, e.g. pad_width=2 for a post-processed
+%                      deployment that maxes out at 99 files. Default: 0
+%                      (auto) - when running interactively, 0 also means
+%                      "let me choose in the dialog/prompt", pre-filled
+%                      with the auto value.
 %
 % OUTPUTS
 %   n_renamed - number of raw files renamed (0 if nothing needed doing,
@@ -43,24 +63,40 @@ function n_renamed = MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir
 %
 % NOTES
 %   Pad width is max(3, widest number already present), per numeric
-%   prefix. If a deployment could grow past 999 files, run this once up
-%   front so the width is settled before processing starts.
+%   prefix, unless overridden with pad_width. If a deployment could grow
+%   past 999 files, run this once up front so the width is settled before
+%   processing starts. Real-time acquisition always names files by
+%   timestamp rather than a running number, so a fixed pad_width is
+%   really only useful when post-processing a finished, unpadded numbered
+%   run.
 %
-%   In non-interactive MATLAB (-batch) the confirmation prompt cannot be
-%   answered, so without force=true the function warns and does nothing
-%   rather than renaming files unprompted.
+%   In non-interactive MATLAB (-batch) neither the dialog nor the text
+%   prompt can be answered, so without force=true the function warns and
+%   does nothing rather than renaming files unprompted.
+%
+% EXAMPLE
+%   MODsetup_pad_raw_filenames(raw_dir, 'force', true, 'pad_width', 2)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-if nargin < 2 || isempty(raw_file_suffix)
+arguments
+    raw_dir (1,:) char
+    options.raw_file_suffix (1,:) char = ''
+    options.L0_dir (1,:) char = ''
+    options.force (1,1) logical = false
+    options.pad_width (1,1) double {mustBeInteger, mustBeNonnegative} = 0
+end
+
+raw_file_suffix = options.raw_file_suffix;
+if isempty(raw_file_suffix)
     raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir);
 end
-if nargin < 3 || isempty(L0_dir)
+L0_dir = options.L0_dir;
+if isempty(L0_dir)
     L0_dir = fullfile(fileparts(raw_dir), 'L0');
 end
-if nargin < 4 || isempty(force)
-    force = false;
-end
+force = options.force;
+pad_width = options.pad_width;
 
 n_renamed = 0;
 
@@ -93,15 +129,32 @@ if ~any(isnum)
     return
 end
 
-% Padded name per file, width chosen per prefix
-new_base = old_base;
-for p = unique(prefix(isnum))'
-    m = isnum & strcmp(prefix, p{1});
-    pad = max(3, max(width(m)));
-    for k = find(m)'
-        new_base{k} = sprintf('%s%0*d', p{1}, pad, idx(k));
+suggested_pad_width = max(3, max(width(isnum)));
+interactive = ~force && ~batchStartupOptionUsed && feature('ShowFigureWindows');
+
+if interactive
+    % Let the user see the actual renames - and, unless pad_width was
+    % already fixed by the caller, choose the digit count - before
+    % anything is checked or touched.
+    [do_rename, pad_width] = pad_width_dialog(old_base, prefix, idx, width, isnum, raw_file_suffix, pad_width);
+    if ~do_rename
+        fprintf('MODsetup_pad_raw_filenames: no files renamed\n');
+        return
+    end
+    force = true; % already confirmed above - skip the plain y/n prompt below
+elseif pad_width == 0 && ~force && ~batchStartupOptionUsed
+    % No display to show a dialog on - fall back to a text prompt for the
+    % digit count (the y/n confirmation itself still happens below).
+    resp = strtrim(input(sprintf('Digits to pad to? [%d]: ', suggested_pad_width), 's'));
+    resp_num = str2double(resp);
+    if ~isempty(resp) && ~isnan(resp_num) && resp_num >= 1
+        pad_width = round(resp_num);
+    else
+        pad_width = suggested_pad_width;
     end
 end
+
+new_base = pad_new_basenames(old_base, prefix, idx, width, isnum, pad_width);
 
 % Two old names must never map to one new name (e.g. modsom_1 + modsom_001)
 [uniq_new, ~, ic] = unique(new_base);
@@ -145,10 +198,20 @@ if ~force
     if batchStartupOptionUsed
         warning('MODsetup_pad_raw_filenames:batchSkip', ...
             ['MATLAB is running non-interactively, so no confirmation prompt is possible. ' ...
-             'Files were NOT renamed. Call MODsetup_pad_raw_filenames(raw_dir, [], [], true) to rename.']);
+             'Files were NOT renamed. Call MODsetup_pad_raw_filenames(raw_dir, ''force'', true) to rename.']);
         return
     end
-    resp = input('Rename these files in place? (contents untouched, log written to meta/FilenamePadLog.csv) y/n: ', 's');
+    % interactive (dialog) confirmation already happened above and set
+    % force = true, so only the no-display text fallback reaches here.
+    if numel(changed) == 1
+        plural_s = '';
+    else
+        plural_s = 's';
+    end
+    prompt_msg = sprintf(['Rename %d %s file%s in place?\n' ...
+        '(contents untouched, log written to meta/FilenamePadLog.csv)'], ...
+        numel(changed), raw_file_suffix, plural_s);
+    resp = input([prompt_msg, ' y/n: '], 's');
     if ~strcmpi(strtrim(resp), 'y')
         fprintf('MODsetup_pad_raw_filenames: no files renamed\n');
         return
@@ -217,4 +280,123 @@ if n_L0 > 0
 end
 fprintf(' - log: %s\n', log_path);
 
+end
+
+function new_base = pad_new_basenames(old_base, prefix, idx, width, isnum, pad_width)
+% Padded name per file. pad_width = 0 means "auto": width is chosen per
+% numeric prefix, max(3, widest number already present in that prefix).
+% pad_width > 0 applies that width to every prefix uniformly.
+new_base = old_base;
+for p = unique(prefix(isnum))'
+    m = isnum & strcmp(prefix, p{1});
+    if pad_width > 0
+        pad = pad_width;
+    else
+        pad = max(3, max(width(m)));
+    end
+    for k = find(m)'
+        new_base{k} = sprintf('%s%0*d', p{1}, pad, idx(k));
+    end
+end
+end
+
+function txt = build_preview_text(old_base, prefix, idx, width, isnum, raw_file_suffix, pad_width)
+% Human-readable preview of what pad_width would rename, e.g.
+%   43 files total
+%   3 files need zero-padding, e.g.
+%   modsom_0.modraw -> modsom_000.modraw
+%   modsom_1.modraw -> modsom_001.modraw
+%   modsom_2.modraw -> modsom_002.modraw
+% Total is shown up front so you can tell, before picking a width,
+% whether the file count itself is 2 digits or 3.
+total_line = sprintf('%d files total', numel(old_base));
+new_base = pad_new_basenames(old_base, prefix, idx, width, isnum, pad_width);
+changed = find(~strcmp(old_base, new_base));
+n = numel(changed);
+if n == 0
+    txt = sprintf('%s\nNo files need zero-padding at %d digits.', total_line, pad_width);
+    return
+end
+nshow = min(3, n);
+lines = cell(nshow + (n > nshow), 1);
+for i = 1:nshow
+    k = changed(i);
+    lines{i} = sprintf('%s%s -> %s%s', old_base{k}, raw_file_suffix, new_base{k}, raw_file_suffix);
+end
+if n > nshow
+    lines{end} = sprintf('... and %d more', n - nshow);
+end
+txt = sprintf('%s\n%d file%s need zero-padding, e.g.\n%s', ...
+    total_line, n, repmat('s', 1, n ~= 1), strjoin(lines, newline));
+end
+
+function [do_rename, pad_width] = pad_width_dialog(old_base, prefix, idx, width, isnum, raw_file_suffix, pad_width)
+% Small modal dialog: shows the actual renames (up to 3 examples plus a
+% count of the rest) and, unless pad_width was already fixed by the
+% caller, a spinner to change the zero-padding digit count before
+% confirming. Returns do_rename = false if the user cancels or closes
+% the window without choosing Rename.
+
+editable = pad_width == 0;
+if editable
+    pad_width = max(3, max(width(isnum))); % starting suggestion
+end
+
+dlg_w = 480;
+dlg_h = 300;
+% uifigure Position is always in pixels (its Units cannot be changed);
+% force groot's Units to pixels too before reading ScreenSize so the two
+% are guaranteed to agree, regardless of any prior session-wide Units
+% customization.
+root_units = get(groot, 'Units');
+cleanup_units = onCleanup(@() set(groot, 'Units', root_units));
+set(groot, 'Units', 'pixels');
+scr = get(groot, 'ScreenSize');
+dlg_pos = [scr(1) + (scr(3) - dlg_w)/2, scr(2) + (scr(4) - dlg_h)/2, dlg_w, dlg_h];
+
+% uiconfirm/uifigure (not questdlg) - questdlg is a legacy Java/AWT
+% dialog that on some Mac multi-monitor/HiDPI setups renders oversized
+% with tiny text pinned to one corner. This uses MATLAB's modern
+% web-based uifigure stack instead, which scales correctly.
+fig = uifigure('Visible', 'on', 'Position', dlg_pos, 'Name', 'MODsetup_pad_raw_filenames');
+fig.UserData = struct('do_rename', false, 'pad_width', pad_width);
+
+preview_label = uilabel(fig, 'Position', [20, 100, dlg_w - 40, 180], ...
+    'Text', build_preview_text(old_base, prefix, idx, width, isnum, raw_file_suffix, pad_width), ...
+    'WordWrap', 'on', 'VerticalAlignment', 'top');
+
+if editable
+    uilabel(fig, 'Position', [20, 65, 140, 22], 'Text', 'Digits to pad to:');
+    spinner = uispinner(fig, 'Position', [165, 63, 70, 26], ...
+        'Limits', [1, 10], 'RoundFractionalValues', 'on', 'Step', 1, 'Value', pad_width);
+    spinner.ValueChangedFcn = @(src, ~) pad_width_dialog_spinner_changed( ...
+        fig, preview_label, src, old_base, prefix, idx, width, isnum, raw_file_suffix);
+else
+    uilabel(fig, 'Position', [20, 65, dlg_w - 40, 22], ...
+        'Text', sprintf('Padding to %d digits (set by the pad_width argument)', pad_width));
+end
+
+uibutton(fig, 'Position', [dlg_w - 190, 15, 80, 30], 'Text', 'Rename', ...
+    'ButtonPushedFcn', @(~, ~) pad_width_dialog_button(fig, true));
+uibutton(fig, 'Position', [dlg_w - 100, 15, 80, 30], 'Text', 'Cancel', ...
+    'ButtonPushedFcn', @(~, ~) pad_width_dialog_button(fig, false));
+
+uiwait(fig);
+result = fig.UserData;
+if isvalid(fig)
+    delete(fig);
+end
+do_rename = result.do_rename;
+pad_width = result.pad_width;
+end
+
+function pad_width_dialog_spinner_changed(fig, preview_label, spinner, old_base, prefix, idx, width, isnum, raw_file_suffix)
+pad_width = round(spinner.Value);
+fig.UserData.pad_width = pad_width;
+preview_label.Text = build_preview_text(old_base, prefix, idx, width, isnum, raw_file_suffix, pad_width);
+end
+
+function pad_width_dialog_button(fig, do_rename)
+fig.UserData.do_rename = do_rename;
+uiresume(fig);
 end

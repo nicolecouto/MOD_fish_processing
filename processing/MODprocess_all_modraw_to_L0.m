@@ -62,7 +62,7 @@ end
 % Zero-pad trailing-number filenames (modsom_1 -> modsom_001) so listings
 % sort chronologically. No-op when names are date-based or already padded;
 % prompts before renaming (and skips, with a warning, under -batch).
-MODsetup_pad_raw_filenames(raw_dir, raw_file_suffix, L0_dir);
+MODsetup_pad_raw_filenames(raw_dir, 'raw_file_suffix', raw_file_suffix, 'L0_dir', L0_dir);
 
 % Get list of raw files in the data path
 list_rawfile = dir(fullfile(raw_dir, ['*', raw_file_suffix]));
