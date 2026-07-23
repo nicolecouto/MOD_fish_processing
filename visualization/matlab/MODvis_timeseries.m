@@ -2,7 +2,9 @@ classdef MODvis_timeseries < handle
     % MODvis_timeseries        Part of MOD_fish_processing
     % Browse a folder of *.mat files (L0, L1, L2, or Profile - any file
     % whose structures (epsi, ctd, vnav, gps, ...) carry a dnum field),
-    % click a file, choose up to 6 signals to plot as dnum vs data.
+    % click a file, choose up to 6 rows, each with a required signal on
+    % the left y-axis and an optional second signal (Struct = "(none)"
+    % to skip it) on its own right y-axis (yyaxis), plotted vs dnum.
     % Supports nested fields like epsi.chan1, ctd.P_raw, gps.latitude, etc.
     %
     % Formerly named L0ExplorerApp.
@@ -17,11 +19,20 @@ classdef MODvis_timeseries < handle
         RefreshBtn matlab.ui.control.Button
 
         Axes
+
+        % Axis 1 (left, required) controls
         StructDrop
         SignalDrop
         YMinField
         YMaxField
         YResetBtn
+
+        % Axis 2 (right, optional - Struct = NoneItem to disable) controls
+        StructDrop2
+        SignalDrop2
+        YMinField2
+        YMaxField2
+        YResetBtn2
 
         AxesTickFontSize double = 10
         AxesLabelFontSize double = 11
@@ -37,6 +48,8 @@ classdef MODvis_timeseries < handle
 
         LastStruct string
         LastSignal string
+        LastStruct2 string
+        LastSignal2 string
 
         SignalColors struct
 
@@ -57,8 +70,14 @@ classdef MODvis_timeseries < handle
         UseLine logical = false     % false = dots, true = lines
 
         % Custom y-tick label text handles (blank YTickLabel keeps TightInset
-        % uniform; we draw our own labels as text() objects in the left margin)
+        % uniform; we draw our own labels as text() objects in the left margin).
+        % Only used for the left (axis 1) y-axis - the optional right axis
+        % (axis 2) shows MATLAB's native yyaxis tick labels.
         YTickTextHandles            % cell(NRows,1) of gobject arrays
+    end
+
+    properties (Constant)
+        NoneItem = '(none)'   % axis-2 Struct sentinel meaning "don't plot a second signal"
     end
 
 
@@ -75,7 +94,7 @@ classdef MODvis_timeseries < handle
         end
 
         function buildUI(app)
-            app.Fig = uifigure('Name','L0 Explorer','Position',[100 100 1200 900]);
+            app.Fig = uifigure('Name','L0 Explorer','Position',[100 100 1400 900]);
 
             app.GL = uigridlayout(app.Fig,[1 2]);
             app.GL.ColumnWidth = {240,'1x'};
@@ -202,24 +221,32 @@ classdef MODvis_timeseries < handle
             right.RowSpacing = 10;
 
             app.Axes = gobjects(app.NRows,1);
-            app.StructDrop = gobjects(app.NRows,1);
-            app.SignalDrop = gobjects(app.NRows,1);
-            app.YMinField = gobjects(app.NRows,1);
-            app.YMaxField = gobjects(app.NRows,1);
-            app.YResetBtn = gobjects(app.NRows,1);
-            app.LastStruct = ["epsi"; "epsi"; "epsi"; "epsi"; "ctd"; "ctd"];
-            app.LastSignal = ["t1_volt"; "t2_volt"; "s1_volt"; "s2_volt"; "z"; "T"];
+            app.StructDrop  = gobjects(app.NRows,1);
+            app.SignalDrop  = gobjects(app.NRows,1);
+            app.YMinField   = gobjects(app.NRows,1);
+            app.YMaxField   = gobjects(app.NRows,1);
+            app.YResetBtn   = gobjects(app.NRows,1);
+            app.StructDrop2 = gobjects(app.NRows,1);
+            app.SignalDrop2 = gobjects(app.NRows,1);
+            app.YMinField2  = gobjects(app.NRows,1);
+            app.YMaxField2  = gobjects(app.NRows,1);
+            app.YResetBtn2  = gobjects(app.NRows,1);
+            app.LastStruct  = ["epsi"; "epsi"; "epsi"; "epsi"; "ctd"; "ctd"];
+            app.LastSignal  = ["t1_volt"; "t2_volt"; "s1_volt"; "s2_volt"; "z"; "T"];
+            app.LastStruct2 = strings(app.NRows,1);   % all "" => axis 2 starts as "(none)"
+            app.LastSignal2 = strings(app.NRows,1);
             app.YTickTextHandles = cell(app.NRows, 1);
 
 
 
             for i = 1:app.NRows
-                % Row container: axes on left, controls on right
-                row = uigridlayout(right,[1 2]);
+                % Row container: axes on left, two control panels on right
+                % (axis 1 / left-axis controls, then axis 2 / right-axis controls)
+                row = uigridlayout(right,[1 3]);
                 row.Layout.Row = i;
                 row.Layout.Column = 1;
                 row.RowHeight = {'1x'};
-                row.ColumnWidth = {'1x', 220};   % right column is controls
+                row.ColumnWidth = {'1x', 210, 210};
                 row.ColumnSpacing = 10;
                 row.Padding = [68 0 0 0];  % left margin reserved for custom y-tick labels
 
@@ -243,51 +270,10 @@ classdef MODvis_timeseries < handle
                 addlistener(app.Axes(i), 'YLim', 'PostSet', ...
                     @(~,~)app.onAxesYLimChanged(ii));
 
-
-                % Controls panel (right) - inline dropdowns + y-limit controls
-                ctrl = uigridlayout(row,[4 3]);
-                ctrl.Layout.Row = 1;
-                ctrl.Layout.Column = 2;
-                ctrl.RowHeight = {28, 28, 26, 22};
-                ctrl.ColumnWidth = {52, '1x', '1x'};
-                ctrl.RowSpacing = 4;
-                ctrl.Padding = [0 0 0 0];
-
-                lbl1 = uilabel(ctrl,'Text','Struct');
-                lbl1.Layout.Row = 1; lbl1.Layout.Column = 1;
-                lbl1.VerticalAlignment = 'center';
-
-                app.StructDrop(i) = uidropdown(ctrl,'Items',{}, ...
-                    'ValueChangedFcn', @(~,~)app.onStructChanged(i));
-                app.StructDrop(i).Layout.Row = 1; app.StructDrop(i).Layout.Column = [2 3];
-
-                lbl2 = uilabel(ctrl,'Text','Signal');
-                lbl2.Layout.Row = 2; lbl2.Layout.Column = 1;
-                lbl2.VerticalAlignment = 'center';
-
-                app.SignalDrop(i) = uidropdown(ctrl,'Items',{}, ...
-                    'ValueChangedFcn', @(~,~)app.onSignalChanged(i));
-                app.SignalDrop(i).Layout.Row = 2; app.SignalDrop(i).Layout.Column = [2 3];
-                app.trySetProp(app.SignalDrop(i),'Tooltip','Signal (supports nested fields)');
-
-                ylbl = uilabel(ctrl,'Text','Y-limits');
-                ylbl.Layout.Row = 3; ylbl.Layout.Column = 1;
-                ylbl.VerticalAlignment = 'center';
-
-                app.YMinField(i) = uieditfield(ctrl,'numeric', ...
-                    'Placeholder','min', ...
-                    'ValueChangedFcn', @(~,~)app.onYLimitChanged(i));
-                app.YMinField(i).Layout.Row = 3; app.YMinField(i).Layout.Column = 2;
-
-                app.YMaxField(i) = uieditfield(ctrl,'numeric', ...
-                    'Placeholder','max', ...
-                    'ValueChangedFcn', @(~,~)app.onYLimitChanged(i));
-                app.YMaxField(i).Layout.Row = 3; app.YMaxField(i).Layout.Column = 3;
-
-                app.YResetBtn(i) = uibutton(ctrl,'Text','Reset y-limits', ...
-                    'ButtonPushedFcn', @(~,~)app.onYLimitReset(i));
-                app.YResetBtn(i).Layout.Row = 4; app.YResetBtn(i).Layout.Column = [2 3];
-
+                % Controls panels (right): axis 1 (left y-axis) then axis 2
+                % (right y-axis, optional - "(none)" disables it)
+                app.buildAxisControls(row, 2, i, 1);
+                app.buildAxisControls(row, 3, i, 2);
             end
 
             % Link x-axes so zoom/pan syncs across all panels
@@ -303,6 +289,83 @@ classdef MODvis_timeseries < handle
             % Initialize SignalColors
             app.SignalColors = app.defineSignalColors();
 
+        end
+
+        function buildAxisControls(app, parent, colIdx, rowIdx, axisNum)
+            % Builds one "Struct / Signal / Y-limits / Reset" control panel
+            % for either axis 1 (left, always active) or axis 2 (right,
+            % optional - its Struct dropdown includes NoneItem as the first,
+            % default entry so the row can be plotted with just one signal).
+            ctrl = uigridlayout(parent,[5 3]);
+            ctrl.Layout.Row = 1;
+            ctrl.Layout.Column = colIdx;
+            ctrl.RowHeight = {16, 28, 28, 26, 22};
+            ctrl.ColumnWidth = {52, '1x', '1x'};
+            ctrl.RowSpacing = 3;
+            ctrl.Padding = [0 0 0 0];
+
+            if axisNum == 1
+                hdrText = 'Left axis';
+            else
+                hdrText = 'Right axis (optional)';
+            end
+            hdr = uilabel(ctrl,'Text',hdrText,'FontWeight','bold');
+            hdr.Layout.Row = 1; hdr.Layout.Column = [1 3];
+            hdr.FontSize = 11;
+
+            lbl1 = uilabel(ctrl,'Text','Struct');
+            lbl1.Layout.Row = 2; lbl1.Layout.Column = 1;
+            lbl1.VerticalAlignment = 'center';
+
+            if axisNum == 1
+                structItems = {};
+            else
+                structItems = {app.NoneItem};
+            end
+            structDrop = uidropdown(ctrl,'Items',structItems, ...
+                'ValueChangedFcn', @(~,~)app.onStructChanged(rowIdx, axisNum));
+            structDrop.Layout.Row = 2; structDrop.Layout.Column = [2 3];
+
+            lbl2 = uilabel(ctrl,'Text','Signal');
+            lbl2.Layout.Row = 3; lbl2.Layout.Column = 1;
+            lbl2.VerticalAlignment = 'center';
+
+            signalDrop = uidropdown(ctrl,'Items',{}, ...
+                'ValueChangedFcn', @(~,~)app.onSignalChanged(rowIdx, axisNum));
+            signalDrop.Layout.Row = 3; signalDrop.Layout.Column = [2 3];
+            app.trySetProp(signalDrop,'Tooltip','Signal (supports nested fields)');
+
+            ylbl = uilabel(ctrl,'Text','Y-limits');
+            ylbl.Layout.Row = 4; ylbl.Layout.Column = 1;
+            ylbl.VerticalAlignment = 'center';
+
+            yMinField = uieditfield(ctrl,'numeric', ...
+                'Placeholder','min', ...
+                'ValueChangedFcn', @(~,~)app.onYLimitChanged(rowIdx, axisNum));
+            yMinField.Layout.Row = 4; yMinField.Layout.Column = 2;
+
+            yMaxField = uieditfield(ctrl,'numeric', ...
+                'Placeholder','max', ...
+                'ValueChangedFcn', @(~,~)app.onYLimitChanged(rowIdx, axisNum));
+            yMaxField.Layout.Row = 4; yMaxField.Layout.Column = 3;
+
+            yResetBtn = uibutton(ctrl,'Text','Reset y-limits', ...
+                'ButtonPushedFcn', @(~,~)app.onYLimitReset(rowIdx, axisNum));
+            yResetBtn.Layout.Row = 5; yResetBtn.Layout.Column = [2 3];
+
+            if axisNum == 1
+                app.StructDrop(rowIdx) = structDrop;
+                app.SignalDrop(rowIdx) = signalDrop;
+                app.YMinField(rowIdx)  = yMinField;
+                app.YMaxField(rowIdx)  = yMaxField;
+                app.YResetBtn(rowIdx)  = yResetBtn;
+            else
+                app.StructDrop2(rowIdx) = structDrop;
+                app.SignalDrop2(rowIdx) = signalDrop;
+                app.YMinField2(rowIdx)  = yMinField;
+                app.YMaxField2(rowIdx)  = yMaxField;
+                app.YResetBtn2(rowIdx)  = yResetBtn;
+            end
         end
 
         function chooseFolder(app)
@@ -344,6 +407,8 @@ classdef MODvis_timeseries < handle
             for i = 1:app.NRows
                 app.StructDrop(i).Items = {};
                 app.SignalDrop(i).Items = {};
+                app.StructDrop2(i).Items = {};
+                app.SignalDrop2(i).Items = {};
                 cla(app.Axes(i));
             end
         end
@@ -416,25 +481,16 @@ classdef MODvis_timeseries < handle
                 if isempty(structs)
                     app.StructDrop(i).Items = {};
                     app.SignalDrop(i).Items = {};
+                    app.StructDrop2(i).Items = {};
+                    app.SignalDrop2(i).Items = {};
                     cla(app.Axes(i));
                     continue;
                 end
 
-                % --- Restore struct selection if possible ---
-                desiredStruct = "";
-                if ~isempty(app.LastStruct) && strlength(app.LastStruct(i)) > 0
-                    desiredStruct = app.LastStruct(i);
-                end
+                % --- Axis 1 (left, required): restore selection if possible ---
+                app.LastStruct(i) = app.restoreOrDefault(app.StructDrop(i), app.LastStruct(i));
 
-                if desiredStruct ~= "" && any(strcmp(app.StructDrop(i).Items, char(desiredStruct)))
-                    app.StructDrop(i).Value = char(desiredStruct);
-                else
-                    app.StructDrop(i).Value = app.StructDrop(i).Items{1};
-                    app.LastStruct(i) = string(app.StructDrop(i).Value);
-                end
-
-                % Populate signals for this struct
-                topName = string(app.StructDrop(i).Value);
+                topName = app.LastStruct(i);
                 topStruct = app.CurrentData.(topName);
                 signals = app.listNumericSignals(topStruct);
                 signals = signals(signals ~= "dnum");
@@ -442,23 +498,15 @@ classdef MODvis_timeseries < handle
                 if isempty(signals)
                     app.SignalDrop(i).Items = {};
                     cla(app.Axes(i));
-                    continue;
-                end
-
-                app.SignalDrop(i).Items = cellstr(signals);
-
-                % --- Restore signal selection if possible ---
-                desiredSig = "";
-                if ~isempty(app.LastSignal) && strlength(app.LastSignal(i)) > 0
-                    desiredSig = app.LastSignal(i);
-                end
-
-                if desiredSig ~= "" && any(strcmp(app.SignalDrop(i).Items, char(desiredSig)))
-                    app.SignalDrop(i).Value = char(desiredSig);
                 else
-                    app.SignalDrop(i).Value = app.SignalDrop(i).Items{1};
-                    app.LastSignal(i) = string(app.SignalDrop(i).Value);
+                    app.SignalDrop(i).Items = cellstr(signals);
+                    app.LastSignal(i) = app.restoreOrDefault(app.SignalDrop(i), app.LastSignal(i));
                 end
+
+                % --- Axis 2 (right, optional): "(none)" always first ---
+                app.StructDrop2(i).Items = [{app.NoneItem}; cellstr(structs)];
+                app.LastStruct2(i) = app.restoreOrDefault(app.StructDrop2(i), app.LastStruct2(i));
+                app.populateAxis2Signal(i);
 
                 % Plot using the restored selections
                 app.plotRow(i);
@@ -469,6 +517,47 @@ classdef MODvis_timeseries < handle
                 app.applyXWindow();
             end
 
+        end
+
+        function value = restoreOrDefault(app, dropdown, lastVal) %#ok<INUSD>
+            % Pick lastVal if it's still a valid item on this dropdown, else
+            % default to the dropdown's first item. Returns the value that
+            % ends up selected (so the caller can store it back into
+            % LastStruct/LastSignal/etc).
+            if strlength(lastVal) > 0 && any(strcmp(dropdown.Items, char(lastVal)))
+                dropdown.Value = char(lastVal);
+            else
+                dropdown.Value = dropdown.Items{1};
+            end
+            value = string(dropdown.Value);
+        end
+
+        function populateAxis2Signal(app, rowIdx)
+            % Fills SignalDrop2 for whatever is currently selected in
+            % StructDrop2(rowIdx), or clears it out when that's NoneItem
+            % (or the chosen struct turns out to have no plottable signals).
+            if strcmp(app.StructDrop2(rowIdx).Value, app.NoneItem)
+                app.SignalDrop2(rowIdx).Items = {};
+                app.LastStruct2(rowIdx) = "";
+                app.LastSignal2(rowIdx) = "";
+                return;
+            end
+
+            topName2 = string(app.StructDrop2(rowIdx).Value);
+            topStruct2 = app.CurrentData.(topName2);
+            signals2 = app.listNumericSignals(topStruct2);
+            signals2 = signals2(signals2 ~= "dnum");
+
+            if isempty(signals2)
+                app.SignalDrop2(rowIdx).Items = {};
+                app.StructDrop2(rowIdx).Value = app.NoneItem;
+                app.LastStruct2(rowIdx) = "";
+                app.LastSignal2(rowIdx) = "";
+                return;
+            end
+
+            app.SignalDrop2(rowIdx).Items = cellstr(signals2);
+            app.LastSignal2(rowIdx) = app.restoreOrDefault(app.SignalDrop2(rowIdx), app.LastSignal2(rowIdx));
         end
 
         function structs = getTopStructCandidates(app, S) %#ok<INUSD>
@@ -493,8 +582,14 @@ classdef MODvis_timeseries < handle
 
         end
 
-        function onStructChanged(app, rowIdx)
+        function onStructChanged(app, rowIdx, axisNum)
             if isempty(app.CurrentFile) || isempty(fieldnames(app.CurrentData))
+                return;
+            end
+
+            if axisNum == 2
+                app.populateAxis2Signal(rowIdx);
+                app.plotRow(rowIdx);
                 return;
             end
 
@@ -517,20 +612,29 @@ classdef MODvis_timeseries < handle
             else
                 app.SignalDrop(rowIdx).Items = cellstr(signals);
                 app.SignalDrop(rowIdx).Value = app.SignalDrop(rowIdx).Items{1};
+                app.LastSignal(rowIdx) = string(app.SignalDrop(rowIdx).Value);
                 app.plotRow(rowIdx);
             end
 
         end
 
-        function onSignalChanged(app, rowIdx)
+        function onSignalChanged(app, rowIdx, axisNum)
             % Plot immediately when signal selection changes
-            if isempty(app.SignalDrop(rowIdx).Items)
+            if axisNum == 2
+                signalDrop = app.SignalDrop2(rowIdx);
+            else
+                signalDrop = app.SignalDrop(rowIdx);
+            end
+
+            if isempty(signalDrop.Items) || isempty(signalDrop.Value)
                 return;
             end
-            if isempty(app.SignalDrop(rowIdx).Value)
-                return;
+
+            if axisNum == 2
+                app.LastSignal2(rowIdx) = string(signalDrop.Value);
+            else
+                app.LastSignal(rowIdx) = string(signalDrop.Value);
             end
-            app.LastSignal(rowIdx) = string(app.SignalDrop(rowIdx).Value);
             app.plotRow(rowIdx);
         end
 
@@ -627,11 +731,92 @@ classdef MODvis_timeseries < handle
                 return;
             end
 
-            topName = string(app.StructDrop(rowIdx).Value);
-            sigPath = string(app.SignalDrop(rowIdx).Value);
+            ax = app.Axes(rowIdx);
+            dual = numel(ax.YAxis) > 1;   % has this row ever used a right axis?
 
-            if topName=="" || sigPath==""
-                uialert(app.Fig, "Pick a struct and signal.", "Missing selection");
+            % Preserve x-limits if the user has zoomed/panned or the x-window is active
+            keepX = app.HasUserZoomed || app.UseXWindow;
+            if keepX
+                xlim0 = ax.XLim;
+                keepX = all(isfinite(xlim0)) && xlim0(2) > xlim0(1) && xlim0(2) > 1000;
+            end
+
+            cla(ax);
+
+            % ----- Axis 1 (left, required) -----
+            if dual
+                yyaxis(ax, 'left');
+            end
+            [ok, dnumSrc] = app.plotOneSignal(ax, rowIdx, true, ...
+                app.StructDrop(rowIdx), app.SignalDrop(rowIdx), ...
+                app.YMinField(rowIdx), app.YMaxField(rowIdx));
+            if ~ok
+                return;
+            end
+
+            % ----- Axis 2 (right, optional) -----
+            axis2Active = ~strcmp(app.StructDrop2(rowIdx).Value, app.NoneItem) ...
+                && ~isempty(app.SignalDrop2(rowIdx).Items) && ~isempty(app.SignalDrop2(rowIdx).Value);
+
+            if axis2Active
+                yyaxis(ax, 'right');
+                ax.YAxis(2).Visible = 'on';
+                app.plotOneSignal(ax, rowIdx, false, ...
+                    app.StructDrop2(rowIdx), app.SignalDrop2(rowIdx), ...
+                    app.YMinField2(rowIdx), app.YMaxField2(rowIdx));
+                yyaxis(ax, 'left');
+            elseif dual
+                % Previously had a right-axis signal, now set back to
+                % "(none)". MATLAB has no clean way to fully undo yyaxis
+                % mode, so just hide the unused right ruler.
+                yyaxis(ax, 'right');
+                ax.YAxis(2).Visible = 'off';
+                yyaxis(ax, 'left');
+            end
+
+            grid(ax,'on');
+            try
+                datetick(ax,'x','keeplimits'); %#ok<DATETICK>
+            catch
+            end
+
+            app.trySetProp(ax.XLabel,'Interpreter','none');
+            app.trySetProp(ax.YLabel,'Interpreter','none');
+            xlabel(ax, sprintf('dnum (%s)', dnumSrc));
+
+            if keepX
+                ax.XLim = xlim0;
+            end
+
+            % Apply x-window (overrides zoom/pan-preserved limits)
+            if app.UseXWindow && isfinite(app.ProfileTmin) && app.ProfileTmax > app.ProfileTmin
+                winDays    = app.XWindowLen / 86400;
+                profileDur = app.ProfileTmax - app.ProfileTmin;
+                if winDays < profileDur
+                    winStart = app.ProfileTmin + app.XWinFraction * profileDur;
+                    winStart = max(winStart, app.ProfileTmin);
+                    winStart = min(winStart, app.ProfileTmax - winDays);
+                    ax.XLim  = [winStart, winStart + winDays];
+                end
+            end
+        end
+
+        function [ok, dnumSrc] = plotOneSignal(app, ax, rowIdx, isPrimary, structDrop, signalDrop, yMinField, yMaxField)
+            % Plots one signal on whichever y-axis side is currently active
+            % (caller must have already called yyaxis(ax,'left'/'right') as
+            % needed). isPrimary = axis 1 (left, required) - it gets the
+            % custom blanked-tick-label treatment used for left-margin
+            % alignment; axis 2 (right, optional) uses native yyaxis ticks.
+            ok = false;
+            dnumSrc = "";
+
+            topName = string(structDrop.Value);
+            sigPath = string(signalDrop.Value);
+
+            if topName == "" || sigPath == "" || strcmp(topName, app.NoneItem)
+                if isPrimary
+                    uialert(app.Fig, "Pick a struct and signal.", "Missing selection");
+                end
                 return;
             end
 
@@ -668,14 +853,6 @@ classdef MODvis_timeseries < handle
             dnum = dnum(1:n);
             y = y(1:n);
 
-            ax = app.Axes(rowIdx);
-            % Preserve x-limits if the user has zoomed/panned or the x-window is active
-            keepX = app.HasUserZoomed || app.UseXWindow;
-            if keepX
-                xlim0 = ax.XLim;
-                keepX = all(isfinite(xlim0)) && xlim0(2) > xlim0(1) && xlim0(2) > 1000;
-            end
-
             % Preserve y-limits if the user has manually set them (via the
             % fields), so they carry over across signal/file changes until
             % explicitly reset.
@@ -683,8 +860,6 @@ classdef MODvis_timeseries < handle
             if keepY
                 ylim0 = ax.YLim;
             end
-
-            cla(ax);
 
             clr = app.getSignalColor(sigPath);
             try
@@ -698,24 +873,6 @@ classdef MODvis_timeseries < handle
                 return;
             end
 
-            grid(ax,'on');
-
-            try
-                datetick(ax,'x','keeplimits'); %#ok<DATETICK>
-            catch
-            end
-
-            % Blank all y-tick labels so TightInset(1) is near-zero and identical
-            % for every axes row → perfect left AND right edge alignment always.
-            % The actual values are shown by text() objects in updateYTickText().
-            n = numel(ax.YTick);
-            if n > 0
-                ax.YTickLabel = repmat({''}, 1, n);
-            end
-
-            app.trySetProp(ax.XLabel,'Interpreter','none');
-            app.trySetProp(ax.YLabel,'Interpreter','none');
-
             % Reverse y-axis for pressure/depth signals
             if app.shouldReverseY(topName, sigPath)
                 ax.YDir = 'reverse';
@@ -723,12 +880,15 @@ classdef MODvis_timeseries < handle
                 ax.YDir = 'normal';
             end
 
-
-            xlabel(ax, sprintf('dnum (%s)', dnumSrc));
-            %ylabel(ax, topName + "." + sigPath); %Don't print ylabel because it will show up under the numbers
-
-            if keepX
-                ax.XLim = xlim0;
+            if isPrimary
+                % Blank all y-tick labels so TightInset(1) is near-zero and
+                % identical for every axes row -> perfect left AND right edge
+                % alignment always. The actual values are shown by text()
+                % objects in updateYTickText().
+                nt = numel(ax.YTick);
+                if nt > 0
+                    ax.YTickLabel = repmat({''}, 1, nt);
+                end
             end
 
             if keepY
@@ -739,26 +899,17 @@ classdef MODvis_timeseries < handle
                 % y-limit fields to show the current view.
                 ax.YLimMode = 'auto';
                 autoYLim = ax.YLim;
-                app.YMinField(rowIdx).Value = autoYLim(1);
-                app.YMaxField(rowIdx).Value = autoYLim(2);
+                yMinField.Value = autoYLim(1);
+                yMaxField.Value = autoYLim(2);
             end
 
-            % Apply x-window (overrides zoom/pan-preserved limits)
-            if app.UseXWindow && isfinite(app.ProfileTmin) && app.ProfileTmax > app.ProfileTmin
-                winDays    = app.XWindowLen / 86400;
-                profileDur = app.ProfileTmax - app.ProfileTmin;
-                if winDays < profileDur
-                    winStart = app.ProfileTmin + app.XWinFraction * profileDur;
-                    winStart = max(winStart, app.ProfileTmin);
-                    winStart = min(winStart, app.ProfileTmax - winDays);
-                    ax.XLim  = [winStart, winStart + winDays];
-                end
+            if isPrimary
+                % Draw custom y-tick labels in the reserved left margin.
+                % Called last so YLim/YTick are fully settled.
+                app.updateYTickText(rowIdx);
             end
 
-            % Draw custom y-tick labels in the reserved left margin.
-            % Called last so YLim/YTick are fully settled.
-            app.updateYTickText(rowIdx);
-
+            ok = true;
         end
 
         function onPlotStyleChanged(app)
@@ -836,20 +987,46 @@ classdef MODvis_timeseries < handle
             end
         end
 
-        function onYLimitChanged(app, rowIdx)
-            ymin = app.YMinField(rowIdx).Value;
-            ymax = app.YMaxField(rowIdx).Value;
-            if isfinite(ymin) && isfinite(ymax) && ymax > ymin
-                app.Axes(rowIdx).YLim = [ymin ymax];
+        function onYLimitChanged(app, rowIdx, axisNum)
+            ax = app.Axes(rowIdx);
+            dual = numel(ax.YAxis) > 1;
+
+            if axisNum == 2
+                if ~dual; return; end  % no right axis active
+                ymin = app.YMinField2(rowIdx).Value;
+                ymax = app.YMaxField2(rowIdx).Value;
+                if ~(isfinite(ymin) && isfinite(ymax) && ymax > ymin); return; end
+                yyaxis(ax, 'right');
+                ax.YLim = [ymin ymax];
+                yyaxis(ax, 'left');
+            else
+                ymin = app.YMinField(rowIdx).Value;
+                ymax = app.YMaxField(rowIdx).Value;
+                if ~(isfinite(ymin) && isfinite(ymax) && ymax > ymin); return; end
+                if dual; yyaxis(ax, 'left'); end
+                ax.YLim = [ymin ymax];
             end
         end
 
-        function onYLimitReset(app, rowIdx)
+        function onYLimitReset(app, rowIdx, axisNum)
             ax = app.Axes(rowIdx);
-            ax.YLimMode = 'auto';
-            autoYLim = ax.YLim;
-            app.YMinField(rowIdx).Value = autoYLim(1);
-            app.YMaxField(rowIdx).Value = autoYLim(2);
+            dual = numel(ax.YAxis) > 1;
+
+            if axisNum == 2
+                if ~dual; return; end  % no right axis active
+                yyaxis(ax, 'right');
+                ax.YLimMode = 'auto';
+                autoYLim = ax.YLim;
+                app.YMinField2(rowIdx).Value = autoYLim(1);
+                app.YMaxField2(rowIdx).Value = autoYLim(2);
+                yyaxis(ax, 'left');
+            else
+                if dual; yyaxis(ax, 'left'); end
+                ax.YLimMode = 'auto';
+                autoYLim = ax.YLim;
+                app.YMinField(rowIdx).Value = autoYLim(1);
+                app.YMaxField(rowIdx).Value = autoYLim(2);
+            end
         end
 
         function clr = getSignalColor(app, sigPath)
@@ -1011,11 +1188,17 @@ classdef MODvis_timeseries < handle
             % Fires via PostSet listener whenever an axes' YLim changes
             % (signal change, y-lock, or user y-zoom).  Re-blank tick labels
             % (in case MATLAB auto-restored them) and refresh text objects.
+            % Only the left (axis 1) y-axis uses the custom text-label
+            % treatment, so force 'left' active first - the PostSet event
+            % can fire while the right axis is the active side.
             if isempty(app.YTickTextHandles) || rowIdx > numel(app.Axes)
                 return;
             end
             ax = app.Axes(rowIdx);
             if ~isvalid(ax); return; end
+            if numel(ax.YAxis) > 1
+                yyaxis(ax, 'left');
+            end
             n = numel(ax.YTick);
             if n > 0
                 try; ax.YTickLabel = repmat({''}, 1, n); catch; end
@@ -1026,11 +1209,15 @@ classdef MODvis_timeseries < handle
         function updateYTickText(app, rowIdx)
             % Delete old custom tick-label text objects and draw fresh ones
             % in the 68-px left padding area, just outside the axes boundary.
+            % Always operates on the left (axis 1) y-axis.
             if isempty(app.YTickTextHandles) || rowIdx > numel(app.YTickTextHandles)
                 return;
             end
             ax = app.Axes(rowIdx);
             if ~isvalid(ax); return; end
+            if numel(ax.YAxis) > 1
+                yyaxis(ax, 'left');
+            end
 
             % Remove stale handles (cla() or previous call may have deleted them)
             old = app.YTickTextHandles{rowIdx};
