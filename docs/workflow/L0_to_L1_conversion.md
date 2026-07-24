@@ -7,7 +7,7 @@
 Takes an L0 `.mat` file (raw counts/hex, no calibrations - see [L0: converting .modraw to .mat](L0_modraw_conversion.md)) and converts it to physical units:
 
 - **epsi** - AFE channel counts → volts (thermistor/shear channels) or g (accelerometer channels)
-- **ctd** - raw hex → pressure [dbar], temperature [°C], conductivity [mS/cm], salinity [psu], plus derived potential temperature, potential density, `dP/dt`, depth, `dz/dt`
+- **ctd** - raw hex → pressure [dbar], temperature [°C], conductivity [S/m], salinity [psu], plus derived potential temperature, potential density, `dP/dt`, depth, `dz/dt`
 - **alt**, **isap** - raw distance → height above bottom (`hab`)
 
 Every other field (`gps`, `vnav`, `seg`, `spec`, `avgspec`, `dissrate`, `apf`, `fluor`, `ttv`) passes through unchanged.
@@ -15,8 +15,8 @@ Every other field (`gps`, `vnav`, `seg`, `spec`, `avgspec`, `dissrate`, `apf`, `
 Doing this requires a deployment configuration - which physical sensor is on which AFE channel, what its full-scale voltage range is, which CTD calibration coefficients apply - so this is also where a `setup.yml` file first enters the pipeline (see PLAN.md Section 2 for the metadata design).
 
 Explicitly **not** done at this step (still open - see PLAN.md Section 6.2 and Section 7):
-- No shear probe Sv calibration (shear channels stay as volts, not `1/s`)
-- No FPO7 dT/dV calibration
+- `MODsetup_read_yaml.m` looks up each shear probe's `Sv` into `metadata.AFE.(channel).cal`, but nothing yet *applies* it - shear channels stay as volts, not `1/s`. The physical-unit conversion (`Sv × volts / fall_speed`) needs a fall speed, normally `ctd.dzdt` - not resolved yet for deployments with no CTD
+- No FPO7 `dTdV` calibration at all yet - it isn't a lookup value like `Sv` (see the `AFE.(channel).cal` row above), it has to be fit in-situ per deployment against real CTD temperature
 - No despiking
 - No SOM instrument transfer function filters
 - No `twist` field (cable twist counting - Ana's project)
@@ -35,18 +35,22 @@ Reads a deployment's `setup.yml` and returns a `metadata` struct:
 |---|---|
 | `paths.data_root`, `.raw`, `.L0`, `.L1`, `.meta`, `.calibrations_root` | Derived fresh from `setup.yml`'s `data_root` field - **never saved to disk**, since paths are machine-specific |
 | `fish_flag` | `'FCTD'` or `'EPSI'` - selects which `altimeter` geometry block in the yaml applies |
+| `manifest.has_vnav`, `.has_isap`, `.has_alt`, `.has_gps`, `.has_fluor` | Presence flags from `setup.yml`'s `instrument_manifest` block. `false` when the key is missing entirely, same as an explicit `false`. Not consumed by L0→L1 today (those fields just pass through from L0 unchanged) - a record of what's on the vehicle for later steps |
 | `PROCESS.latitude` | Used for `ctd.z` (depth from pressure) when a file has no GPS fix |
-| `PROCESS.channels` | AFE channel names in ADC slot order, e.g. `{'t1','t2','s1','s2','a1','a2','a3'}` |
-| `AFE.(channel).full_range`, `.ADCconf`, `.type` | Per channel, from `setup.yml`'s `afe.channels` block |
-| `CTD.name`, `.SN`, `.sample_per_record` | From `setup.yml`'s `ctd` and `sn.ctd` |
-| `CTD.cal` | SBE calibration coefficients, read from `calibrations_root/SBECAL/<SN>.CAL` (the `MOD_fish_calibrations` repo) |
-| `GEOMETRY.alt_angle_deg`, `.alt_dist_from_crashguard_ft`, `.alt_probe_dist_from_crashguard_in` | Altimeter mount geometry, from `setup.yml`'s `altimeter.fctd` or `altimeter.epsi` block (picked by `fish_flag`) |
+| `PROCESS.channels` | AFE sensor names in ADC slot order, e.g. `{'t1','t2','s1','s2','a1','a2','a3'}` - order comes from `instrument_manifest.afe.channel_N` keys, sorted numerically by `N` (not from yaml field order) |
+| `AFE.(channel).full_range`, `.ADCconf` | Per channel, from `setup.yml`'s `afe.channels` detail block (keyed by sensor name) |
+| `AFE.(channel).type` | From `setup.yml`'s `instrument_manifest.afe.channel_N.type` |
+| `AFE.(channel).SN` | Only set when the manifest's `channel_N.sn` is present and non-empty |
+| `AFE.(channel).cal` | Only set for `shear` type channels with an `SN` - `Sv`, the most recent row of `calibrations_root/SHEAR_PROBES/<SN>/Calibration_<SN>.txt`. `[]` if that file doesn't exist yet. **Not set at all for `fpo7`** - `dTdV` isn't a fixed property of the probe you can look up; it's fit in-situ per deployment against real CTD temperature data (`mod_epsi_linear_calibration_FP07.m`'s `polyfit(volts, T, 1)`), which is a later L1 step's job, not something a static file can answer |
+| `CTD.name`, `.sample_per_record` | Only set when `setup.yml` has a `ctd:` block - deployments with no CTD don't need one |
+| `CTD.SN`, `.cal` | Only set when `instrument_manifest.ctd.sn` is present and non-empty. `.cal` is SBE calibration coefficients, read from `calibrations_root/SBE/<SN>.CAL` (the `MOD_fish_calibrations` repo) |
+| `GEOMETRY.alt_angle_deg`, `.alt_dist_from_crashguard_ft`, `.alt_probe_dist_from_crashguard_in` | Only set when `setup.yml` has an `altimeter.fctd` or `altimeter.epsi` block matching `fish_flag` - deployments with no `alt`/`isap` hardware don't need one |
 
 Also saves `metadata.mat` into `meta/` alongside `setup.yml` - a portable deployment record with `paths` stripped out, so it means the same thing on any machine. Re-derive `metadata.paths` by calling `MODsetup_read_yaml` again rather than trusting a stale `metadata.mat`.
 
-Deliberately minimal: it only resolves the fields this L0→L1 step actually uses. It does not yet build the full `metadata.manifest` (`shear_channels`, `fpo7_channels`, etc. from PLAN.md Section 5) or read `optional_sensors` - nothing downstream needs those yet. Add fields as later steps need them, not preemptively.
+Deliberately minimal: it only resolves the fields this L0→L1 step actually uses. It does not yet build the grouped `metadata.manifest.shear_channels`/`.fpo7_channels`-style lists from PLAN.md Section 5 - nothing downstream needs those yet. Add fields as later steps need them, not preemptively.
 
-**`setup.yml` only needs to declare what this step uses** - see `data_for_reorg/epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead/meta/setup.yml` for a real minimal example:
+**`setup.yml`'s `instrument_manifest` block says what's physically on the vehicle at a glance; electrical/sampling specifics (full_range, ADCconf, sample_per_record, ...) live in separate detail sections further down, keyed by the same names the manifest declares.** An instrument entirely absent from `instrument_manifest` is treated as not on the deployment - nothing errors on a missing key, so `ctd`/`altimeter`/`isap`/`alt`/`gps` are all optional depending on what hardware the deployment actually carries. See `data_for_reorg/epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead/meta/setup.yml` for a real example with a CTD, altimeter (`isap`), `vnav`, and a fluorometer:
 
 ```yaml
 data_root: /path/to/deployment          # only path in the file - everything else derives from it
@@ -55,22 +59,35 @@ calibrations_root: /path/to/MOD_fish_calibrations
 fish_flag: FCTD
 latitude: 32.8
 
-sn:
-  ctd: '0674'
+instrument_manifest:
+  ctd:
+    sn: '0674'
+  afe:                                  # keyed by ADC slot - the order the SOM firmware samples in
+    channel_1: {name: t1, type: fpo7}
+    channel_2: {name: t2, type: fpo7}
+    channel_3: {name: s1, type: shear}
+    channel_4: {name: s2, type: shear}
+    channel_5: {name: a1, type: acc}
+    channel_6: {name: a2, type: acc}
+    channel_7: {name: a3, type: acc}
+  isap: true
+  vnav: true
+  fluor: true
+  # no alt or gps hardware on this deployment - keys omitted entirely
 
 ctd:
   type: S49
   sample_per_record: 2
 
 afe:
-  channels:                              # in ADC slot order
-    t1: {type: fpo7,  full_range: 2.5, ADCconf: Unipolar}
-    t2: {type: fpo7,  full_range: 2.5, ADCconf: Unipolar}
-    s1: {type: shear, full_range: 2.5, ADCconf: Bipolar}
-    s2: {type: shear, full_range: 2.5, ADCconf: Bipolar}
-    a1: {type: acc,   full_range: 1.8, ADCconf: Unipolar}
-    a2: {type: acc,   full_range: 1.8, ADCconf: Unipolar}
-    a3: {type: acc,   full_range: 1.8, ADCconf: Unipolar}
+  channels:                              # electrical details, keyed by sensor name
+    t1: {full_range: 2.5, ADCconf: Unipolar}
+    t2: {full_range: 2.5, ADCconf: Unipolar}
+    s1: {full_range: 2.5, ADCconf: Bipolar}
+    s2: {full_range: 2.5, ADCconf: Bipolar}
+    a1: {full_range: 1.8, ADCconf: Unipolar}
+    a2: {full_range: 1.8, ADCconf: Unipolar}
+    a3: {full_range: 1.8, ADCconf: Unipolar}
 
 altimeter:
   fctd:
@@ -78,6 +95,40 @@ altimeter:
     dist_from_crashguard_ft: 4
     probe_dist_from_crashguard_in: 0
 ```
+
+And `data_for_reorg/epsi_deepsolo/26_0520_ljc/meta/setup.yml` for a real example with **no** CTD or altimeter hardware - just epsi with shear/fpo7 probe calibration lookup and a `vnav`:
+
+```yaml
+data_root: /path/to/deployment
+calibrations_root: /path/to/MOD_fish_calibrations
+
+fish_flag: EPSI
+latitude: 32.9
+
+instrument_manifest:
+  afe:
+    channel_1: {name: t1, type: fpo7,  sn: 274}
+    channel_2: {name: t2, type: fpo7,  sn: 311}
+    channel_3: {name: s1, type: shear, sn: 261}
+    channel_4: {name: s2, type: shear, sn: 421}
+    channel_5: {name: a1, type: acc}
+    channel_6: {name: a2, type: acc}
+    channel_7: {name: a3, type: acc}
+  vnav: true
+  # no ctd, isap, alt, or gps hardware on this deployment - keys omitted
+
+afe:
+  channels:
+    t1: {full_range: 2.5, ADCconf: Unipolar}
+    t2: {full_range: 2.5, ADCconf: Unipolar}
+    s1: {full_range: 2.5, ADCconf: Bipolar}
+    s2: {full_range: 2.5, ADCconf: Bipolar}
+    a1: {full_range: 1.8, ADCconf: Unipolar}
+    a2: {full_range: 1.8, ADCconf: Unipolar}
+    a3: {full_range: 1.8, ADCconf: Unipolar}
+```
+
+`instrument_manifest.afe` is keyed by physical ADC slot (`channel_1`..`channel_7`), not by sensor name - that distinction matters because raw parsing (`MODprocess_single_modraw_to_L0.m`) only ever sees slot numbers (L0's `epsi.channel1`..`channel7`); `MODsetup_read_yaml.m` is what resolves slot → logical name (`t1`, `s1`, ...) for everything downstream. Slot order for `metadata.PROCESS.channels` comes from numerically sorting the `channel_N` keys, not from yaml field order - the old schema relied on yaml field order, which YAML libraries preserve but don't sort, so a `channel_10` would have sorted before `channel_2` under that approach the moment a deployment passed 9 channels. See PLAN.md Section 5 for the larger `metadata.manifest` idea this could still grow into (`shear_channels`/`fpo7_channels`-style grouped lists) once something actually needs to loop over "all shear channels" rather than check `metadata.AFE.(ch).type` one channel at a time - not built yet, since nothing consumes it.
 
 MATLAB has no built-in YAML reader (checked in R2024b: no `yaml.*` namespace, `readstruct` only accepts `'json'`/`'xml'`/`'auto'` as `FileType`), so `MODsetup_read_yaml.m` uses the vendored third-party `toolbox/YAMLMatlab_0.4.3/` (MIT licensed).
 
@@ -94,8 +145,31 @@ The three conversion steps (`convert_efe_channels`, `calibrate_ctd`, `calibrate_
 Notes on the CTD conversion specifically:
 - SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then salinity via `sw_salt`.
 - SBE41 "PTS" format arrives from L0 already as ASCII-parsed P/T/S (conductivity left `NaN`) - no calibration equations needed, only the derived fields below.
-- `th` (potential temperature), `sgth` (potential density), `dPdt`, `z` (depth), `dzdt` are computed for both formats, using the CSIRO `seawater` toolbox (vendored at `toolbox/seawater/`).
+- External CTD (DeepSolo/Wirewalker - see below) arrives the same way as SBE41: already physical units, only needs the derived fields.
+- `th` (potential temperature), `sgth` (potential density), `dPdt`, `z` (depth), `dzdt` are computed for all three sources, using the CSIRO `seawater` toolbox (vendored at `toolbox/seawater/`). Salinity is derived via `sw_salt` too, if the source didn't already report it.
 - Depth (`z`) needs a latitude: interpolated from `data.gps.latitude` if the file has GPS fixes, otherwise falls back to `metadata.PROCESS.latitude` from `setup.yml`.
+
+#### External CTD (DeepSolo, Wirewalker)
+
+Some vehicles' CTD data never appears as `$SB49`/`$SB41` blocks in the `.modraw`/L0 stream at all - it comes from an independent file logged separately by the CTD instrument itself. `metadata.vehicle_name` (from `setup.yml`, e.g. `DeepSolo` or `Wirewalker`) is the flag that selects this path. When it matches and `metadata.paths.ctd` (`data_root/ctd/`) exists on disk:
+
+1. `MODprocess_all_L0_to_L1.m` calls `MODprocess_read_external_ctd.m` **once** per session (not per file) to read and normalize the whole deployment's CTD data into one struct.
+2. For each L0 file, it slices that struct down to the file's own time range (by the min/max `dnum` found in the file's `epsi`/`vnav` data) and passes the chunk into `MODprocess_single_L0_to_L1` as a third, optional argument.
+3. Inside `MODprocess_single_L0_to_L1`, that chunk becomes `data.ctd` (since the file's own `L0_data.ctd` is empty for these vehicles) and runs through the same derived-field path SBE41 uses.
+
+If `data_root/ctd/` doesn't exist yet, this is treated as "no CTD for this deployment yet," not an error - the rest of L0→L1 (epsi, vnav, ...) still runs normally.
+
+**`MODprocess_read_external_ctd.m` has no real parser implemented yet** for any specific instrument (RBR, or otherwise) - no sample file has been available to build one against. It's a stub today (errors clearly if actually called) so the plumbing above could be built and reasoned about ahead of time. Whatever instrument produces the file, its reader must normalize into:
+
+| Field | Units | Notes |
+|---|---|---|
+| `dnum` | MATLAB datenum | The master clock - `time_s` and everything else timing-related is derived from this in `calibrate_ctd`, not read from the file |
+| `P` | dbar | |
+| `T` | °C (IPTS-68) | |
+| `C` | S/m | **not** mS/cm - `calibrate_ctd`'s `ctd.C*10./c3515` ratio requires S/m to match the `c3515 = 42.914` mS/cm standard (1 S/m = 10 mS/cm) |
+| `S` | psu (PSS-78) | optional - derived from `C`/`T`/`P` via `sw_salt` if not reported |
+
+Expected sample rate is ~16 Hz, sometimes 8 Hz - not enforced by the reader, since chunking works off `dnum` spacing directly rather than an assumed rate.
 
 `calibrate_altimeter_hab` uses the same `GEOMETRY` fields for both `alt` (the MOD altimeter) and `isap` (ISA500) - inherited as-is from the source function, which assumed the same mount geometry for both. Verified against real `isap` data; no `data_for_reorg` deployment has `alt` data yet, so that path is untested.
 
@@ -109,11 +183,14 @@ Orchestrator: loops over every `.mat` file in `L0_dir`, calls `MODprocess_single
 
 Skips a file if its L1 `.mat` already exists and is newer than the L0 file it came from - except the most recently modified L0 file, which is always reprocessed (mirrors `MODprocess_all_modraw_to_L0.m`'s same rule one level up, in case the raw file behind it was still being written when L0 last ran). Pass `reprocess_all = true` to force every file to redo regardless.
 
+Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_external_ctd`, a local subfunction) - see "External CTD (DeepSolo, Wirewalker)" above.
+
 ## How to run it
 
 ```matlab
 addpath('/path/to/MOD_fish_processing/processing');
 addpath('/path/to/MOD_fish_processing/setup');
+addpath('/path/to/MOD_fish_processing/util');      % for MODutil_short_path
 addpath('/path/to/MOD_fish_processing/toolbox');   % YAMLMatlab_0.4.3, seawater
 
 metadata = MODsetup_read_yaml('/path/to/deployment/meta/setup.yml');

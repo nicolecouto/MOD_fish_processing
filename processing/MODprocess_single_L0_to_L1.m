@@ -1,7 +1,7 @@
-function data = MODprocess_single_L0_to_L1(L0_data, metadata)
+function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 % MODprocess_single_L0_to_L1        Part of MOD_fish_processing
 %
-% data = MODprocess_single_L0_to_L1(L0_data, metadata)
+% data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %
 % DESCRIPTION
 %   Converts one file's L0 struct (raw counts/hex, from
@@ -9,10 +9,14 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata)
 %     epsi   - AFE counts -> volts (t*/s*) or g (a*), by manifest channel
 %     ctd    - raw hex -> P/T/C/S (SBE49 only - SBE41 arrives from L0
 %              already in physical units), plus derived th, sgth, dPdt,
-%              z, dzdt
+%              z, dzdt. For vehicles with no $SB49/$SB41 blocks at all
+%              (DeepSolo, Wirewalker), external_ctd substitutes for
+%              L0_data.ctd instead - see INPUTS.
 %     alt, isap - raw distance -> height above bottom (hab)
 %   Every other field (gps, vnav, seg, spec, ...) passes through
-%   unchanged. Pure transformation - no file I/O, no metadata mutation.
+%   unchanged. Pure transformation - no file I/O, no metadata mutation
+%   (external_ctd is read and time-sliced by the caller, not by this
+%   function - see MODprocess_all_L0_to_L1.m).
 %
 %   Ported from mod_som_read_epsi_files_v4.m's physical-conversion logic
 %   (MOD_fish_lib), which mixed raw parsing and calibration in one pass.
@@ -28,6 +32,13 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata)
 %                     metadata.CTD.cal,
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
 %                     .alt_probe_dist_from_crashguard_in
+%   external_ctd - (optional) struct with dnum/P/T/C/(S) already sliced to
+%               this L0 file's time range, from
+%               MODprocess_read_external_ctd.m via MODprocess_all_L0_to_L1.m.
+%               Only used when L0_data.ctd is empty (true for DeepSolo/
+%               Wirewalker, which have no $SB49/$SB41 blocks to parse at
+%               L0) - ignored otherwise. []/omitted for vehicles with no
+%               independent CTD file.
 %
 % OUTPUTS
 %   data      - same fields as L0_data, with epsi/ctd/alt/isap converted
@@ -55,6 +66,10 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
+if nargin < 3
+    external_ctd = [];
+end
+
 toolbox_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', 'seawater');
 addpath(toolbox_dir);
 
@@ -72,6 +87,17 @@ if ~isempty(data.ctd)
         gps = data.gps;
     end
     data.ctd = calibrate_ctd(data.ctd, gps, metadata);
+elseif ~isempty(external_ctd)
+    % DeepSolo/Wirewalker: no $SB49/$SB41 blocks in L0_data, so data.ctd
+    % is empty here. external_ctd arrives already in physical units
+    % (dnum/P/T/C/(S)), so it only needs the derived-field half of
+    % calibrate_ctd (th/sgth/dPdt/z/dzdt, plus S if the source file
+    % didn't already report it) - the same path SBE41 takes.
+    gps = [];
+    if isfield(data, 'gps')
+        gps = data.gps;
+    end
+    data.ctd = calibrate_ctd(external_ctd, gps, metadata);
 end
 
 %% Altimeter / ISA500: raw distance -> height above bottom
@@ -130,7 +156,17 @@ end
 %% CTD raw hex -> physical units
 function ctd = calibrate_ctd(ctd, gps, metadata)
 
-c3515 = 42.914; % conductivity standard, mS/cm
+c3515 = 42.914; % conductivity standard, mS/cm - ctd.C must be in S/m (C*10 -> mS/cm) for the ratio below to be right
+
+% External CTD chunks (DeepSolo/Wirewalker - see MODprocess_read_external_ctd.m)
+% arrive with only dnum, not time_s. time_s is just dnum in seconds on
+% MATLAB's day-zero epoch (matches convert_timestamp.m in
+% MODprocess_single_modraw_to_L0.m: time_s == dnum*86400 exactly), so
+% it's cheaper to derive here than to require every CTD source to supply
+% it. No-op for L0-sourced ctd, which already has time_s set.
+if ~isfield(ctd, 'time_s')
+    ctd.time_s = ctd.dnum*86400;
+end
 
 if isfield(ctd, 'T_raw')
     % SBE49 "eng" format - counts need the SBE calibration polynomials.
@@ -151,7 +187,12 @@ if isfield(ctd, 'T_raw')
 
     f = ctd.C_raw/256/1000;
     ctd.C = (cal.g + cal.h*f.^2 + cal.i*f.^3 + cal.j*f.^4)./(1 + cal.tcor.*ctd.T + cal.pcor.*ctd.P);
+end
 
+if ~isfield(ctd, 'S') || isempty(ctd.S)
+    % Not reported by the source (SBE41 "PTS" and external CTD files
+    % normally do report S already, and skip this) - derive it the same
+    % way the SBE49 "eng" path does.
     ctd.S = real(sw_salt(ctd.C*10./c3515, ctd.T, ctd.P));
 end
 

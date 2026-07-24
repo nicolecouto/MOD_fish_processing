@@ -10,7 +10,7 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   MODprocess_single_modraw_to_L0 plus a raw_file_info field recording
 %   which raw file (name, byte size) created it.
 %
-%   Skips files that have already been converted (matched by raw file
+%   S1kips files that have already been converted (matched by raw file
 %   size against raw_file_info.bytes), except the most recently modified
 %   file in the folder, which is always reconverted in case it's still
 %   being written to (e.g. during real-time acquisition).
@@ -40,6 +40,7 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   MODprocess_single_modraw_to_L0.m
 %   MODsetup_detect_raw_suffix.m
 %   MODsetup_pad_raw_filenames.m
+%   MODutil_short_path.m (console messages only)
 %
 % NOTES
 %   Deliberately takes only plain paths, not a metadata/config object -
@@ -53,7 +54,7 @@ if nargin < 2 || isempty(L0_dir)
 end
 if nargin < 3 || isempty(raw_file_suffix)
     raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir);
-    fprintf('MODprocess_all_modraw_to_L0: auto-detected raw file suffix "%s" in %s\n', raw_file_suffix, raw_dir);
+    fprintf('MODprocess_all_modraw_to_L0: auto-detected raw file suffix "%s" in %s\n', raw_file_suffix, MODutil_short_path(raw_dir));
 end
 if ~exist(L0_dir, 'dir')
     mkdir(L0_dir);
@@ -70,7 +71,7 @@ nfiles = length(list_rawfile);
 
 % Stop if no raw files are found
 if nfiles == 0
-    disp(['MODprocess_all_modraw_to_L0: No ' raw_file_suffix ' files found in ' raw_dir])
+    disp(['MODprocess_all_modraw_to_L0: No ' raw_file_suffix ' files found in ' MODutil_short_path(raw_dir)])
     L0_files = {};
     return
 end

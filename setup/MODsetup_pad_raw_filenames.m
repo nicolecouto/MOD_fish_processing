@@ -60,15 +60,24 @@ function n_renamed = MODsetup_pad_raw_filenames(raw_dir, options)
 %
 % CALLS
 %   MODsetup_detect_raw_suffix.m
+%   MODutil_short_path.m (console messages only)
 %
 % NOTES
-%   Pad width is max(3, widest number already present), per numeric
-%   prefix, unless overridden with pad_width. If a deployment could grow
-%   past 999 files, run this once up front so the width is settled before
-%   processing starts. Real-time acquisition always names files by
-%   timestamp rather than a running number, so a fixed pad_width is
-%   really only useful when post-processing a finished, unpadded numbered
-%   run.
+%   Auto width (pad_width=0), per numeric prefix: if every file's trailing
+%   number already has the same digit width, nothing is renamed - equal
+%   widths already sort correctly regardless of how many digits that is
+%   (modsom_00..modsom_45 needs no padding). Only actually mixed widths
+%   (e.g. modsom_1, modsom_2, ..., modsom_45) get padded, to
+%   max(3, widest number present) so there's room to grow before the next
+%   re-pad is needed. pad_width overrides this and forces every file in
+%   that prefix to the given width regardless of whether it was already
+%   uniform.
+%
+%   If a deployment could grow past 999 files, run this once up front so
+%   the width is settled before processing starts. Real-time acquisition
+%   always names files by timestamp rather than a running number, so a
+%   fixed pad_width is really only useful when post-processing a
+%   finished, unpadded numbered run.
 %
 %   In non-interactive MATLAB (-batch) neither the dialog nor the text
 %   prompt can be answered, so without force=true the function warns and
@@ -103,7 +112,7 @@ n_renamed = 0;
 listing = dir(fullfile(raw_dir, ['*', raw_file_suffix]));
 listing = listing(~startsWith({listing.name}, '.'));
 if isempty(listing)
-    fprintf('MODsetup_pad_raw_filenames: no %s files in %s\n', raw_file_suffix, raw_dir);
+    fprintf('MODsetup_pad_raw_filenames: no %s files in %s\n', raw_file_suffix, MODutil_short_path(raw_dir));
     return
 end
 
@@ -125,11 +134,23 @@ end
 
 isnum = ~isnan(idx);
 if ~any(isnum)
-    fprintf('MODsetup_pad_raw_filenames: no trailing-number filenames in %s - nothing to pad\n', raw_dir);
+    fprintf('MODsetup_pad_raw_filenames: no trailing-number filenames in %s - nothing to pad\n', MODutil_short_path(raw_dir));
     return
 end
 
-suggested_pad_width = max(3, max(width(isnum)));
+suggested_pad_width = auto_pad_width(width(isnum));
+
+% Nothing to do? Check up front, before any prompt/dialog - using
+% whichever pad_width was actually requested (0 for auto, or an explicit
+% override). If it wouldn't rename anything, say so and return without
+% ever asking - no point popping a dialog (or a text prompt) to confirm
+% an empty rename set. If pad_width is an explicit override that would
+% still change something, this correctly falls through to prompting.
+if isequal(pad_new_basenames(old_base, prefix, idx, width, isnum, pad_width), old_base)
+    fprintf('MODsetup_pad_raw_filenames: filenames in %s already padded\n', MODutil_short_path(raw_dir));
+    return
+end
+
 interactive = ~force && ~batchStartupOptionUsed && feature('ShowFigureWindows');
 
 if interactive
@@ -169,7 +190,7 @@ end
 
 changed = find(~strcmp(old_base, new_base));
 if isempty(changed)
-    fprintf('MODsetup_pad_raw_filenames: filenames in %s already padded\n', raw_dir);
+    fprintf('MODsetup_pad_raw_filenames: filenames in %s already padded\n', MODutil_short_path(raw_dir));
     return
 end
 
@@ -185,7 +206,7 @@ end
 
 % Confirm before touching anything
 fprintf('MODsetup_pad_raw_filenames: %d of %d %s files in %s need zero-padding, e.g.\n', ...
-    numel(changed), nf, raw_file_suffix, raw_dir);
+    numel(changed), nf, raw_file_suffix, MODutil_short_path(raw_dir));
 nshow = min(3, numel(changed));
 for k = changed(1:nshow)'
     fprintf('    %s%s -> %s%s\n', old_base{k}, raw_file_suffix, new_base{k}, raw_file_suffix);
@@ -278,13 +299,12 @@ fprintf('MODsetup_pad_raw_filenames: renamed %d raw files', n_renamed);
 if n_L0 > 0
     fprintf(' and %d L0 .mat files', n_L0);
 end
-fprintf(' - log: %s\n', log_path);
+fprintf(' - log: %s\n', MODutil_short_path(log_path));
 
 end
 
 function new_base = pad_new_basenames(old_base, prefix, idx, width, isnum, pad_width)
-% Padded name per file. pad_width = 0 means "auto": width is chosen per
-% numeric prefix, max(3, widest number already present in that prefix).
+% Padded name per file. pad_width = 0 means "auto" - see auto_pad_width.
 % pad_width > 0 applies that width to every prefix uniformly.
 new_base = old_base;
 for p = unique(prefix(isnum))'
@@ -292,11 +312,27 @@ for p = unique(prefix(isnum))'
     if pad_width > 0
         pad = pad_width;
     else
-        pad = max(3, max(width(m)));
+        pad = auto_pad_width(width(m));
     end
     for k = find(m)'
         new_base{k} = sprintf('%s%0*d', p{1}, pad, idx(k));
     end
+end
+end
+
+function pad = auto_pad_width(width_group)
+% Auto (pad_width=0) padding width for one group of trailing numbers -
+% either all files sharing one prefix, or (for the top-level suggestion)
+% all numbered files regardless of prefix. If every number in the group
+% already has the same digit width, that width is already correct -
+% filenames sort fine as-is (00, 01, ..., 45 is fine; only mixed widths
+% like 1, 2, 45 break alphabetical sorting). Only mixed widths get bumped,
+% to max(3, widest) so there's room to grow before the next re-pad is
+% needed.
+if numel(unique(width_group)) == 1
+    pad = width_group(1);
+else
+    pad = max(3, max(width_group));
 end
 end
 
@@ -339,7 +375,7 @@ function [do_rename, pad_width] = pad_width_dialog(old_base, prefix, idx, width,
 
 editable = pad_width == 0;
 if editable
-    pad_width = max(3, max(width(isnum))); % starting suggestion
+    pad_width = auto_pad_width(width(isnum)); % starting suggestion
 end
 
 dlg_w = 480;

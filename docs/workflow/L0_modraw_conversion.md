@@ -71,6 +71,7 @@ Errors instead of guessing wrong if `raw_dir` has no candidate files (e.g. you p
 ```matlab
 addpath('/path/to/MOD_fish_processing/processing');
 addpath('/path/to/MOD_fish_processing/setup');    % for MODsetup_detect_raw_suffix
+addpath('/path/to/MOD_fish_processing/util');     % for MODutil_short_path
 
 data_root  = '/path/to/your/deployment';   % must contain a raw/ subfolder
 modraw_dir = fullfile(data_root, 'raw');

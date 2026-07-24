@@ -15,7 +15,7 @@ We are splitting the monolithic `MOD_fish_lib` into three purpose-built repos:
 |------|---------|--------|
 | `MOD_fish_processing` | Processing algorithms and pipeline scripts | Active — has MODvis_timeseries, SpectraExplorerApp |
 | `MOD_fish_acquisition` | Data acquisition software | Active — has fctd_epsi_acq |
-| `MOD_fish_calibrations` | SBE `.cal` files, probe Sv values (git-tagged by date) | Active — tags: 2023-03, 2023-12, 2024-09, 2025-03 |
+| `MOD_fish_calibrations` | SBE `.cal` files, probe Sv values (git-tagged by date) | Active — tags: `sbe/2023-03`, `sbe/2023-12`, `sbe/2024-09`, `sbe/2025-03`, `shear/2025-12` |
 | `MOD_fish_lib` | Legacy monolith — gradually deprecated | Staying alive during transition |
 
 The goal is that `MOD_fish_processing` becomes a clean, instrument-agnostic pipeline that anyone can run without digging through decades of accumulated code. Standalone functions with excellent documentation replace the class-based approach.
@@ -158,6 +158,9 @@ A deployment needs exactly two things to start: raw files and a YAML config. Eve
 ```
 deployment_root/
   raw/                         ← REQUIRED: raw binary files go here before processing
+  ctd/                         ← DeepSolo/Wirewalker only: independent CTD file(s) - see
+                                  MODprocess_read_external_ctd.m, Section 6.2. Not required
+                                  for vehicles whose CTD arrives in the raw stream itself.
   meta/                        ← REQUIRED: must exist with setup.yml before processing
     setup.yml                  ← REQUIRED: deployment config (edit data_root: for each machine)
     metadata.mat               ← created by modSetup_read_yaml — portable, no paths, current state
@@ -201,30 +204,63 @@ deployment_root/
 ### What's broken now
 Old code hardcodes 8 channels as `s1, s2, t1, t2, a1, a2, a3, c_count`. In practice any of the `s`/`t` slots may hold a shear probe, FPO7, microconductivity probe, fluorometer, or nothing. The `$EFE` block may or may not be present.
 
-### The fix: manifest field in metadata
-The deployment YAML declares what is plugged in. `modSetup_read_yaml` resolves this into `metadata.manifest`:
+### The fix: instrument_manifest block in setup.yml
+**Implemented (branch `l0_to_l1_conversion`, 2026-07-24)** for the AFE-channel and presence-flag part described below; the grouped `shear_channels`/`fpo7_channels`-style lists at the bottom of this section are not built yet (nothing consumes them).
+
+`setup.yml` has a single `instrument_manifest` block that says what's physically on the vehicle at a glance - electrical/sampling specifics (full_range, ADCconf, sample_per_record, ...) live in separate detail sections further down the file, keyed by the same names the manifest declares. An instrument entirely absent from `instrument_manifest` is treated as not on the deployment; nothing errors on a missing key, so old and minimal `setup.yml` files keep working as new instrument types are added to the schema.
+
+AFE channels are keyed by physical ADC slot (`channel_1` = slot 1, ... `channel_7` = slot 7 - the order the SOM firmware samples in, matching L0's positional `channel1`..`channel7` fields), **not** by the logical sensor name - that distinction matters because raw parsing (`MODprocess_single_modraw_to_L0.m`) only ever sees ADC slot numbers, and it's `MODsetup_read_yaml.m`, reading this manifest, that resolves slot → logical name (`t1`, `s1`, `f1`, `c1`, ...) for everything downstream:
 
 ```yaml
 # in setup.yml
-sensors:
-  channel_1: {type: shear,           serial_number: "SN102"}
-  channel_2: {type: shear,           serial_number: "SN95"}
-  channel_3: {type: fpo7,            serial_number: "SN47"}
-  channel_4: {type: fpo7,            serial_number: "SN55"}
-optional_sensors:
-  altimeter: true
-  gps: true
+instrument_manifest:
+  ctd:
+    sn: '0674'
+  afe:
+    channel_1: {name: t1, type: fpo7,  sn: 274}
+    channel_2: {name: t2, type: fpo7,  sn: 311}
+    channel_3: {name: s1, type: shear, sn: 261}
+    channel_4: {name: s2, type: shear, sn: 421}
+    channel_5: {name: a1, type: acc}
+    channel_6: {name: a2, type: acc}
+    channel_7: {name: a3, type: acc}
   vnav: true
+  isap: true
+  # alt, gps not on this deployment - keys simply omitted
+
+afe:
+  channels:                                  # electrical details, keyed by name
+    t1: {full_range: 2.5, ADCconf: Unipolar}
+    s1: {full_range: 2.5, ADCconf: Bipolar}
+    # ...
 ```
 
 ```matlab
-% metadata.manifest after modSetup_read_yaml
+% metadata after MODsetup_read_yaml (what's actually resolved today)
+metadata.PROCESS.channels     = {'t1','t2','s1','s2','a1','a2','a3'};  % ADC slot order, from channel_N sorted numerically
+metadata.AFE.s1.type          = 'shear';
+metadata.AFE.s1.SN            = '261';
+metadata.AFE.s1.cal           = 33.49;        % Sv, looked up by SN
+metadata.manifest.has_vnav    = true;
+metadata.manifest.has_isap    = true;
+metadata.manifest.has_alt     = false;        % key absent from setup.yml -> false, not an error
+metadata.manifest.has_gps     = false;
+metadata.manifest.has_fluor   = false;
+```
+
+Slot order is resolved by parsing and numerically sorting the `channel_N` keys - not by yaml field order. YAML libraries preserve declaration order but don't sort it, so `channel_10` would sort before `channel_2` under the old field-order approach the moment a deployment has more than 9 channels; explicit numeric sort avoids that trap.
+
+`metadata.manifest.has_*` are presence-only flags today - nothing in L0→L1 reads them yet (`vnav`/`isap`/etc. just pass through from L0 unchanged). They exist so a later step (shear/FPO7 calibration application, twist counting, or the grouped `shear_channels`/`fpo7_channels` lists below) can start consuming them without every existing `setup.yml` needing a schema migration first.
+
+**Not yet built** - grouped channel-list convenience fields, for when a processing function needs to loop over "all shear channels" rather than check `metadata.AFE.(ch).type` one channel at a time:
+
+```matlab
+% Not implemented yet - add when modProcess_L1_apply_shear_calibration.m
+% (PLAN.md Section 6.2) actually needs to loop over shear channels
 metadata.manifest.shear_channels     = {'s1', 's2'};
 metadata.manifest.fpo7_channels      = {'t1', 't2'};
 metadata.manifest.microcond_channels = {};
 metadata.manifest.fluor_channels     = {};
-metadata.manifest.has_altimeter      = true;
-metadata.manifest.has_vnav           = true;
 ```
 
 Processing functions loop over manifest fields — no more hardcoded channel names.
@@ -237,9 +273,9 @@ Processing functions loop over manifest fields — no more hardcoded channel nam
 
 | Function | Description | Status |
 |----------|-------------|--------|
-| `MODsetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, AFE/CTD/altimeter fields resolved, CTD calibration loaded from `MOD_fish_calibrations`. Saves `metadata.mat` (no paths). Deliberately minimal so far - only resolves what L0→L1 uses today; grows as later steps need more (full `metadata.manifest` with `shear_channels`/`fpo7_channels`/etc. from Section 5 is not built yet, since nothing consumes it yet). | Done (branch `l0_to_l1_conversion`) |
+| `MODsetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, AFE/CTD/altimeter fields resolved from an explicit `instrument_manifest` block (Section 5), CTD calibration loaded from `MOD_fish_calibrations`. Saves `metadata.mat` (no paths). Deliberately minimal so far - only resolves what L0→L1 uses today; grows as later steps need more (grouped `metadata.manifest.shear_channels`/`fpo7_channels`/etc. from Section 5 not built yet, since nothing consumes them yet - presence flags `metadata.manifest.has_vnav`/`.has_isap`/etc. are). | Done (branch `l0_to_l1_conversion`) |
 | `MODsetup_verify_paths.m` | Check required directories exist, create L0/L1/L2/grid/figures if not | Not started |
-| `MODsetup_save_metadata.m` | Central save wrapper for `metadata.mat`. Compares the metadata to be saved against what's on disk and picks one of three outcomes: no-op (unchanged — nothing written), `'create'` (yaml differs — archives existing file to `meta/archive/metadata_<timestamp>.mat`, then writes the new one), or `'update'` (yaml unchanged but a derived value like a calibration lookup is new/changed — writes in place). Every non-no-op outcome appends an event to `metadata.header.history`. See Section 2, "Metadata provenance and archiving." | Not started |
+| `MODsetup_save_metadata.m` | Central save wrapper for `metadata.mat`. Compares the metadata to be saved against what's on disk and picks one of three outcomes: no-op (unchanged — nothing written), `'create'` (yaml differs — archives existing file to `meta/archive/metadata_<timestamp>.mat`, then writes the new one), or `'update'` (yaml unchanged but a derived value like a calibration lookup is new/changed — writes in place). Every non-no-op outcome appends an event to `metadata.header.history`. See Section 2, "Metadata provenance and archiving." | Done (branch `l0_to_l1_conversion`) |
 
 *(Naming note: this table originally used a `modSetup_`/`modProcess_L1_apply_*` lowercase-prefix convention; the actual repo convention established during the L0 port and carried through here is `MODsetup_`/`MODprocess_` - capital MOD. Table updated to match what's actually on disk.)*
 
@@ -250,10 +286,11 @@ Shipped as `MODprocess_single_L0_to_L1.m` (per-file, pure transformation) / `MOD
 | Step | Description | Source in MOD_fish_lib | Status |
 |------|-------------|-------------------------|--------|
 | `convert_efe_channels` | AFE counts → volts (t*/s*) or g (a*), by manifest channel (`metadata.AFE.(ch).full_range/.ADCconf/.type`) | `mod_som_read_epsi_files_v4.m` counts→volts block | Done |
-| `calibrate_ctd` | SBE cal equations → P [dbar], T [°C], C [mS/cm], S [psu], plus derived `th`/`sgth`/`dPdt`/`z`/`dzdt`. SBE41 "PTS" format arrives from L0 already in physical units - only derived fields are computed for it. | `get_CalSBE.m`, `mod_som_read_epsi_files_v4.m` SBE block | Done |
+| `calibrate_ctd` | SBE cal equations → P [dbar], T [°C], C [S/m], S [psu], plus derived `th`/`sgth`/`dPdt`/`z`/`dzdt`. SBE41 "PTS" format and external CTD (DeepSolo/Wirewalker - see below) arrive from L0/caller already in physical units - only derived fields are computed for those. | `get_CalSBE.m`, `mod_som_read_epsi_files_v4.m` SBE block | Done |
 | `calibrate_altimeter_hab` | Raw distance → height above bottom, using `metadata.GEOMETRY.*`. Applied to both `alt` (MOD altimeter) and `isap` (ISA500) - verified against real `isap` data; no `alt` data in any `data_for_reorg` deployment yet, so that path is untested. | `mod_som_read_epsi_files_v4.m` ALTI/ISAP blocks | Done, `alt` path untested |
-| `modProcess_L1_apply_shear_calibration.m` | `Sv × volts / fall_speed` → shear, loops over `metadata.manifest.shear_channels` | `mod_som_get_shear_probe_calibration_v2.m` | Not started |
-| `modProcess_L1_apply_fpo7_calibration.m` | Fit dTdV from noise floor, loops over `metadata.manifest.fpo7_channels` | `mod_epsi_linear_calibration_FP07.m` | Not started |
+| `MODprocess_read_external_ctd.m` | For DeepSolo/Wirewalker (`metadata.vehicle_name`), reads and normalizes a deployment's independent CTD file (dnum/P/T/C/S), sliced per L0 file by `MODprocess_all_L0_to_L1.m` and passed into `MODprocess_single_L0_to_L1` as an optional 3rd argument. | NEW - no prior equivalent in `MOD_fish_lib` | Plumbing done, no real parser implemented for any instrument yet (no sample file available) |
+| `modProcess_L1_apply_shear_calibration.m` | `Sv × volts / fall_speed` → shear, loops over `metadata.manifest.shear_channels` | `mod_som_get_shear_probe_calibration_v2.m` | `Sv` lookup itself now done in `MODsetup_read_yaml.m` (`metadata.AFE.(ch).cal`, per-channel, from `calibrations_root/SHEAR_PROBES/<SN>/Calibration_<SN>.txt`). This row - actually applying it to compute shear (needs fall speed, e.g. `ctd.dPdt`) - not started |
+| `modProcess_L1_apply_fpo7_calibration.m` | Fit `dTdV` in-situ per deployment against real CTD temperature (not a lookup like shear's `Sv` - a prior version of this plan conflated the two) | `mod_epsi_linear_calibration_FP07.m` | Not started |
 | `modProcess_L1_despike.m` | filloutliers movmedian per channel | `mod_epsilometer_calc_turbulence_v2.m` lines ~131–147 | Not started |
 | `modProcess_L1_apply_filters.m` | Apply SOM instrument transfer function | `get_filters_SOM.m` | Not started |
 | `modProcess_L1_add_twist.m` | Takes data struct, returns same struct with `twist` field added — see Section 7 | `GV_PlotUpAccumulation.m` | Not started (Ana's project) |
@@ -471,15 +508,52 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
-### 2026-07-16 — Metadata provenance and archiving design (branch `l0_to_l1_conversion`, plan only)
+### 2026-07-24 — First real end-to-end L0->L1 test run; `instrument_manifest` schema in setup.yml (branch `l0_to_l1_conversion`)
 
-- `metadata.mat` can be built in stages (yaml read now, calibration values merged in later — Section 6.2), can be regenerated from an edited yaml, and gets read at the start of nearly every script — often many times an hour during a cruise, same yaml each time. Added a design to Section 2: `metadata.header.history`, an append-only struct array (`.timestamp`, `.computer`, `.event`, `.filepath`) that every writer of `metadata.mat` appends to, plus `MODsetup_save_metadata.m` (Section 6.1, not started) as the one function all writers go through, which compares against what's on disk and picks one of three outcomes:
+- **Ran `MODprocess_all_L0_to_L1` against `epsi_deepsolo/26_0520_ljc` for the first time** (previous session only got as far as building `setup.yml` and confirming the plan on paper - no MATLAB available that session). All 45 L0 files converted with no errors: `epsi.t1_volt`/`s1_volt`/`a1_g` all in physically sane ranges, shear `Sv` correctly resolved for SN261/SN421, `CTD.cal` correctly empty (no CTD hardware), external-CTD path correctly detected the absent `ctd/` folder and proceeded without it. Confirms L0->L1 needs nothing beyond what's already built for an epsi-only DeepSolo deployment - the remaining gap is downstream (shear/FPO7 calibration *application* still needs a real external-CTD parser for fall speed, per Section 6.2).
+- **Redesigned `setup.yml`'s instrument declaration into an explicit `instrument_manifest` block**, per PLAN.md Section 5 - prompted by reviewing an older, richer pre-refactor yaml from `MOD_fish_lib` for ideas while deliberately keeping only what's needed today. Previously, "what's on the vehicle" was scattered: probe SN in a top-level `sn:` block, probe type buried in `afe.channels.<channel>.type`, and instrument presence (CTD, altimeter) only inferable from whether a yaml block existed at all. Now `instrument_manifest` is the single place that answers "what's physically here," with electrical/sampling specifics (full_range, ADCconf, sample_per_record) staying in separate detail sections below, keyed by the same names the manifest declares.
+  - `instrument_manifest.afe` is keyed by **physical ADC slot** (`channel_1`..`channel_7`), not by sensor name - this matches how raw parsing actually sees the data (L0's `epsi.channel1`..`channel7` are positional, no sensor identity yet); each slot then declares `name` (the logical sensor name propagated everywhere downstream - `t1_volt`, `s1_volt`, `metadata.AFE.s1.cal`), `type`, and `sn`. `MODsetup_read_yaml.m` now sorts `channel_N` keys **numerically** to get ADC slot order, rather than trusting yaml field order like the old schema did - confirmed by testing that YAMLMatlab preserves declaration order but does not sort it, so a `channel_10` would have sorted before `channel_2` under the old approach the moment a deployment passed 9 channels. Real (if latent) correctness fix, not just reorganization.
+  - `instrument_manifest.ctd.sn` replaces the old top-level `sn.ctd`. `instrument_manifest` also carries presence-only flags (`vnav`, `isap`, `alt`, `gps`, `fluor`) surfaced as `metadata.manifest.has_*` - nothing in L0->L1 reads them yet (those fields still just pass through from L0 unchanged), but a missing key and an explicit `false` now both resolve to `false`, per explicit design discussion - so existing minimal `setup.yml` files don't need edits as more instrument types get declared elsewhere.
+  - Both real `setup.yml` files migrated to the new schema and re-tested end-to-end: `epsi_deepsolo/26_0520_ljc` (45 files, epsi + vnav only) and `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96 files, epsi + ctd + isap + vnav + fluor) - both converted cleanly, output values unchanged from pre-refactor runs (confirms the schema change is a pure reorganization, not a behavior change): mako `ctd.T` 10.0-15.0°C, `ctd.S` 33.7-34.2 psu, `isap.hab` 0.2-83.6 m, matching the 2026-07-09 session's numbers.
+  - `docs/workflow/L0_to_L1_conversion.md` and PLAN.md Section 5 updated to match - Section 5's original sketch (`sensors:`/`optional_sensors:` blocks, `channel_1`/`channel_2` generic keys) is now marked implemented for the manifest/presence-flag part; the grouped `shear_channels`/`fpo7_channels`-style convenience lists from that same sketch are explicitly called out as still not built, since nothing consumes them yet.
+
+### 2026-07-23 — First real epsi-only deployment (`epsi_deepsolo/26_0520_ljc`): shear probe calibration lookup, optional CTD/altimeter, external-CTD plumbing (branch `l0_to_l1_conversion`)
+
+Working through processing `data_for_reorg/epsi_deepsolo/26_0520_ljc` (DeepSolo, epsi-only, no CTD hardware) end-to-end surfaced several real gaps and one documentation bug:
+
+- **`MODsetup_read_yaml.m`'s `ctd:`/`sn.ctd` and `altimeter.fctd`/`.epsi` blocks are now optional.** Both were read unconditionally before, so any deployment genuinely lacking that hardware (like this one) would hard-error at yaml-read time. Absent now means `metadata.CTD.cal = []` / no `metadata.GEOMETRY` at all, rather than requiring meaningless placeholder values in `setup.yml`.
+- **Shear probe `Sv` lookup added**: `metadata.AFE.(channel).SN`/`.cal`, populated when `setup.yml`'s `sn.<channel>` is present and the channel's `afe.channels.<channel>.type` is `shear` - reads the most recent row of `calibrations_root/SHEAR_PROBES/<SN>/Calibration_<SN>.txt`, `[]` if that file doesn't exist yet (expected for newly-assigned probes). **FPO7 does NOT get the same treatment** - a first pass wrongly gave it an identical file-based lookup, but `dTdV` isn't a fixed, lookupable probe property like `Sv`; it's fit in-situ per deployment against real CTD temperature (`mod_epsi_linear_calibration_FP07.m`), so there's no calibration file to read. Caught and reverted before it shipped anywhere - FPO7 channels still get `.SN` tracked, just no `.cal`.
+- **Conductivity units documentation bug found and fixed**: `docs/workflow/L0_to_L1_conversion.md` and this file's Section 6.2 table both said `ctd.C` is in mS/cm. Traced the actual math (`calibrate_ctd`'s `ctd.C*10./c3515` ratio, fed to `sw_salt`, which wants a dimensionless ratio to the `c3515 = 42.914` mS/cm standard) - `ctd.C` has always been in **S/m** (1 S/m = 10 mS/cm), never mS/cm. Also fixed the same mislabel in this file's 2026-07-09 session log entry (the *number* logged there, 3.7-4.2, was always correct for S/m - only the unit label was wrong).
+- **External CTD plumbing (DeepSolo/Wirewalker) - wiring only, no real parser yet.** These vehicles' CTD data arrives as an independent file, never as `$SB49`/`$SB41` blocks in the `.modraw`/L0 stream - genuinely new functionality; no equivalent exists in `MOD_fish_lib` (only a never-implemented commented-out case in `epsi_class_yaml.m`). Added:
+  - `metadata.vehicle_name` and `metadata.paths.ctd` (`data_root/ctd/`) to `MODsetup_read_yaml.m`, both optional (older `setup.yml` files, e.g. `epsi_mako_w_fluor`'s, predate `vehicle_name` entirely).
+  - `MODprocess_read_external_ctd.m` (new file) - defines the field/unit contract (`dnum` as MATLAB datenum, `P` dbar, `T` °C, `C` S/m, `S` psu optional/derived) but is a stub that errors clearly if actually called - no sample file has been available from any DeepSolo/Wirewalker CTD instrument to build a real reader against.
+  - `MODprocess_all_L0_to_L1.m` reads the whole deployment's external CTD once per session (only when `vehicle_name` matches AND `data_root/ctd/` exists on disk - absent folder is "no CTD yet," not an error), slices it per L0 file by `dnum` (via new local subfunction `slice_external_ctd`), and passes the chunk into `MODprocess_single_L0_to_L1` as a new optional 3rd argument.
+  - `MODprocess_single_L0_to_L1.m`'s `calibrate_ctd` now derives `time_s` from `dnum` (`time_s = dnum*86400`, matching `MODprocess_single_modraw_to_L0.m`'s `convert_timestamp` convention exactly) and falls back to deriving `S` via `sw_salt` when not already present - both no-ops for the existing SBE41/SBE49 paths, both needed for external CTD chunks.
+- Confirmed via testing plan (not yet run - no MATLAB available in the assisting environment this session) that for `26_0520_ljc` specifically, `data_root/ctd/` doesn't exist yet, so the external-CTD path is inert for this deployment; it'll process epsi-only once run.
+- **`MOD_fish_calibrations` housekeeping** (separate repo, not `MOD_fish_processing`, but referenced by it): renamed the `SBECAL/` folder to `SBE/` (updated the one hardcoded reference in `MODsetup_read_yaml.m` to match), imported the full `SHEAR_PROBES/` archive from `MOD_fish_lib`, and renamed the existing `cal/2023-03`/`2023-12`/`2024-09`/`2025-03` tags to `sbe/*` (to make room for a `shear/*` namespace) - all four were unpushed local tags, so this was a same-commit rename, no shared-history impact. Added `shear/2025-12` tagging a new batch of shear probe calibrations (21 probes, including this deployment's `s1`/`s2` = 261/421).
+- Did a full consistency pass across every `.md` file and every function header in the repo per user request. Found and fixed, beyond the above: `docs/workflow/pad_raw_filenames.md` still documented the old positional-argument signature and plain `y/n` prompt from before the 2026-07-23 GUI-dialog commit (below) - rewrote to match the current Name-Value signature and dialog/prompt/batch-skip fallback chain. Also found `MODsetup_save_metadata.m` had shipped as real, working code in the 2026-07-16 commit below, but that session log entry still said "design only, no code written yet," and Section 6.1's status table still said "Not started" - both corrected.
+
+### 2026-07-23 — Replace pad_raw_filenames y/n prompt with a GUI dialog (branch `main`)
+
+- `MODsetup_pad_raw_filenames.m`'s confirmation was a plain terminal `y/n` prompt, unanswerable when MATLAB is driven through an editor/IDE integration with no attached terminal. Switched to a small centered `uifigure` dialog (preview of up to 3 example renames + a count of the rest, a spinner to adjust the zero-padding digit count if not already fixed by the caller, Rename/Cancel buttons) whenever a display is available, falling back to the old text prompt when there's no display, and to a no-op warning under `-batch` - same three-tier fallback the function already had for `pad_width`, now covering the confirmation step too.
+- Switched the function's argument style from positional (`raw_file_suffix`, `L0_dir`, `force`) to Name-Value pairs via an `arguments` block, adding `pad_width` as an explicit override for the auto-computed digit count. `MODprocess_all_modraw_to_L0.m`'s call site updated to match.
+- `docs/workflow/pad_raw_filenames.md` was not updated at the time - caught and fixed in the 2026-07-23 consistency-pass entry above.
+
+### 2026-07-16 — Metadata provenance and archiving (branch `l0_to_l1_conversion`)
+
+- `metadata.mat` can be built in stages (yaml read now, calibration values merged in later — Section 6.2), can be regenerated from an edited yaml, and gets read at the start of nearly every script — often many times an hour during a cruise, same yaml each time. Added the design to Section 2 and shipped it the same session: `metadata.header.history`, an append-only struct array (`.timestamp`, `.computer`, `.event`, `.filepath`) that every writer of `metadata.mat` appends to, plus `MODsetup_save_metadata.m` (Section 6.1) as the one function all writers go through, which compares against what's on disk and picks one of three outcomes:
   - No-op — same yaml, same cal values in effect. Nothing written.
   - `'create'` — the yaml differs from what's on disk. Archives the existing `meta/metadata.mat` to `meta/archive/metadata_<timestamp>.mat`, then writes the new one.
   - `'update'` — yaml unchanged, but a derived value is new or changed, e.g. a probe serial number just resolved to a cal file. Writes `meta/metadata.mat` in place, no archiving.
 - Updated the Section 3 folder diagram to show `meta/archive/`.
 - Open question noted in Section 2: once metadata starts getting saved inside individual L0/L1/L2 files, a master `metadata.mat` may matter less.
-- Design only — no code written yet.
+- `MODsetup_read_yaml.m` now calls `MODsetup_save_metadata.m` at the end of every read, and returns `metadata.header` from whatever actually ended up on disk (so a no-op returns the existing history, not a fabricated new entry).
+
+### 2026-07-11 — Fix `MODprocess_all_L0_to_L1` arg order; docstring/PLAN.md accuracy pass (branch `l0_to_l1_conversion`)
+
+- **Real bug:** `metadata` (required) was sandwiched after the optional `L1_dir` in `MODprocess_all_L0_to_L1.m`'s signature, so calling it as `MODprocess_all_L0_to_L1(L0_dir, metadata)` silently mistook `metadata` for `L1_dir`. Moved `metadata` before the optional `L1_dir`/`reprocess_all` args; updated doc call examples to match. Re-tested against the 96-file `epsi_mako_w_fluor` deployment.
+- Docstring/PLAN.md accuracy pass: removed `parse_epsi_channel_string`/`parse_single_epsi_channel` from `MODprocess_single_modraw_to_L0.m`'s documented subfunction list (dead code, never called from the parsing flow); fixed `MODsetup_read_yaml.m`'s docstring claiming it's "called by `MODprocess_all_L0_to_L1`" (it's called by the top-level caller, once per session, not by that function) and its "only resolves what L0→L1 uses" claim (`CTD.name`/`.SN`/`.sample_per_record` are resolved for the deployment record but not actually read anywhere in L0→L1); removed `metadata.CTD.name` from `MODprocess_single_L0_to_L1.m`'s documented inputs (never referenced in the function body).
+- PLAN.md: Section 8 still listed CTD calibration and the yaml reader as open tasks; both had already shipped - marked done with pointers to the actual code. Fixed a dead doc path (`docs/L0_modraw_conversion.md` → `docs/workflow/L0_modraw_conversion.md`) and added the missing `L0_to_L1_conversion.md` pointer. Checked off `pad_raw_filenames.md` and `L0_to_L1_conversion.md` in the Section 11 wiki checklist.
 
 ### 2026-07-09 — L0 → L1: yaml metadata, physical-unit conversion, L0 rename (branch `l0_to_l1_conversion`)
 
@@ -490,7 +564,7 @@ Reverse-chronological. Each step of the reorganization gets tested against real 
 - **Added `processing/MODprocess_single_L0_to_L1.m`** (pure transformation: `data = MODprocess_single_L0_to_L1(L0_data, metadata)`) and **`processing/MODprocess_all_L0_to_L1.m`** (batch orchestrator, mirrors `MODprocess_all_modraw_to_L0.m`'s skip-unless-new-or-newest logic one level up, plus a `reprocess_all` switch to force everything). Ported from `mod_som_read_epsi_files_v4.m`'s physical-conversion logic (the L0 port only carried over the raw-parsing half): EFE counts → volts/g, CTD raw hex → P/T/C/S + derived `th`/`sgth`/`dPdt`/`z`/`dzdt`, altimeter/ISA500 distance → height above bottom (`hab`). **Design decision:** these three conversions live as local subfunctions inside `MODprocess_single_L0_to_L1.m` rather than as separate `modProcess_L1_apply_*.m` files (see Section 6.2) - nothing calls them standalone yet, so splitting them out now would be premature; do it when something else needs to call one directly.
 - **Fixed a live bug found while doing this**: `MODprocess_single_modraw_to_L0.m`'s altimeter block called `orderfields(alt,{'dnum','time_s','dst','hab'})` but never set `alt.hab` - `hab` needs instrument geometry from metadata, which L0 deliberately doesn't have. This would have thrown a hard error on any deployment with MOD altimeter (`alt`) data; none of the four tested `data_for_reorg` deployments have any, so it was never hit. Removed `'hab'` from that `orderfields` call; `hab` is now correctly added downstream in `MODprocess_single_L0_to_L1.m` for both `alt` and `isap`.
 - **Renamed `MODprocess_new_modraw_to_L0.m` → `MODprocess_all_modraw_to_L0.m`** (`git mv` + updated all internal references, docstrings, and current-facing docs in `docs/workflow/`) so the L0 and L1 batch orchestrators follow the same `MODprocess_all_*` naming pattern. Historical Session Log entries below that mention the old name are left as-is - they describe what was true when written.
-- **Tested end-to-end** against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96 L0 files, already converted in an earlier session): all 96 converted to L1 with no errors. Spot-checked a mid-deployment file (file 30 of 96): T 9.9–15.2°C, P 1.2–112.1 dbar, S 33.7–34.2 psu, C 3.7–4.2 mS/cm - physically right for a San Diego canyon-head survey. The first file (on-deck, pre-deployment) correctly comes out near-zero C/S with P≈0, consistent with the CTD being in air. `isap.hab` ranged 0.4–83.6 m (`isap.dst` maxes out at a flat 120 - likely the ISA500's max-range/no-detection value). Re-ran the batch orchestrator a second time: correctly skipped all but the newest file; `reprocess_all=true` correctly forced all 96 to redo.
+- **Tested end-to-end** against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96 L0 files, already converted in an earlier session): all 96 converted to L1 with no errors. Spot-checked a mid-deployment file (file 30 of 96): T 9.9–15.2°C, P 1.2–112.1 dbar, S 33.7–34.2 psu, C 3.7–4.2 S/m - physically right for a San Diego canyon-head survey. (Originally logged here as "mS/cm" - a units-label mistake caught 2026-07-23; the number itself was always right, ctd.C has always been in S/m.) The first file (on-deck, pre-deployment) correctly comes out near-zero C/S with P≈0, consistent with the CTD being in air. `isap.hab` ranged 0.4–83.6 m (`isap.dst` maxes out at a flat 120 - likely the ISA500's max-range/no-detection value). Re-ran the batch orchestrator a second time: correctly skipped all but the newest file; `reprocess_all=true` correctly forced all 96 to redo.
 - **Not yet in this step** (still open, tracked in Section 6.2/6.3/7): shear/FPO7 calibration, despike, SOM transfer-function filters, twist. This step only gets counts/hex to physical units - the granular calibration/QC functions PLAN.md originally scoped for L1 (Section 6.2 table) are still to be written on top of this.
 
 ### 2026-07-09 - Docs site scaffolded (MkDocs Material -> GitHub Pages)
