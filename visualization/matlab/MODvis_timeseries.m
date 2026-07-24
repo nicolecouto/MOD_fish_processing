@@ -74,6 +74,12 @@ classdef MODvis_timeseries < handle
         % Only used for the left (axis 1) y-axis - the optional right axis
         % (axis 2) shows MATLAB's native yyaxis tick labels.
         YTickTextHandles            % cell(NRows,1) of gobject arrays
+
+        % Current axis-1 (left) data color per row, so the custom tick
+        % text (drawn by updateYTickText, called from listeners as well
+        % as plotRow) always matches the plotted line without needing it
+        % passed in each time.
+        Axis1Color                  % cell(NRows,1) of 1x3 RGB, default gray
     end
 
     properties (Constant)
@@ -236,6 +242,7 @@ classdef MODvis_timeseries < handle
             app.LastStruct2 = strings(app.NRows,1);   % all "" => axis 2 starts as "(none)"
             app.LastSignal2 = strings(app.NRows,1);
             app.YTickTextHandles = cell(app.NRows, 1);
+            app.Axis1Color = repmat({[0.15 0.15 0.15]}, app.NRows, 1);
 
 
 
@@ -544,6 +551,7 @@ classdef MODvis_timeseries < handle
             end
 
             topName2 = string(app.StructDrop2(rowIdx).Value);
+            app.LastStruct2(rowIdx) = topName2;
             topStruct2 = app.CurrentData.(topName2);
             signals2 = app.listNumericSignals(topStruct2);
             signals2 = signals2(signals2 ~= "dnum");
@@ -747,7 +755,7 @@ classdef MODvis_timeseries < handle
             if dual
                 yyaxis(ax, 'left');
             end
-            [ok, dnumSrc] = app.plotOneSignal(ax, rowIdx, true, ...
+            [ok, dnumSrc, clr1] = app.plotOneSignal(ax, rowIdx, true, ...
                 app.StructDrop(rowIdx), app.SignalDrop(rowIdx), ...
                 app.YMinField(rowIdx), app.YMaxField(rowIdx));
             if ~ok
@@ -763,7 +771,7 @@ classdef MODvis_timeseries < handle
                 ax.YAxis(2).Visible = 'on';
                 app.plotOneSignal(ax, rowIdx, false, ...
                     app.StructDrop2(rowIdx), app.SignalDrop2(rowIdx), ...
-                    app.YMinField2(rowIdx), app.YMaxField2(rowIdx));
+                    app.YMinField2(rowIdx), app.YMaxField2(rowIdx), clr1);
                 yyaxis(ax, 'left');
             elseif dual
                 % Previously had a right-axis signal, now set back to
@@ -801,14 +809,20 @@ classdef MODvis_timeseries < handle
             end
         end
 
-        function [ok, dnumSrc] = plotOneSignal(app, ax, rowIdx, isPrimary, structDrop, signalDrop, yMinField, yMaxField)
+        function [ok, dnumSrc, clr] = plotOneSignal(app, ax, rowIdx, isPrimary, structDrop, signalDrop, yMinField, yMaxField, primaryClr)
             % Plots one signal on whichever y-axis side is currently active
             % (caller must have already called yyaxis(ax,'left'/'right') as
             % needed). isPrimary = axis 1 (left, required) - it gets the
             % custom blanked-tick-label treatment used for left-margin
             % alignment; axis 2 (right, optional) uses native yyaxis ticks.
+            % primaryClr (axis 2 only) is the color already used on axis 1,
+            % so a clashing axis-2 color can be swapped for a distinct one.
+            if nargin < 9
+                primaryClr = [];
+            end
             ok = false;
             dnumSrc = "";
+            clr = [];
 
             topName = string(structDrop.Value);
             sigPath = string(signalDrop.Value);
@@ -862,6 +876,9 @@ classdef MODvis_timeseries < handle
             end
 
             clr = app.getSignalColor(sigPath);
+            if ~isPrimary && ~isempty(primaryClr)
+                clr = app.resolveAxis2Color(clr, primaryClr);
+            end
             try
                 if app.UseLine
                     plot(ax, dnum, y, '-', 'Color', clr, 'LineWidth', 0.5);
@@ -871,6 +888,15 @@ classdef MODvis_timeseries < handle
             catch ME
                 uialert(app.Fig, "Plot failed for " + topName + "." + sigPath + newline + ME.message, "Plot error");
                 return;
+            end
+
+            % Tint the y-axis ruler to match the data it carries, so the
+            % axis on each side is visually tied to its own signal.
+            if isPrimary
+                app.Axis1Color{rowIdx} = clr;
+                ax.YAxis(1).Color = clr;
+            elseif numel(ax.YAxis) >= 2
+                ax.YAxis(2).Color = clr;
             end
 
             % Reverse y-axis for pressure/depth signals
@@ -1044,6 +1070,34 @@ classdef MODvis_timeseries < handle
                     clr = app.colorCharToRGB(char(c));
                 elseif isnumeric(c) && numel(c)==3
                     clr = double(c(:)).';
+                end
+            end
+        end
+
+        function clr = resolveAxis2Color(app, clr, primaryClr)
+            % If the axis-2 signal's natural color is too close to the
+            % axis-1 color, swap it for the next distinct entry from a
+            % fixed fallback palette (MATLAB's standard default axes
+            % color order - none of those RGB triplets are used anywhere
+            % in SignalColors, so they read as clearly "not axis 1").
+            clashThresh = 0.25; % Euclidean distance in RGB, [0,1] scale
+            if norm(clr(:) - primaryClr(:)) >= clashThresh
+                return;
+            end
+
+            altColors = [ ...
+                0.8500 0.3250 0.0980;  % orange
+                0.9290 0.6940 0.1250;  % yellow
+                0.4940 0.1840 0.5560;  % purple
+                0.4660 0.6740 0.1880;  % green
+                0.3010 0.7450 0.9330;  % cyan
+                0.6350 0.0780 0.1840;  % dark red
+                0      0.4470 0.7410]; % blue
+
+            for k = 1:size(altColors,1)
+                if norm(altColors(k,:) - primaryClr(:).') >= clashThresh
+                    clr = altColors(k,:);
+                    return;
                 end
             end
         end
@@ -1236,6 +1290,11 @@ classdef MODvis_timeseries < handle
             reversed = strcmp(ax.YDir, 'reverse');
             handles  = gobjects(0);
 
+            txtColor = [0.15 0.15 0.15];
+            if rowIdx <= numel(app.Axis1Color) && ~isempty(app.Axis1Color{rowIdx})
+                txtColor = app.Axis1Color{rowIdx};
+            end
+
             for k = 1:numel(ticks)
                 val = ticks(k);
                 % Normalized display position (0=bottom, 1=top of axes)
@@ -1257,7 +1316,7 @@ classdef MODvis_timeseries < handle
                     'VerticalAlignment',   'middle', ...
                     'Clipping',            'off', ...
                     'FontSize',            app.AxesTickFontSize, ...
-                    'Color',               [0.15 0.15 0.15]);
+                    'Color',               txtColor);
                 handles(end+1) = t; %#ok<AGROW>
             end
 
