@@ -99,8 +99,13 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     need one)
 %     CTD.SN, .cal                 - only set when setup.yml's
 %                                     instrument_manifest.ctd.sn is
-%                                     present and non-empty. .cal is SBE
-%                                     calibration coefficients, read from
+%                                     present and non-empty. SN is always
+%                                     reformatted to 4 digits, zero-padded
+%                                     (537 -> '0537') to match SBE .CAL
+%                                     naming, regardless of how setup.yml
+%                                     wrote it (537, '537', or '0537' all
+%                                     work). .cal is SBE calibration
+%                                     coefficients, read from
 %                                     calibrations_root/SBE/<SN>.CAL
 %     GEOMETRY.alt_angle_deg, .alt_dist_from_crashguard_ft,
 %              .alt_probe_dist_from_crashguard_in
@@ -225,7 +230,15 @@ if isfield(yml, 'ctd')
     metadata.CTD.sample_per_record = yml.ctd.sample_per_record;
 end
 if has_manifest && isfield(yml.instrument_manifest, 'ctd') && isfield(yml.instrument_manifest.ctd, 'sn') && ~isempty(yml.instrument_manifest.ctd.sn)
-    metadata.CTD.SN = yml.instrument_manifest.ctd.sn;
+    % SBE .CAL filenames are always 4-digit zero-padded (e.g. 0537.CAL),
+    % unlike shear/fpo7 probe folders which use the bare number - so
+    % unconditionally reformat to 4 digits here, regardless of whether
+    % setup.yml wrote sn as 537, '537', or '0537'.
+    SN = yml.instrument_manifest.ctd.sn;
+    if ischar(SN)
+        SN = str2double(SN);
+    end
+    metadata.CTD.SN = sprintf('%04d', SN);
     cal_file = fullfile(yml.calibrations_root, 'SBE', [metadata.CTD.SN '.CAL']);
     metadata.CTD.cal = read_sbe_cal(cal_file);
 else

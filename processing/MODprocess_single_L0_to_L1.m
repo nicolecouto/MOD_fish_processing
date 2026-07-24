@@ -61,8 +61,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   Height-above-bottom (hab) uses the same GEOMETRY fields for both the
 %   MOD altimeter (alt) and the ISA500 (isap) - inherited as-is from
 %   mod_som_read_epsi_files_v4.m, which assumed the same mount geometry
-%   for both. Unverified against real alt data - none of the
-%   data_for_reorg example deployments carry MOD altimeter data yet.
+%   for both. Verified against real alt data in data_for_reorg/epsi_mako/
+%   blt2021_0715, in addition to isap - see docs/workflow/
+%   L0_to_L1_conversion.md's altimeter hab math section.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 

@@ -149,6 +149,17 @@ Notes on the CTD conversion specifically:
 - `th` (potential temperature), `sgth` (potential density), `dPdt`, `z` (depth), `dzdt` are computed for all three sources, using the CSIRO `seawater` toolbox (vendored at `toolbox/seawater/`). Salinity is derived via `sw_salt` too, if the source didn't already report it.
 - Depth (`z`) needs a latitude: interpolated from `data.gps.latitude` if the file has GPS fixes, otherwise falls back to `metadata.PROCESS.latitude` from `setup.yml`.
 
+Notes on the EFE channel conversion (`convert_efe_channels`) specifically:
+- Every AFE channel - thermistor (`fpo7`), shear, and accelerometer alike - arrives from L0 as the same thing: raw 24-bit ADC counts, in `epsi.channel1`..`channelN` (ADC slot order, not sensor identity - see `MODsetup_read_yaml.m`'s `PROCESS.channels` note above).
+- The first thing this does is rename each slot to its logical sensor name from `setup.yml` (`metadata.PROCESS.channels`), suffixed `_count`: `epsi.channel1` → `epsi.t1_count`, `epsi.channel3` → `epsi.s1_count`, etc. This is a pure rename - `t1_count` and the old `channel1` hold identical values, just keyed by the manifest name instead of the ADC slot number. The old `channelN` field is then discarded (`rmfield`).
+- From there, `t1_count` → `t1_volt` is a **linear (affine) conversion** - not spectral, not a lookup table - using each channel's `full_range` (`FR`) and `ADCconf` from `setup.yml`'s `afe.channels` block:
+  - **Unipolar**: `volt = FR/gain * count / 2^24`
+  - **Bipolar**: `volt = FR/gain * (count/2^23 - 1)`
+
+  (`gain` is hardcoded to `1` today - not read from `setup.yml`.)
+- Accelerometer channels (`type: acc`) get one more linear step on top of `_volt`, converting volts to g's with two hardcoded constants (accelerometer full range is always 1.8 V, centered at 0.9 V = 0 g): `epsi.a1_g = (a1_volt - 0.9) / 0.4`. Non-accelerometer channels stop at `_volt` - there's no `_g` field for `t*`/`s*`.
+- Shear (`type: shear`) and FPO7 (`type: fpo7`) channels stop at `_volt` - conversion to their real physical units (`1/s` for shear, `°C` for FPO7) isn't implemented yet (see "Explicitly not done at this step" above).
+
 #### External CTD (DeepSolo, Wirewalker)
 
 Some vehicles' CTD data never appears as `$SB49`/`$SB41` blocks in the `.modraw`/L0 stream at all - it comes from an independent file logged separately by the CTD instrument itself. `metadata.vehicle_name` (from `setup.yml`, e.g. `DeepSolo` or `Wirewalker`) is the flag that selects this path. When it matches and `metadata.paths.ctd` (`data_root/ctd/`) exists on disk:
@@ -171,7 +182,21 @@ If `data_root/ctd/` doesn't exist yet, this is treated as "no CTD for this deplo
 
 Expected sample rate is ~16 Hz, sometimes 8 Hz - not enforced by the reader, since chunking works off `dnum` spacing directly rather than an assumed rate.
 
-`calibrate_altimeter_hab` uses the same `GEOMETRY` fields for both `alt` (the MOD altimeter) and `isap` (ISA500) - inherited as-is from the source function, which assumed the same mount geometry for both. Verified against real `isap` data; no `data_for_reorg` deployment has `alt` data yet, so that path is untested.
+`calibrate_altimeter_hab` uses the same `GEOMETRY` fields for both `alt` (the MOD altimeter) and `isap` (ISA500) - inherited as-is from the source function, which assumed the same mount geometry for both. Verified against real `isap` data and, as of `data_for_reorg/epsi_mako/blt2021_0715`, real `alt` data too.
+
+#### Altimeter → probe height-above-bottom (`hab`) math
+
+![Altimeter height-above-bottom derivation - geometry and math for HAB_p = A cos(theta) - H + P](images/altimeter_hab_derivation.png)
+
+The altimeter sits above the crash guard, mounted at an angle from vertical (`GEOMETRY.alt_angle_deg`, θ). `GEOMETRY.alt_dist_from_crashguard_ft` (H) is the vertical distance straight down from the altimeter to the crash guard. The probes it's protecting extend down from the guard but are recessed above the guard's own bottom edge by `GEOMETRY.alt_probe_dist_from_crashguard_in` (P) - i.e. the probe tips sit *higher* than the very bottom of the guard by P.
+
+Given the altimeter's raw slant-range reading (`alt.dst`/`isap.dst`, already in meters - call it `A`):
+
+- True altimeter height above bottom: `HAB_a = A·cos θ`
+- Crash guard's bottom edge is `H` below the altimeter, so its height above bottom is `HAB_a - H`
+- The probe tips sit `P` above the guard's bottom edge, so **probe height above bottom**: `HAB_p = (HAB_a - H) + P = A·cos θ - H + P`
+
+This is exactly what `calibrate_altimeter_hab` computes: `hab = dst.*cos(theta) - (feet2meters(H) - inches2meters(P))`, i.e. `dst*cos(theta) - H + P` once `H`/`P` are converted to meters. Confirmed against `blt2021_0715`'s real geometry (θ=10°, H=5 ft, P=2.02 in).
 
 ### `MODprocess_all_L0_to_L1.m`
 
@@ -210,7 +235,7 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 
 ## Known limitations / things to check
 
-- **The `alt.hab` path is untested against real data.** Every `data_for_reorg` deployment tested so far uses `isap` (ISA500) rather than the MOD altimeter (`alt`), so `calibrate_altimeter_hab` has only been exercised on `isap`. The math is the same for both, but confirm against a real `alt` deployment before trusting it.
+- **The `alt.hab` path** is now verified against real data (`data_for_reorg/epsi_mako/blt2021_0715`) in addition to `isap` - both produce physically plausible `hab` values using the same math (see "Altimeter → probe height-above-bottom (`hab`) math" above).
 - **`isap.dst` pegs at a flat maximum value (120, in the one deployment tested) when the target is out of range** - not a bug, but don't mistake a flatlined `isap.hab` for a real constant range to bottom.
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `sw_salt`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
