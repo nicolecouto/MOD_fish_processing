@@ -70,16 +70,19 @@ classdef MODvis_timeseries < handle
         UseLine logical = false     % false = dots, true = lines
 
         % Custom y-tick label text handles (blank YTickLabel keeps TightInset
-        % uniform; we draw our own labels as text() objects in the left margin).
-        % Only used for the left (axis 1) y-axis - the optional right axis
-        % (axis 2) shows MATLAB's native yyaxis tick labels.
-        YTickTextHandles            % cell(NRows,1) of gobject arrays
+        % uniform; we draw our own labels as text() objects in the reserved
+        % margins). Used for BOTH the left (axis 1) and right (axis 2)
+        % y-axis, so a huge-magnitude signal on either side never grows the
+        % native tick labels and shifts the axes box out of alignment.
+        YTickTextHandles            % cell(NRows,1) of gobject arrays (left)
+        YTickTextHandles2           % cell(NRows,1) of gobject arrays (right)
 
-        % Current axis-1 (left) data color per row, so the custom tick
-        % text (drawn by updateYTickText, called from listeners as well
+        % Current axis color per row, so the custom tick text (drawn by
+        % updateYTickText/updateYTickText2, called from listeners as well
         % as plotRow) always matches the plotted line without needing it
         % passed in each time.
         Axis1Color                  % cell(NRows,1) of 1x3 RGB, default gray
+        Axis2Color                  % cell(NRows,1) of 1x3 RGB, default gray
     end
 
     properties (Constant)
@@ -242,18 +245,25 @@ classdef MODvis_timeseries < handle
             app.LastStruct2 = strings(app.NRows,1);   % all "" => axis 2 starts as "(none)"
             app.LastSignal2 = strings(app.NRows,1);
             app.YTickTextHandles = cell(app.NRows, 1);
+            app.YTickTextHandles2 = cell(app.NRows, 1);
             app.Axis1Color = repmat({[0.15 0.15 0.15]}, app.NRows, 1);
+            app.Axis2Color = repmat({[0.15 0.15 0.15]}, app.NRows, 1);
 
 
 
             for i = 1:app.NRows
                 % Row container: axes on left, two control panels on right
                 % (axis 1 / left-axis controls, then axis 2 / right-axis controls)
-                row = uigridlayout(right,[1 3]);
+                row = uigridlayout(right,[1 4]);
                 row.Layout.Row = i;
                 row.Layout.Column = 1;
                 row.RowHeight = {'1x'};
-                row.ColumnWidth = {'1x', 210, 210};
+                % Column 2 is an empty spacer reserved for the custom axis-2
+                % (right) tick labels, mirroring the left-margin Padding
+                % below - it must stay unpopulated so those text() objects
+                % (drawn with Clipping off, just outside the axes' right
+                % edge) have room without overlapping the control panels.
+                row.ColumnWidth = {'1x', 68, 168, 168};  % control panels at 80% of original 210px
                 row.ColumnSpacing = 10;
                 row.Padding = [68 0 0 0];  % left margin reserved for custom y-tick labels
 
@@ -266,9 +276,11 @@ classdef MODvis_timeseries < handle
                 app.Axes(i).Layout.Column = 1;
                 grid(app.Axes(i),'on');
 
-                % Blank YTickLabel (set in plotRow) keeps TightInset uniform so
-                % all axes share identical left/right edges.  Custom labels are
-                % text() objects drawn in the 68-px left padding reserved above.
+                % Blank YTickLabel on both sides (set in plotOneSignal) keeps
+                % TightInset uniform so all axes share identical left/right
+                % edges regardless of tick-label magnitude. Custom labels are
+                % text() objects drawn in the reserved 68-px margins (left
+                % padding above; right spacer column in row.ColumnWidth).
                 app.Axes(i).PositionConstraint = 'innerposition';
 
                 % Re-blank labels and refresh text objects whenever y-limits
@@ -278,9 +290,11 @@ classdef MODvis_timeseries < handle
                     @(~,~)app.onAxesYLimChanged(ii));
 
                 % Controls panels (right): axis 1 (left y-axis) then axis 2
-                % (right y-axis, optional - "(none)" disables it)
-                app.buildAxisControls(row, 2, i, 1);
-                app.buildAxisControls(row, 3, i, 2);
+                % (right y-axis, optional - "(none)" disables it).
+                % Column 2 is the reserved axis-2 tick-label spacer, so
+                % control panels live in columns 3 and 4.
+                app.buildAxisControls(row, 3, i, 1);
+                app.buildAxisControls(row, 4, i, 2);
             end
 
             % Link x-axes so zoom/pan syncs across all panels
@@ -780,6 +794,7 @@ classdef MODvis_timeseries < handle
                 yyaxis(ax, 'right');
                 ax.YAxis(2).Visible = 'off';
                 yyaxis(ax, 'left');
+                app.updateYTickText2(rowIdx);  % clears stale right-axis tick text
             end
 
             grid(ax,'on');
@@ -812,9 +827,11 @@ classdef MODvis_timeseries < handle
         function [ok, dnumSrc, clr] = plotOneSignal(app, ax, rowIdx, isPrimary, structDrop, signalDrop, yMinField, yMaxField, primaryClr)
             % Plots one signal on whichever y-axis side is currently active
             % (caller must have already called yyaxis(ax,'left'/'right') as
-            % needed). isPrimary = axis 1 (left, required) - it gets the
-            % custom blanked-tick-label treatment used for left-margin
-            % alignment; axis 2 (right, optional) uses native yyaxis ticks.
+            % needed). Both axis 1 (left, required) and axis 2 (right,
+            % optional) get the same blanked-tick-label treatment, so a
+            % huge-magnitude signal on either side can never grow that
+            % side's native tick labels and shift the axes box out of
+            % alignment with the other rows.
             % primaryClr (axis 2 only) is the color already used on axis 1,
             % so a clashing axis-2 color can be swapped for a distinct one.
             if nargin < 9
@@ -896,6 +913,7 @@ classdef MODvis_timeseries < handle
                 app.Axis1Color{rowIdx} = clr;
                 ax.YAxis(1).Color = clr;
             elseif numel(ax.YAxis) >= 2
+                app.Axis2Color{rowIdx} = clr;
                 ax.YAxis(2).Color = clr;
             end
 
@@ -906,15 +924,14 @@ classdef MODvis_timeseries < handle
                 ax.YDir = 'normal';
             end
 
-            if isPrimary
-                % Blank all y-tick labels so TightInset(1) is near-zero and
-                % identical for every axes row -> perfect left AND right edge
-                % alignment always. The actual values are shown by text()
-                % objects in updateYTickText().
-                nt = numel(ax.YTick);
-                if nt > 0
-                    ax.YTickLabel = repmat({''}, 1, nt);
-                end
+            % Blank the y-tick labels on this side so TightInset stays
+            % near-zero and identical for every axes row on both sides -
+            % perfect left AND right edge alignment always, regardless of
+            % how many digits the data needs. The actual values are shown
+            % by text() objects in updateYTickText() / updateYTickText2().
+            nt = numel(ax.YTick);
+            if nt > 0
+                ax.YTickLabel = repmat({''}, 1, nt);
             end
 
             if keepY
@@ -929,10 +946,12 @@ classdef MODvis_timeseries < handle
                 yMaxField.Value = autoYLim(2);
             end
 
+            % Draw custom y-tick labels in the reserved margin on this side.
+            % Called last so YLim/YTick are fully settled.
             if isPrimary
-                % Draw custom y-tick labels in the reserved left margin.
-                % Called last so YLim/YTick are fully settled.
                 app.updateYTickText(rowIdx);
+            else
+                app.updateYTickText2(rowIdx);
             end
 
             ok = true;
@@ -1241,16 +1260,18 @@ classdef MODvis_timeseries < handle
         function onAxesYLimChanged(app, rowIdx)
             % Fires via PostSet listener whenever an axes' YLim changes
             % (signal change, y-lock, or user y-zoom).  Re-blank tick labels
-            % (in case MATLAB auto-restored them) and refresh text objects.
-            % Only the left (axis 1) y-axis uses the custom text-label
-            % treatment, so force 'left' active first - the PostSet event
-            % can fire while the right axis is the active side.
+            % (in case MATLAB auto-restored them) and refresh text objects,
+            % on whichever side(s) are in use - the PostSet event can fire
+            % while either the left or right axis is the active side, so
+            % handle both explicitly rather than relying on which is active.
             if isempty(app.YTickTextHandles) || rowIdx > numel(app.Axes)
                 return;
             end
             ax = app.Axes(rowIdx);
             if ~isvalid(ax); return; end
-            if numel(ax.YAxis) > 1
+            dual = numel(ax.YAxis) > 1;
+
+            if dual
                 yyaxis(ax, 'left');
             end
             n = numel(ax.YTick);
@@ -1258,6 +1279,18 @@ classdef MODvis_timeseries < handle
                 try; ax.YTickLabel = repmat({''}, 1, n); catch; end
             end
             app.updateYTickText(rowIdx);
+
+            if dual
+                yyaxis(ax, 'right');
+                if strcmp(ax.YAxis(2).Visible, 'on')
+                    n2 = numel(ax.YTick);
+                    if n2 > 0
+                        try; ax.YTickLabel = repmat({''}, 1, n2); catch; end
+                    end
+                end
+                yyaxis(ax, 'left');
+                app.updateYTickText2(rowIdx);
+            end
         end
 
         function updateYTickText(app, rowIdx)
@@ -1321,6 +1354,84 @@ classdef MODvis_timeseries < handle
             end
 
             app.YTickTextHandles{rowIdx} = handles;
+        end
+
+        function updateYTickText2(app, rowIdx)
+            % Same treatment as updateYTickText(), but for the right
+            % (axis 2) y-axis, drawing labels into the 68-px spacer column
+            % reserved to the right of the axes (see buildUI). Kept in sync
+            % with updateYTickText() so a huge-magnitude axis-2 signal can
+            % never grow native tick labels and shift the axes box.
+            if isempty(app.YTickTextHandles2) || rowIdx > numel(app.YTickTextHandles2)
+                return;
+            end
+            ax = app.Axes(rowIdx);
+            if ~isvalid(ax) || numel(ax.YAxis) < 2
+                return;
+            end
+            yyaxis(ax, 'right');
+
+            % Remove stale handles (cla() or previous call may have deleted them)
+            old = app.YTickTextHandles2{rowIdx};
+            if ~isempty(old)
+                try; delete(old(isvalid(old))); catch; end
+            end
+            app.YTickTextHandles2{rowIdx} = gobjects(0);
+
+            if strcmp(ax.YAxis(2).Visible, 'off')
+                yyaxis(ax, 'left');
+                return;
+            end
+
+            ticks = ax.YTick;
+            if isempty(ticks)
+                yyaxis(ax, 'left');
+                return;
+            end
+
+            ylim = ax.YLim;
+            span = ylim(2) - ylim(1);
+            if ~isfinite(span) || span == 0
+                yyaxis(ax, 'left');
+                return;
+            end
+
+            reversed = strcmp(ax.YDir, 'reverse');
+            handles  = gobjects(0);
+
+            txtColor = [0.15 0.15 0.15];
+            if rowIdx <= numel(app.Axis2Color) && ~isempty(app.Axis2Color{rowIdx})
+                txtColor = app.Axis2Color{rowIdx};
+            end
+
+            for k = 1:numel(ticks)
+                val = ticks(k);
+                % Normalized display position (0=bottom, 1=top of axes)
+                if reversed
+                    norm_y = (ylim(2) - val) / span;
+                else
+                    norm_y = (val - ylim(1)) / span;
+                end
+                if norm_y < -0.05 || norm_y > 1.05; continue; end
+
+                label = app.smartFormatTick(val, ticks);
+
+                % x=1 is the axes right edge in axes-normalized units.
+                % HorizontalAlignment='left' + Clipping='off' draws the
+                % label to the RIGHT of the axes, into the 68-px spacer
+                % column reserved between the axes and the control panels.
+                t = text(ax, 1, norm_y, [' ' label], ...
+                    'Units',               'normalized', ...
+                    'HorizontalAlignment', 'left', ...
+                    'VerticalAlignment',   'middle', ...
+                    'Clipping',            'off', ...
+                    'FontSize',            app.AxesTickFontSize, ...
+                    'Color',               txtColor);
+                handles(end+1) = t; %#ok<AGROW>
+            end
+
+            app.YTickTextHandles2{rowIdx} = handles;
+            yyaxis(ax, 'left');
         end
 
         function s = smartFormatTick(app, val, allTicks) %#ok<INUSL>
