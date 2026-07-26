@@ -14,6 +14,12 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_all_modraw_to_L0.m's same rule one level up). Pass
 %   reprocess_all = true to force every file to be redone regardless.
 %
+%   If metadata.manifest.has_vnav is true, also re-chains every L1 file's
+%   per-file twist count into a deployment-level meta/TwistTimeseries.mat
+%   (via MODprocess_L1_accumulate_twist_timeseries.m) at the end of every
+%   call - cheap, since it only concatenates fields already computed
+%   per-file, and keeps the deployment-level twist count always current.
+%
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
@@ -34,6 +40,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 % CALLS
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
+%   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -112,12 +119,21 @@ for i = 1:nfiles
     data = MODprocess_single_L0_to_L1(L0_data, metadata, ctd_chunk);
 
     save(L1_file, '-struct', 'data')
-    fprintf(1, 'done\n');
+    fprintf(1, '\n');
 
 end %end loop through files
 
 L1_listing = dir(fullfile(L1_dir, '*.mat'));
 L1_files = fullfile({L1_listing.folder}, {L1_listing.name})';
+
+% Deployment-level twist count: re-chain every L1 file's per-file twist
+% field (added inside MODprocess_single_L0_to_L1) into meta/TwistTimeseries.mat.
+% Only meaningful when this deployment actually has a vnav - skip
+% otherwise rather than let it churn through every L1 file logging
+% "missing vnav" for nothing.
+if isfield(metadata, 'manifest') && isfield(metadata.manifest, 'has_vnav') && metadata.manifest.has_vnav
+    MODprocess_L1_accumulate_twist_timeseries(L1_dir, metadata.paths.meta);
+end
 
 end %end function
 

@@ -13,7 +13,10 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %              (DeepSolo, Wirewalker), external_ctd substitutes for
 %              L0_data.ctd instead - see INPUTS.
 %     alt, isap - raw distance -> height above bottom (hab)
-%   Every other field (gps, vnav, seg, spec, ...) passes through
+%     vnav   - cable twist count added as data.twist (see
+%              MODprocess_L1_add_twist.m), computed after ctd so
+%              twist.pressure can be interpolated from it
+%   Every other field (gps, seg, spec, ...) passes through
 %   unchanged. Pure transformation - no file I/O, no metadata mutation
 %   (external_ctd is read and time-sliced by the caller, not by this
 %   function - see MODprocess_all_L0_to_L1.m).
@@ -42,13 +45,14 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %
 % OUTPUTS
 %   data      - same fields as L0_data, with epsi/ctd/alt/isap converted
-%               to physical units as described above
+%               to physical units and data.twist added, as described above
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
 %
 % CALLS
 %   toolbox/seawater/sw_salt.m, sw_ptmp.m, sw_pden.m, sw_dpth.m
+%   MODprocess_L1_add_twist.m
 %   (local subfunctions: convert_efe_channels, calibrate_ctd, calibrate_altimeter_hab)
 %
 % NOTES
@@ -107,6 +111,12 @@ if ~isempty(data.alt) && isfield(data.alt, 'dst')
 end
 if ~isempty(data.isap) && isfield(data.isap, 'dst')
     data.isap.hab = calibrate_altimeter_hab(data.isap.dst, metadata);
+end
+
+%% VecNav: cable twist count (needs data.ctd already calibrated, for
+% twist.pressure) - no-ops (with a warning) if this deployment has no vnav
+if isfield(data, 'vnav') && ~isempty(data.vnav)
+    data = MODprocess_L1_add_twist(data);
 end
 
 end %end function

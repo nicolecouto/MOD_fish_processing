@@ -19,7 +19,6 @@ Explicitly **not** done at this step (still open - see PLAN.md Section 6.2 and S
 - No FPO7 `dTdV` calibration at all yet - it isn't a lookup value like `Sv` (see the `AFE.(channel).cal` row above), it has to be fit in-situ per deployment against real CTD temperature
 - No despiking
 - No SOM instrument transfer function filters
-- No `twist` field (cable twist counting - Ana's project)
 
 ## Functions
 
@@ -198,6 +197,46 @@ Given the altimeter's raw slant-range reading (`alt.dst`/`isap.dst`, already in 
 
 This is exactly what `calibrate_altimeter_hab` computes: `hab = dst.*cos(theta) - (feet2meters(H) - inches2meters(P))`, i.e. `dst*cos(theta) - H + P` once `H`/`P` are converted to meters. Confirmed against `blt2021_0715`'s real geometry (θ=10°, H=5 ft, P=2.02 in).
 
+### `MODprocess_L1_add_twist.m` and cable twist counting
+
+```matlab
+data = MODprocess_L1_add_twist(data)
+```
+
+Called automatically inside `MODprocess_single_L0_to_L1.m` (after `calibrate_ctd`, so it has calibrated pressure to interpolate) whenever `data.vnav` is present and non-empty - a no-op (with a warning) otherwise, so deployments without a VecNav just don't get a `twist` field.
+
+The physical problem: the instrument cable twists as it profiles. On the FastCTD a fin can be adjusted to counteract this, but the operator needs the current twist count **during** the deployment to know when and how much to adjust it. Epsi rarely twists much on its own - the cable twisting mostly comes from FastCTD - but a cruise often switches between both instruments on the same winch cable, so the twist count is tracked per file and per deployment regardless of vehicle type (gated on `metadata.manifest.has_vnav`, not on `fish_flag`).
+
+Algorithm (ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`):
+
+1. Drop bad vnav samples (NaN/Inf/non-monotonic `dnum`).
+2. Interpolate CTD pressure onto the vnav timebase (`interp1(ctd.dnum, ctd.P, vnav.dnum)`) - `NaN` if there's no CTD on this deployment. Used downstream to mark upcast/downcast on the twist plot.
+3. For each sample, rotate the compass and gyro vectors into the gravity-aligned z-axis frame using `SN_RotateToZAxis` (a local subfunction inside `MODprocess_L1_add_twist.m`, written by San Nguyen - finds the Euler rotation that takes the local acceleration vector to `[0 0 |a|]`). Not split into its own file since nothing else calls it.
+4. **Compass method (cross-check):** normalize the rotated horizontal compass components to a unit vector, `unwrap(angle(...))` gives the instantaneous heading in radians.
+5. **Gyro method (primary):** cumulative sum of the rotated z-axis gyro rate × `dt`, divided by `2*pi` to convert radians to full rotations - the unit operators actually count fin/spool adjustments against.
+
+`data.twist` fields: `time_s`, `dnum`, `pressure` [dbar], `count_gyro` [full rotations, primary], `count_compass` [radians, cross-check]. Count starts from ~0 for each file - `MODprocess_L1_accumulate_twist_timeseries.m` (below) handles cross-file chaining, so reprocessing one file never corrupts the accumulated deployment timeseries.
+
+### `MODprocess_L1_accumulate_twist_timeseries.m`
+
+```matlab
+TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, meta_dir)
+```
+
+Called automatically at the end of `MODprocess_all_L0_to_L1.m`, gated on `metadata.manifest.has_vnav` - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/TwistTimeseries.mat`.
+
+Also applies spool-swap resets from an operator-edited `meta/SpoolSwapLog.csv` (`#`-comment lines supported, columns `datetime_utc, spool_id, spool_length_m, notes`), if that file exists: at each swap timestamp, the cumulative count is reset to 0 from that point forward. `TwistTimeseries.spool_swap_dnum` records the swap times actually applied, for the plot to mark. Cruise-level tracking of spool swaps and fin-angle adjustments *across* deployments/instruments (same winch cable, different vehicles) is not built yet - `SpoolSwapLog.csv` today only resets within a single deployment's `TwistTimeseries.mat`.
+
+L1 `.mat` files are saved as `save(L1_file, '-struct', 'data')` (flattened - `vnav`/`twist`/etc. are top-level variables, not nested under a `data` struct), so this function loads `vnav`/`twist` directly rather than `data.vnav`/`data.twist`.
+
+### `MODvis_twist_timeseries.m`
+
+```matlab
+ax = MODvis_twist_timeseries(TwistTimeseries, ax)
+```
+
+Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`) and marking any spool swap events as vertical lines. "Neutral is Negative" - setting the fin to neutral makes the count go down. Not called automatically - run manually against `meta/TwistTimeseries.mat` when you want to look at the deployment picture (e.g. during a cruise, to decide when to adjust the fin).
+
 ### `MODprocess_all_L0_to_L1.m`
 
 ```matlab
@@ -209,6 +248,8 @@ Orchestrator: loops over every `.mat` file in `L0_dir`, calls `MODprocess_single
 Skips a file if its L1 `.mat` already exists and is newer than the L0 file it came from - except the most recently modified L0 file, which is always reprocessed (mirrors `MODprocess_all_modraw_to_L0.m`'s same rule one level up, in case the raw file behind it was still being written when L0 last ran). Pass `reprocess_all = true` to force every file to redo regardless.
 
 Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_external_ctd`, a local subfunction) - see "External CTD (DeepSolo, Wirewalker)" above.
+
+At the end of every call, if `metadata.manifest.has_vnav` is true, also calls `MODprocess_L1_accumulate_twist_timeseries` once to re-chain every L1 file's twist field into `meta/TwistTimeseries.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
 
 ## How to run it
 
@@ -248,3 +289,4 @@ Ported from `mod_som_read_epsi_files_v4.m` in the old `MOD_fish_lib` monolith - 
 - Fixed a latent bug found in `MODprocess_single_modraw_to_L0.m` while porting the altimeter logic: it called `orderfields(alt, {..., 'hab'})` but never set `alt.hab` - `hab` needs instrument geometry that L0 deliberately doesn't have. Would have thrown a hard error on any deployment with `alt` data; none of the four `data_for_reorg` deployments tested so far have any, so it was never hit until now. `hab` is now correctly computed here instead, for both `alt` and `isap`.
 - Renamed `MODprocess_new_modraw_to_L0.m` → `MODprocess_all_modraw_to_L0.m` so the L0 and L1 batch orchestrators share the same `MODprocess_all_*` naming pattern.
 - Tested against all 96 files of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` - see PLAN.md Session Log (2026-07-09) for full results.
+- **Cable twist counting added** (2026-07-24, PLAN.md Section 7 - Ana's project): `MODprocess_L1_add_twist.m`, `MODprocess_L1_accumulate_twist_timeseries.m`, `MODvis_twist_timeseries.m`, ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`. `SN_RotateToZAxis` (written by San Nguyen, MOD) is folded in as a local subfunction of `MODprocess_L1_add_twist.m` rather than a separate/vendored file, since it's only called there. Wired into the pipeline automatically (per-file inside `MODprocess_single_L0_to_L1.m`, per-deployment at the end of `MODprocess_all_L0_to_L1.m`). Tested against all 96 files of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` - see PLAN.md Session Log (2026-07-24) for full results.
