@@ -24,12 +24,28 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %       data = load('L1/modsom_07.mat');
 %       L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
 %
+%   Also computes chi (thermal variance dissipation rate) per scan for
+%   every fpo7 channel that has a resolved metadata.AFE.(ch).volts_to_C
+%   (MODprocess_L1_apply_fpo7_calibration.m) - i.e. deployments with a
+%   real onboard CTD, not DeepSolo's P-only external CTD. Needs
+%   scan-center temperature/salinity (interpolated the same way pressure
+%   already was) and the FP07 bench noise floor file
+%   (MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat, via
+%   metadata.paths.calibrations_root) - see
+%   docs/workflow/L2_calc_chi.md for the full chain
+%   (MODprocess_L2_fpo7_transfer_function.m, MODprocess_L2_fpo7_cutoff.m,
+%   MODprocess_L2_thermal_diffusivity.m, MODprocess_L2_calc_chi.m).
+%
 % INPUTS
 %   data      - struct from an L1 .mat file (has epsi, ctd, ...)
 %   metadata  - metadata struct (from MODsetup_read_yaml.m). Uses:
 %               metadata.PROCESS.nfft, .dof, .Fs_epsi, .channels,
 %               metadata.AFE.(channel).type (passed through to
-%               MODprocess_L2_get_scan_spectra.m)
+%               MODprocess_L2_get_scan_spectra.m), and
+%               metadata.AFE.(channel).volts_to_C /
+%               metadata.paths.calibrations_root (to compute chi for fpo7
+%               channels that have a resolved in-situ calibration - see
+%               OUTPUTS)
 %   PressureTimeseries - struct with dnum, is_down (from
 %               MODprocess_L1_detect_profiling_direction.m via
 %               meta/PressureTimeseries.mat) - the whole-deployment record,
@@ -41,9 +57,39 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %     dnum        - scan center time [datenum], nbscan x 1
 %     pressure    - CTD pressure at scan center [dbar], interpolated from
 %                   this file's own data.ctd.P, nbscan x 1
+%     w           - fall speed at scan center [m/s], interpolated from
+%                   this file's own data.ctd.dzdt the same way pressure is
+%                   interpolated from data.ctd.P, nbscan x 1. This is the
+%                   fall-speed-dependent input MODprocess_L2_calc_chi.m
+%                   (via MODprocess_L2_fpo7_transfer_function.m) needs -
+%                   see PLAN.md's chi_processing branch notes. Not abs'd
+%                   here (MODprocess_L2_fpo7_transfer_function.m does that
+%                   itself) so the sign stays available for sanity checks
+%                   (positive on a real descending scan, matching is_down).
+%     temperature - CTD temperature at scan center [degC], interpolated
+%                   from data.ctd.T the same way pressure is, nbscan x 1.
+%                   Only populated if this L1 file's own data.ctd has both
+%                   T and S (real onboard CTD, e.g. Mako - never true for
+%                   DeepSolo's P-only external CTD) - stays NaN otherwise.
+%     salinity    - CTD salinity at scan center [psu], same conditions as
+%                   temperature, nbscan x 1.
 %     f           - frequency vector [Hz], shared across all scans, 1 x nfreq
 %     P.(channel) - power spectrum matrix, nbscan x nfreq, one field per
 %                   shear/fpo7/acc channel (see MODprocess_L2_get_scan_spectra.m)
+%     chi.(channel)    - thermal variance dissipation rate [degC^2/s],
+%                   nbscan x 1, one field per fpo7 channel that both has a
+%                   resolved metadata.AFE.(channel).volts_to_C
+%                   (MODprocess_L1_apply_fpo7_calibration.m) AND this file
+%                   has real ctd.T/.S (see temperature/salinity above) -
+%                   this struct simply has no fields at all for a file
+%                   whose CTD T/S happened to drop out even if
+%                   volts_to_C is resolved deployment-wide. Individual
+%                   scans within a present field can still be NaN
+%                   (MODprocess_L2_calc_chi.m - no valid noise-floor
+%                   cutoff range for that scan).
+%     chi_kc.(channel) - the noise-floor cutoff wavenumber [cpm] used for
+%                   each chi.(channel) value - diagnostic, see
+%                   MODprocess_L2_calc_chi.m's OUTPUTS.
 %     nfft, dof, Fs_epsi, N_epsi, scan_step - provenance
 %   nbscan is 0 (all fields empty) if this file has no epsi data or no
 %   scans land on a descending part of the record.
@@ -52,7 +98,9 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   MODprocess_all_L1_to_L2.m
 %
 % CALLS
-%   MODprocess_L2_get_scan_spectra.m
+%   MODprocess_L2_get_scan_spectra.m, MODprocess_L2_thermal_diffusivity.m,
+%   MODprocess_L2_calc_chi.m (only for fpo7 channels with a resolved
+%   volts_to_C calibration)
 %
 % NOTES
 %   File-boundary coverage gaps (a partial window at the end of this file
@@ -84,10 +132,55 @@ scan_starts = 1:scan_step:(n_samples - N_epsi + 1);
 nbscan_candidate = numel(scan_starts);
 
 have_ctd = ~isempty(data.ctd) && isfield(data.ctd, 'dnum') && isfield(data.ctd, 'P') ...
-    && numel(data.ctd.dnum) > 1;
+    && isfield(data.ctd, 'dzdt') && numel(data.ctd.dnum) > 1;
+
+% Real CTD temperature/salinity - only true for deployments with an
+% onboard CTD (e.g. Mako), never for DeepSolo's P-only external CTD.
+% Needed for both chi's thermal diffusivity (ktemp) and, upstream, ever
+% having a metadata.AFE.(ch).volts_to_C in the first place
+% (MODprocess_L1_apply_fpo7_calibration.m).
+have_ctd_ts = have_ctd && isfield(data.ctd, 'T') && isfield(data.ctd, 'S') ...
+    && ~isempty(data.ctd.T) && ~isempty(data.ctd.S);
+
+% Which fpo7 channels can get chi computed: only those with a resolved
+% in-situ calibration, and only if this deployment has the CTD T/S/P chi's
+% thermal diffusivity needs. The bench noise floor file is loaded once
+% here (not per scan) - if it's missing, chi is skipped for this file
+% entirely rather than erroring per scan.
+chi_channels = {};
+noise_coefs = [];
+if have_ctd_ts
+    for iC = 1:numel(metadata.PROCESS.channels)
+        ch = metadata.PROCESS.channels{iC};
+        if isfield(metadata.AFE, ch) && strcmpi(metadata.AFE.(ch).type, 'fpo7') ...
+                && isfield(metadata.AFE.(ch), 'volts_to_C')
+            chi_channels{end+1} = ch; %#ok<AGROW>
+        end
+    end
+    if ~isempty(chi_channels)
+        noise_file = fullfile(metadata.paths.calibrations_root, 'FPO7', 'FPO7_benchnoise.mat');
+        if isfile(noise_file)
+            noise_coefs = load(noise_file, 'n0', 'n1', 'n2', 'n3');
+        else
+            warning('MODprocess_single_L1_to_L2:noBenchNoiseFile', ...
+                ['FP07 bench noise file not found at %s - chi not computed ' ...
+                'for this file.'], noise_file);
+            chi_channels = {};
+        end
+    end
+end
 
 dnum_all = nan(nbscan_candidate, 1);
 pressure_all = nan(nbscan_candidate, 1);
+w_all = nan(nbscan_candidate, 1);
+temperature_all = nan(nbscan_candidate, 1);
+salinity_all = nan(nbscan_candidate, 1);
+chi_all = struct();
+chi_kc_all = struct();
+for iC = 1:numel(chi_channels)
+    chi_all.(chi_channels{iC}) = nan(nbscan_candidate, 1);
+    chi_kc_all.(chi_channels{iC}) = nan(nbscan_candidate, 1);
+end
 scan_results = cell(nbscan_candidate, 1);
 keep = false(nbscan_candidate, 1);
 
@@ -116,6 +209,23 @@ for iScan = 1:nbscan_candidate
     dnum_all(iScan) = center_dnum;
     if have_ctd
         pressure_all(iScan) = interp1(data.ctd.dnum, data.ctd.P, center_dnum, 'linear', 'extrap');
+        w_all(iScan) = interp1(data.ctd.dnum, data.ctd.dzdt, center_dnum, 'linear', 'extrap');
+    end
+    if have_ctd_ts
+        temperature_all(iScan) = interp1(data.ctd.dnum, data.ctd.T, center_dnum, 'linear', 'extrap');
+        salinity_all(iScan) = interp1(data.ctd.dnum, data.ctd.S, center_dnum, 'linear', 'extrap');
+
+        if ~isempty(chi_channels)
+            ktemp = MODprocess_L2_thermal_diffusivity( ...
+                salinity_all(iScan), temperature_all(iScan), pressure_all(iScan));
+            for iC = 1:numel(chi_channels)
+                ch = chi_channels{iC};
+                volt_field = [ch '_volt'];
+                [chi_all.(ch)(iScan), chi_kc_all.(ch)(iScan)] = MODprocess_L2_calc_chi( ...
+                    scan_results{iScan}.f, scan_results{iScan}.P.(volt_field), ...
+                    w_all(iScan), metadata.AFE.(ch).volts_to_C, ktemp, noise_coefs);
+            end
+        end
     end
     keep(iScan) = true;
 end
@@ -127,6 +237,14 @@ end
 scan_results = scan_results(keep);
 L2data.dnum = dnum_all(keep);
 L2data.pressure = pressure_all(keep);
+L2data.w = w_all(keep);
+L2data.temperature = temperature_all(keep);
+L2data.salinity = salinity_all(keep);
+for iC = 1:numel(chi_channels)
+    ch = chi_channels{iC};
+    L2data.chi.(ch) = chi_all.(ch)(keep);
+    L2data.chi_kc.(ch) = chi_kc_all.(ch)(keep);
+end
 L2data.f = scan_results{1}.f;
 
 channels = fieldnames(scan_results{1}.P);
@@ -161,8 +279,13 @@ end
 function L2data = empty_L2data(nfft, dof, Fs_epsi, N_epsi, scan_step)
 L2data.dnum = [];
 L2data.pressure = [];
+L2data.w = [];
+L2data.temperature = [];
+L2data.salinity = [];
 L2data.f = [];
 L2data.P = struct();
+L2data.chi = struct();
+L2data.chi_kc = struct();
 L2data.nfft = nfft;
 L2data.dof = dof;
 L2data.Fs_epsi = Fs_epsi;

@@ -29,6 +29,15 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_single_L1_to_L2.m gates spectra-computation scans against -
 %   see PLAN.md Section 4.
 %
+%   If this deployment has a real onboard CTD specifically (metadata.CTD.cal
+%   non-empty - not just any has_ctd source, since an external-CTD vehicle
+%   like DeepSolo never has real temperature), also fits and persists each
+%   FP07 channel's in-situ volts->degC calibration
+%   (MODprocess_L1_apply_fpo7_calibration.m -> metadata.AFE.(ch).volts_to_C,
+%   saved back to meta/metadata.mat via MODsetup_save_metadata.m). This is
+%   the calibration MODprocess_L2_calc_chi.m needs; deployments without a
+%   real CTD simply never get it set.
+%
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
@@ -52,9 +61,16 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
 %   MODprocess_L1_make_pressure_timeseries.m, MODprocess_L1_detect_profiling_direction.m
 %   (only when this deployment has CTD data)
+%   MODprocess_L1_apply_fpo7_calibration.m, MODsetup_save_metadata.m
+%   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
+%   The in-memory metadata passed in as an argument is NOT updated with a
+%   newly-fit volts_to_C - only the on-disk meta/metadata.mat is (via
+%   MODsetup_save_metadata.m), same as PressureTimeseries.mat above. A
+%   caller that needs volts_to_C in the same session (e.g. immediately
+%   running L1->L2 afterward) should reload metadata.mat after this call.
 %   metadata is loaded once by the caller (MODsetup_read_yaml.m) and
 %   passed in here rather than re-read per file - it does not change
 %   file-to-file within a deployment.
@@ -160,6 +176,18 @@ if has_ctd
     if ~isempty(PressureTimeseries.dnum)
         PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata);
         save(fullfile(metadata.paths.meta, 'PressureTimeseries.mat'), '-struct', 'PressureTimeseries');
+
+        % FP07 in-situ volts->degC calibration: needs real CTD temperature,
+        % which only a real onboard CTD provides (metadata.CTD.cal) - an
+        % external-CTD vehicle like DeepSolo (P-only fallrise data) never
+        % qualifies here even though it passed the has_ctd check above.
+        % Gated on PressureTimeseries.dnum being non-empty too since the
+        % fit needs is_down, just computed above.
+        if ~isempty(metadata.CTD.cal)
+            metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, PressureTimeseries);
+            MODsetup_save_metadata(metadata, metadata.paths.meta, ...
+                'fpo7_calibration', mfilename('fullpath'));
+        end
     end
 end
 
