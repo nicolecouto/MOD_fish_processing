@@ -73,6 +73,27 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     instrument_manifest.afe.channel_N
 %                                     keys, sorted numerically by N (not
 %                                     from yaml field order)
+%     PROCESS.Fs_epsi               - Hz, nominal EFE board sample rate,
+%                                     from setup.yml's afe.sample_rate.
+%                                     Default 320 (the standard EFE board
+%                                     rate) if the key is absent - so older
+%                                     setup.yml files don't need an edit.
+%     PROCESS.nfft, .dof            - spectral processing parameters for
+%                                     MODprocess_L2_get_scan_spectra.m, from
+%                                     setup.yml's spectral.nfft/.dof.
+%                                     Defaults 1024/3 (same defaults as the
+%                                     old MOD_fish_lib Acquisition/setup.yml
+%                                     templates) if the spectral: block is
+%                                     absent.
+%     PROFILES.lowpass_factor,
+%              .gap_factor,
+%              .buffer_bins          - profiling-direction detection
+%                                     parameters for
+%                                     MODprocess_L1_detect_profiling_direction.m,
+%                                     from setup.yml's profile_detection:
+%                                     block. Defaults 3/5/1 if the block is
+%                                     absent - see that function's header
+%                                     for what each one controls.
 %     AFE.(channel).full_range     - volts, for counts->volts conversion,
 %                                     from setup.yml's afe.channels.(channel)
 %     AFE.(channel).ADCconf        - 'Bipolar' or 'Unipolar', from
@@ -159,6 +180,50 @@ metadata.PROCESS.latitude = yml.latitude;
 metadata.vehicle_name = '';
 if isfield(yml, 'vehicle_name')
     metadata.vehicle_name = yml.vehicle_name;
+end
+
+%% EFE sample rate - optional, defaults to the standard EFE board rate so
+% existing setup.yml files don't need an edit to keep working.
+metadata.PROCESS.Fs_epsi = 320;
+if isfield(yml, 'afe') && isfield(yml.afe, 'sample_rate')
+    metadata.PROCESS.Fs_epsi = yml.afe.sample_rate;
+end
+
+%% Spectral processing parameters (MODprocess_L2_get_scan_spectra.m) -
+% optional, same defaults MOD_fish_lib's Acquisition/setup.yml templates used.
+metadata.PROCESS.nfft = 1024;
+metadata.PROCESS.dof = 3;
+if isfield(yml, 'spectral')
+    if isfield(yml.spectral, 'nfft')
+        metadata.PROCESS.nfft = yml.spectral.nfft;
+    end
+    if isfield(yml.spectral, 'dof')
+        metadata.PROCESS.dof = yml.spectral.dof;
+    end
+end
+
+%% Profiling-direction detection parameters
+% (MODprocess_L1_detect_profiling_direction.m) - optional. Defaults sized
+% for sparse, irregularly-sampled pressure records (e.g. DeepSolo's
+% fallrise data, ~60-120 s between samples) - see that function's header
+% for the reasoning behind lowpass_factor=2/gap_factor=5/buffer_bins=1.
+% Namespaced under PROFILES (not PROCESS) to match the old
+% Meta_Data.PROFILES.* convention from
+% epsiProcess_get_profiles_from_PressureTimeseries.m, so a future full
+% profile-picker port can extend this same setup.yml section.
+metadata.PROFILES.lowpass_factor = 3;
+metadata.PROFILES.gap_factor = 5;
+metadata.PROFILES.buffer_bins = 1;
+if isfield(yml, 'profile_detection')
+    if isfield(yml.profile_detection, 'lowpass_factor')
+        metadata.PROFILES.lowpass_factor = yml.profile_detection.lowpass_factor;
+    end
+    if isfield(yml.profile_detection, 'gap_factor')
+        metadata.PROFILES.gap_factor = yml.profile_detection.gap_factor;
+    end
+    if isfield(yml.profile_detection, 'buffer_bins')
+        metadata.PROFILES.buffer_bins = yml.profile_detection.buffer_bins;
+    end
 end
 
 %% Instrument manifest - what's physically on this vehicle. See setup.yml's

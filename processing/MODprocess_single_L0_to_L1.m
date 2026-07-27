@@ -8,10 +8,12 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   MODprocess_single_modraw_to_L0.m) into physical units:
 %     epsi   - AFE counts -> volts (t*/s*) or g (a*), by manifest channel
 %     ctd    - raw hex -> P/T/C/S (SBE49 only - SBE41 arrives from L0
-%              already in physical units), plus derived th, sgth, dPdt,
-%              z, dzdt. For vehicles with no $SB49/$SB41 blocks at all
-%              (DeepSolo, Wirewalker), external_ctd substitutes for
-%              L0_data.ctd instead - see INPUTS.
+%              already in physical units), plus derived dPdt, z, dzdt
+%              (always) and th, sgth, S (only when T/C are actually
+%              present - see process_ctd_fields below). For vehicles with
+%              no $SB49/$SB41 blocks at all (DeepSolo, Wirewalker),
+%              external_ctd substitutes for L0_data.ctd instead - see
+%              INPUTS.
 %     alt, isap - raw distance -> height above bottom (hab)
 %     vnav   - cable twist count added as data.twist (see
 %              MODprocess_L1_add_twist.m), computed after ctd so
@@ -35,13 +37,14 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %                     metadata.CTD.cal,
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
 %                     .alt_probe_dist_from_crashguard_in
-%   external_ctd - (optional) struct with dnum/P/T/C/(S) already sliced to
-%               this L0 file's time range, from
-%               MODprocess_read_external_ctd.m via MODprocess_all_L0_to_L1.m.
-%               Only used when L0_data.ctd is empty (true for DeepSolo/
-%               Wirewalker, which have no $SB49/$SB41 blocks to parse at
-%               L0) - ignored otherwise. []/omitted for vehicles with no
-%               independent CTD file.
+%   external_ctd - (optional) struct with dnum/P always, and T/C/(S) only
+%               if the source vehicle's file reports them (DeepSolo's
+%               fallrise file doesn't - P only), already sliced to this L0
+%               file's time range, from MODprocess_read_external_ctd.m via
+%               MODprocess_all_L0_to_L1.m. Only used when L0_data.ctd is
+%               empty (true for DeepSolo/Wirewalker, which have no
+%               $SB49/$SB41 blocks to parse at L0) - ignored otherwise.
+%               []/omitted for vehicles with no independent CTD file.
 %
 % OUTPUTS
 %   data      - same fields as L0_data, with epsi/ctd/alt/isap converted
@@ -53,7 +56,7 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 % CALLS
 %   toolbox/seawater/sw_salt.m, sw_ptmp.m, sw_pden.m, sw_dpth.m
 %   MODprocess_L1_add_twist.m
-%   (local subfunctions: convert_efe_channels, calibrate_ctd, calibrate_altimeter_hab)
+%   (local subfunctions: convert_efe_channels, process_ctd_fields, calibrate_altimeter_hab)
 %
 % NOTES
 %   The subfunctions below are local rather than separate files - they are
@@ -91,18 +94,21 @@ if ~isempty(data.ctd)
     if isfield(data, 'gps')
         gps = data.gps;
     end
-    data.ctd = calibrate_ctd(data.ctd, gps, metadata);
+    data.ctd = process_ctd_fields(data.ctd, gps, metadata);
 elseif ~isempty(external_ctd)
     % DeepSolo/Wirewalker: no $SB49/$SB41 blocks in L0_data, so data.ctd
     % is empty here. external_ctd arrives already in physical units
-    % (dnum/P/T/C/(S)), so it only needs the derived-field half of
-    % calibrate_ctd (th/sgth/dPdt/z/dzdt, plus S if the source file
-    % didn't already report it) - the same path SBE41 takes.
+    % (dnum/P, optionally T/C/(S) - see MODprocess_read_external_ctd.m),
+    % so it only needs the derived-field half of process_ctd_fields
+    % (th/sgth/dPdt/z/dzdt, plus S if the source file didn't already
+    % report it) - the same path SBE41 takes. DeepSolo's fallrise file has
+    % no T/C at all, so th/sgth/S are correctly skipped for it (see
+    % process_ctd_fields below).
     gps = [];
     if isfield(data, 'gps')
         gps = data.gps;
     end
-    data.ctd = calibrate_ctd(external_ctd, gps, metadata);
+    data.ctd = process_ctd_fields(external_ctd, gps, metadata);
 end
 
 %% Altimeter / ISA500: raw distance -> height above bottom
@@ -164,8 +170,12 @@ end
 
 end
 
-%% CTD raw hex -> physical units
-function ctd = calibrate_ctd(ctd, gps, metadata)
+%% CTD: calibrate raw SBE49 counts into P/T/C when present, then derive
+% secondary fields unconditionally (or as far as the available fields
+% allow - see the T/C guard below). "process" rather than "calibrate"
+% because for SBE41/external-CTD sources, which arrive already in physical
+% units, this function does no calibration at all - only derivation.
+function ctd = process_ctd_fields(ctd, gps, metadata)
 
 c3515 = 42.914; % conductivity standard, mS/cm - ctd.C must be in S/m (C*10 -> mS/cm) for the ratio below to be right
 
@@ -200,15 +210,24 @@ if isfield(ctd, 'T_raw')
     ctd.C = (cal.g + cal.h*f.^2 + cal.i*f.^3 + cal.j*f.^4)./(1 + cal.tcor.*ctd.T + cal.pcor.*ctd.P);
 end
 
-if ~isfield(ctd, 'S') || isempty(ctd.S)
-    % Not reported by the source (SBE41 "PTS" and external CTD files
-    % normally do report S already, and skip this) - derive it the same
-    % way the SBE49 "eng" path does.
-    ctd.S = real(sw_salt(ctd.C*10./c3515, ctd.T, ctd.P));
+if isfield(ctd, 'T') && isfield(ctd, 'C')
+    if ~isfield(ctd, 'S') || isempty(ctd.S)
+        % Not reported by the source (SBE41 "PTS" and external CTD files
+        % normally do report S already, and skip this) - derive it the same
+        % way the SBE49 "eng" path does.
+        ctd.S = real(sw_salt(ctd.C*10./c3515, ctd.T, ctd.P));
+    end
+
+    ctd.th   = sw_ptmp(ctd.S, ctd.T, ctd.P, 0);
+    ctd.sgth = sw_pden(ctd.S, ctd.T, ctd.P, 0);
+else
+    % No T/C at all - e.g. DeepSolo's fallrise pressure file
+    % (MODprocess_read_external_ctd.m), which reports only P. S/th/sgth
+    % genuinely can't be computed without temperature and conductivity, so
+    % they're left unset rather than guessed. dPdt/z/dzdt below only need
+    % P (and latitude for z), so they still get computed either way.
 end
 
-ctd.th   = sw_ptmp(ctd.S, ctd.T, ctd.P, 0);
-ctd.sgth = sw_pden(ctd.S, ctd.T, ctd.P, 0);
 ctd.dPdt = [0; diff(ctd.P)./diff(ctd.time_s)];
 
 % Depth from pressure needs latitude - interpolate from GPS fixes if any

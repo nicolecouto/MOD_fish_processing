@@ -20,6 +20,15 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   call - cheap, since it only concatenates fields already computed
 %   per-file, and keeps the deployment-level twist count always current.
 %
+%   If this deployment has any CTD data (metadata.CTD.cal set, or an
+%   external-CTD vehicle with data), also builds/updates
+%   meta/PressureTimeseries.mat - the deployment-length pressure record,
+%   with a smoothed dPdt and an is_down (descending) classification per
+%   sample (MODprocess_L1_make_pressure_timeseries.m +
+%   MODprocess_L1_detect_profiling_direction.m). This is what
+%   MODprocess_single_L1_to_L2.m gates spectra-computation scans against -
+%   see PLAN.md Section 4.
+%
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
@@ -41,6 +50,8 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
 %   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
+%   MODprocess_L1_make_pressure_timeseries.m, MODprocess_L1_detect_profiling_direction.m
+%   (only when this deployment has CTD data)
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -133,6 +144,23 @@ L1_files = fullfile({L1_listing.folder}, {L1_listing.name})';
 % "missing vnav" for nothing.
 if isfield(metadata, 'manifest') && isfield(metadata.manifest, 'has_vnav') && metadata.manifest.has_vnav
     MODprocess_L1_accumulate_twist_timeseries(L1_dir, metadata.paths.meta);
+end
+
+% Deployment-level pressure record + profiling-direction classification:
+% only meaningful if this deployment actually has CTD data (either an SBE
+% calibration was resolved for hardware in the raw stream, or this is an
+% external-CTD vehicle that had data to read - see the external_ctd_full
+% check above). MODprocess_L1_make_pressure_timeseries.m itself no-ops
+% gracefully (empty output) if no L1 file has ctd.P, so this check is a
+% cheap way to skip the work entirely for deployments with no CTD hardware
+% at all, rather than churning through every L1 file to discover that.
+has_ctd = (~isempty(metadata.CTD.cal)) || ~isempty(external_ctd_full);
+if has_ctd
+    PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
+    if ~isempty(PressureTimeseries.dnum)
+        PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata);
+        save(fullfile(metadata.paths.meta, 'PressureTimeseries.mat'), '-struct', 'PressureTimeseries');
+    end
 end
 
 end %end function

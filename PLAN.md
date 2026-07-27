@@ -188,12 +188,14 @@ deployment_root/
 |-------|-------|--------|-------------|
 | **L0** | Raw binary files | Per-file `.mat` with raw counts/volts | Parse bytes, no calibrations, read headers |
 | **L1** | L0 `.mat` files | Per-file `.mat` with calibrated, filtered, despiked data + `twist` field | CTD→P/T/C/S; shear→dshear/dz; FPO7→dT/dt; filters; twist timeseries for this file |
-| **L2** | L1 `.mat` + profile indices | `Profile####.mat` per cast | Per-scan spectra, epsilon, chi, QC flags |
+| **L2** | L1 `.mat` (+ profile indices, for vehicles that use them) | `Profile####.mat` per cast, **or** one `.mat` per L1 file (`epsi_deepsolo` — see Section 4 note below) | Per-scan spectra, epsilon, chi, QC flags |
 | **L3** | L2 profiles | Gridded sections | Interpolate onto standard pressure grid |
 
 **Done and merged to `main`:** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see Section 12 for what changed on the port. Documented in `MOD_fish_processing/docs/workflow/L0_modraw_conversion.md`.
 
 **In progress on branch `l0_to_l1_conversion`:** L0 → L1 (counts/hex → physical units: epsi volts/g, CTD P/T/C/S, altimeter hab, cable twist count). First cut ships `MODsetup_read_yaml.m` + `MODprocess_single_L0_to_L1.m` / `MODprocess_all_L0_to_L1.m`, tested end-to-end against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96/96 files, physically plausible T/P/S/C). Twist counting (`MODprocess_L1_add_twist.m`/`MODprocess_L1_accumulate_twist_timeseries.m`) added 2026-07-24 and wired into both orchestrators - see Section 7. Despike, filters, and shear/FPO7 calibration are still not in this step - see Section 6.2. Documented in `MOD_fish_processing/docs/workflow/L0_to_L1_conversion.md`. See Section 12 session log entries 2026-07-09 and 2026-07-24 for what changed.
+
+**In progress on branch `l1_to_l2_conversion`:** L1 → L2 for `epsi_deepsolo` - per-scan spectra (shear/fpo7/accel, raw uncorrected pwelch), gated by profiling direction (downcast only, `dPdt > 0`) rather than split into `Profile####.mat` casts - a deliberate divergence from the old `mod_fish_lib` approach (see Section 4 note below and `docs/workflow/L1_to_L2_conversion.md`). No epsilon/chi yet. Prerequisite L0→L1 fixes shipped alongside: real DeepSolo external-CTD reader (`ctd/DeepSoloFallrise.mat`, P-only), `calibrate_ctd` renamed `process_ctd_fields` and made T/C-optional, and a new deployment-level `meta/PressureTimeseries.mat` (profiling-direction classification - an L1-level product, consumed by L2). Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` - see Section 12 session log entry 2026-07-26.
 
 **Next target:** fix the regex block-splitting artifact in `MODprocess_single_modraw_to_L0.m` (Section 9 — parse by declared hex block length instead of regex terminators)
 
@@ -286,32 +288,38 @@ Shipped as `MODprocess_single_L0_to_L1.m` (per-file, pure transformation) / `MOD
 | Step | Description | Source in MOD_fish_lib | Status |
 |------|-------------|-------------------------|--------|
 | `convert_efe_channels` | AFE counts → volts (t*/s*) or g (a*), by manifest channel (`metadata.AFE.(ch).full_range/.ADCconf/.type`) | `mod_som_read_epsi_files_v4.m` counts→volts block | Done |
-| `calibrate_ctd` | SBE cal equations → P [dbar], T [°C], C [S/m], S [psu], plus derived `th`/`sgth`/`dPdt`/`z`/`dzdt`. SBE41 "PTS" format and external CTD (DeepSolo/Wirewalker - see below) arrive from L0/caller already in physical units - only derived fields are computed for those. | `get_CalSBE.m`, `mod_som_read_epsi_files_v4.m` SBE block | Done |
+| `process_ctd_fields` (local subfunction, `MODprocess_single_L0_to_L1.m`; renamed from `calibrate_ctd`, branch `l1_to_l2_conversion`) | SBE cal equations → P [dbar], T [°C], C [S/m], S [psu] when raw counts are present, plus derived `dPdt`/`z`/`dzdt` (always) and `th`/`sgth`/`S` (only when `T`/`C` are both present - needed for DeepSolo's P-only external CTD, see `MODprocess_read_external_ctd.m` below). SBE41 "PTS" format and external CTD arrive from L0/caller already in physical units - only derived fields are computed for those. | `get_CalSBE.m`, `mod_som_read_epsi_files_v4.m` SBE block | Done |
 | `calibrate_altimeter_hab` | Raw distance → height above bottom, using `metadata.GEOMETRY.*`. Applied to both `alt` (MOD altimeter) and `isap` (ISA500) - verified against real `isap` data and, as of the `blt2021_0715` test run (2026-07-24), real `alt` data too. | `mod_som_read_epsi_files_v4.m` ALTI/ISAP blocks | Done |
-| `MODprocess_read_external_ctd.m` | For DeepSolo/Wirewalker (`metadata.vehicle_name`), reads and normalizes a deployment's independent CTD file (dnum/P/T/C/S), sliced per L0 file by `MODprocess_all_L0_to_L1.m` and passed into `MODprocess_single_L0_to_L1` as an optional 3rd argument. | NEW - no prior equivalent in `MOD_fish_lib` | Plumbing done, no real parser implemented for any instrument yet (no sample file available) |
+| `MODprocess_read_external_ctd.m` | For DeepSolo/Wirewalker (`metadata.vehicle_name`), reads and normalizes a deployment's independent CTD file (dnum/P, optionally T/C/S), sliced per L0 file by `MODprocess_all_L0_to_L1.m` and passed into `MODprocess_single_L0_to_L1` as an optional 3rd argument. | NEW - no prior equivalent in `MOD_fish_lib` | DeepSolo done (branch `l1_to_l2_conversion`, 2026-07-26) - `ctd/DeepSoloFallrise.mat`, P-only. Wirewalker still not implemented (no sample file available) |
 | `modProcess_L1_apply_shear_calibration.m` | `Sv × volts / fall_speed` → shear, loops over `metadata.manifest.shear_channels` | `mod_som_get_shear_probe_calibration_v2.m` | `Sv` lookup itself now done in `MODsetup_read_yaml.m` (`metadata.AFE.(ch).cal`, per-channel, from `calibrations_root/SHEAR_PROBES/<SN>/Calibration_<SN>.txt`). This row - actually applying it to compute shear (needs fall speed, e.g. `ctd.dPdt`) - not started |
 | `modProcess_L1_apply_fpo7_calibration.m` | Fit `dTdV` in-situ per deployment against real CTD temperature (not a lookup like shear's `Sv` - a prior version of this plan conflated the two) | `mod_epsi_linear_calibration_FP07.m` | Not started |
 | `modProcess_L1_despike.m` | filloutliers movmedian per channel | `mod_epsilometer_calc_turbulence_v2.m` lines ~131–147 | Not started |
 | `modProcess_L1_apply_filters.m` | Apply SOM instrument transfer function | `get_filters_SOM.m` | Not started |
 | `MODprocess_L1_add_twist.m` | Takes data struct, returns same struct with `twist` field added — see Section 7 | `GV_PlotUpAccumulation.m` | Done (Ana's project, branch `l0_to_l1_conversion`) |
+| `MODprocess_L1_make_pressure_timeseries.m` | Concatenates `ctd.dnum`/`.P` from all L1 files → deployment-length pressure record (no metadata needed) | NEW — see Section 6.3, this is `modProcess_make_pressure_timeseries.m` implemented under the `MODprocess_L1_*` naming | Done (branch `l1_to_l2_conversion`) |
+| `MODprocess_L1_detect_profiling_direction.m` | Classifies each pressure sample as descending (`dPdt_smoothed > 0`) or not — gap detection, cheby2 lowpass sized to the record's own sample spacing, buffered edges. Direction-only, not a full start/end profile-picker (see Section 6.3) | `epsiProcess_get_profiles_from_PressureTimeseries.m` (re-derived, not ported as-is — see `docs/workflow/L1_to_L2_conversion.md`) | Done (branch `l1_to_l2_conversion`) |
 
 ### 6.3 Profile detection
 
-| Function | Description | Source |
-|----------|-------------|--------|
-| `modProcess_make_pressure_timeseries.m` | Concatenate pressure from all L1 files → `meta/PressureTimeseries.mat` | `epsiProcess_make_PressureTimeseries.m` |
-| `modProcess_detect_profiles.m` | Find downcasts/upcasts from pressure timeseries | `epsiProcess_get_profiles_from_PressureTimeseries.m` |
-| `modProcess_extract_profile.m` | Cut L1 data to a single profile | `epsiProcess_crop_timeseries.m` |
+| Function | Description | Source | Status |
+|----------|-------------|--------|--------|
+| `MODprocess_L1_make_pressure_timeseries.m` | Concatenate pressure from all L1 files → `meta/PressureTimeseries.mat` | `epsiProcess_make_PressureTimeseries.m` | Done (branch `l1_to_l2_conversion`) — see Section 6.2 |
+| `MODprocess_L1_detect_profiling_direction.m` | Classify each pressure sample as descending or not (direction only — not full profile start/end indices) | `epsiProcess_get_profiles_from_PressureTimeseries.m` (re-derived for sparse data) | Done (branch `l1_to_l2_conversion`) — see Section 6.2. Full profile-picker (start/end indices, merging, min-length filtering) below is still not started |
+| `modProcess_detect_profiles.m` | Find downcast/upcast start/end indices from pressure timeseries (full profile-picker, speed-limit hysteresis) | `epsiProcess_get_profiles_from_PressureTimeseries.m` | Not started |
+| `modProcess_extract_profile.m` | Cut L1 data to a single profile | `epsiProcess_crop_timeseries.m` | Not started |
 
 ### 6.4 L1 → L2
 
-| Function | Description | Source |
-|----------|-------------|--------|
-| `modProcess_L2_get_scan_spectra.m` | Per-scan: data window, pwelch, coherence subtract | `get_scan_spectra.m` |
-| `modProcess_L2_calc_epsilon.m` | Nasmyth fit → epsilon, loops over `metadata.manifest.shear_channels` | `mod_efe_scan_epsilon.m` |
-| `modProcess_L2_calc_chi.m` | Batchelor fit → chi (**currently broken — see Section 9**) | `mod_efe_scan_chi.m` |
-| `modProcess_L2_qc.m` | QC flags: fom, accel, speed, pitch/roll | `mod_epsilometer_calc_turbulence_v2.m` lines ~473–526 |
-| `modProcess_L2_run.m` | Top-level: profile list → Profile####.mat | NEW |
+**For `epsi_deepsolo`, this step deliberately does not use profile indices from Section 6.3** — it computes per-scan spectra directly across each L1 file's continuous timeseries, gated by `MODprocess_L1_detect_profiling_direction.m`'s per-sample `is_down` classification rather than discrete profile start/end indices. See `docs/workflow/L1_to_L2_conversion.md` for the full writeup of why and how.
+
+| Function | Description | Source | Status |
+|----------|-------------|--------|--------|
+| `MODprocess_L2_get_scan_spectra.m` | Per-scan: pwelch on shear/fpo7/accel channels (raw, uncorrected — no `h_freq` transfer function yet). No coherence subtract | `get_scan_spectra.m` (stripped down — no epsilon/chi/coherence) | Done (branch `l1_to_l2_conversion`) — spectra only, see Section 4 |
+| `MODprocess_single_L1_to_L2.m` | Per-L1-file: 50% overlap scan tiling, gate by `PressureTimeseries.is_down`, assemble scan-dimension arrays | NEW | Done (branch `l1_to_l2_conversion`) |
+| `MODprocess_all_L1_to_L2.m` | Batch orchestrator, mirrors `MODprocess_all_L0_to_L1.m`'s shape | NEW | Done (branch `l1_to_l2_conversion`) |
+| `modProcess_L2_calc_epsilon.m` | Nasmyth fit → epsilon, loops over `metadata.manifest.shear_channels` | `mod_efe_scan_epsilon.m` | Not started — shear `Sv` already resolved in metadata, natural next step |
+| `modProcess_L2_calc_chi.m` | Batchelor fit → chi (**currently broken — see Section 9**) | `mod_efe_scan_chi.m` | Not started — blocked on FPO7 `dTdV` calibration, which needs real time-aligned CTD T that DeepSolo doesn't have yet |
+| `modProcess_L2_qc.m` | QC flags: fom, accel, speed, pitch/roll | `mod_epsilometer_calc_turbulence_v2.m` lines ~473–526 | Not started |
 
 ### 6.5 L2 → L3
 
@@ -497,6 +505,7 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 - [x] Draft "L0: converting .modraw to .mat" — `docs/workflow/L0_modraw_conversion.md`
 - [x] Draft "Zero-padding numbered raw filenames" — `docs/workflow/pad_raw_filenames.md`
 - [x] Draft "L0 to L1: converting raw counts to physical units" — `docs/workflow/L0_to_L1_conversion.md`
+- [x] Draft "L1 to L2: downcast-gated spectra" — `docs/workflow/L1_to_L2_conversion.md`
 - [ ] Update "Setup during cruise" to reflect YAML-based config and new folder structure
 - [ ] Add "Data levels" section (L0/L1/L2/L3)
 - [ ] Update "How to process data" to use `MOD_fish_processing` workflow
@@ -510,6 +519,34 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-07-26 — L1->L2 for epsi_deepsolo: downcast-gated per-scan spectra (branch `l1_to_l2_conversion`)
+
+Started the L1->L2 step per the plan discussed with Nicole - deliberately diverging from `mod_fish_lib`'s profile-based approach for `epsi_deepsolo` (Section 4/6.4 note). Design decisions made along the way, confirmed with Nicole before implementation:
+- **Scope: raw spectra only** (shear/fpo7/accel pwelch, uncorrected) - no epsilon/chi yet.
+- **Scan stepping: 50% overlap** (`scan_step = N_epsi/2`).
+- **Scan indexing: per-L1-file** ("realtime" mode - each file tiled independently, no cross-file I/O). Framed explicitly as the realtime-processing choice, with whole-deployment or profile-indexed "post-processing" mode as later work once `modProcess_detect_profiles.m` exists.
+- **Profiling-direction detection moved to L1, not L2** - `ctd.P`/`dPdt` are already an L1 product, so classifying descent from them is naturally L1's job too, mirroring the twist-counting per-file/accumulate pattern. This also means a single L1 file can be processed to L2 standalone (`meta/PressureTimeseries.mat` is small and cheap to load), which was a real design requirement Nicole raised, not just a nice-to-have.
+
+**A DeepSolo pressure file (`ctd/DeepSoloFallrise.mat`) appeared in the data folder this session** - dnum/P only (no T/C/S), 1032 points over 41.4 h, ~60 s spacing on the way up, ~120 s on the way down, at least one ~9982 s (2.77 h) gap. This is the "sparse fallrise data" Nicole described - the float's continuous pressure record, distinct from DeepSolo's separate pressure-binned up/down CTD profiles (P/T/S, not time-aligned, still unsolved). Confirmed `P` increasing = descending, matching the existing `dPdt` sign convention.
+
+**Prerequisite L0->L1 fixes** (both needed before any of this could run - previously `ctd` was `[]` in every `epsi_deepsolo` L1 file):
+- `MODprocess_read_external_ctd.m`: implemented a real DeepSolo branch (was an unconditional stub error). Wirewalker still unimplemented (no sample file).
+- `MODprocess_single_L0_to_L1.m`'s CTD subfunction renamed `calibrate_ctd` -> `process_ctd_fields` (it does no calibration at all for SBE41/external-CTD sources, only derivation - "calibrate" undersold that) and its S/th/sgth derivation guarded behind `isfield(ctd,'T') && isfield(ctd,'C')`, since DeepSolo's fallrise file has neither. `dPdt`/`z`/`dzdt` still compute unconditionally.
+
+**New L1-level functions** (called from the end of `MODprocess_all_L0_to_L1.m`, gated on the deployment having any CTD data): `MODprocess_L1_make_pressure_timeseries.m` (concatenates `ctd.dnum`/`.P` across all L1 files - this is Section 6.3's long-planned `modProcess_make_pressure_timeseries.m`, finally implemented) and `MODprocess_L1_detect_profiling_direction.m` (gap detection, cheby2 lowpass sized to the record's own sample spacing rather than a fixed seconds value, buffered edges - heavily commented per Nicole's request to understand the math, not just trust it). Both save to `meta/PressureTimeseries.mat`.
+
+**New L2 functions**: `MODprocess_L2_get_scan_spectra.m` (per-scan pwelch, stripped-down version of the old `get_scan_spectra.m`/`mod_efe_scan_acceleration.m`), `MODprocess_single_L1_to_L2.m` (per-file scan tiling + gating, pure - `PressureTimeseries` passed in as a required argument, not self-loaded), `MODprocess_all_L1_to_L2.m` (batch orchestrator mirroring `MODprocess_all_L0_to_L1.m`'s shape).
+
+**`setup.yml` additions**: `afe.sample_rate` (-> `metadata.PROCESS.Fs_epsi`, default 320), `spectral.nfft`/`.dof` (-> `metadata.PROCESS.nfft`/`.dof`, defaults 1024/3), `profile_detection.lowpass_factor`/`.gap_factor`/`.buffer_bins` (-> `metadata.PROFILES.*`, defaults 3/5/1) - all optional, all added explicitly to `epsi_deepsolo/26_0520_ljc/meta/setup.yml` rather than relying on defaults.
+
+**Real bug caught during testing**: `MODprocess_single_L1_to_L2.m`'s scan-to-direction matching originally used `interp1(...,'nearest','extrap')`. `epsi_deepsolo/26_0520_ljc`'s epsi logging starts ~18.5 h before the fallrise pressure record begins (files `modsom_00` through `modsom_13`) - with `'extrap'`, every scan in those files would have nearest-matched to whichever `PressureTimeseries` sample happened to be first, regardless of how many hours away, silently misclassifying them. Fixed by dropping `'extrap'` - out-of-range scans now correctly get excluded (`NaN` -> not-down) instead of guessed.
+
+**Tested end-to-end** against a sandbox copy of `epsi_deepsolo/26_0520_ljc` (copied to scratchpad, not the real `data_for_reorg` folder, per Nicole's request to keep test runs out of directories she's also testing in manually) with `reprocess_all=true` on both steps:
+- L0->L1 (45 files): `ctd.P`/`dPdt`/`z` now populated where previously empty; T/C/S/th/sgth correctly absent.
+- `meta/PressureTimeseries.mat`: 757 samples (fewer than the raw file's 1032 - the rest fall outside any L1 file's epsi/vnav time range and get sliced out, same as external-CTD chunking always does), 30.1% classified `is_down`, `dPdt_smoothed` range -0.136 to +0.500 dbar/s, 0.8% NaN (short-segment fallback). Diagnostic plot (P / dPdt_smoothed / is_down vs. time) shows clean sawtooth pressure cycles with `is_down` landing exactly on each steep descending leg - visually confirms the classification.
+- L1->L2 (45 files): scan counts ranged 0 (files entirely before pressure logging started, or entirely on an upcast) to 1066 per file. Spot-checked `modsom_20.mat`: 1066 scans, `f` 513 points (0-160 Hz, Nyquist for `Fs_epsi=320`), all 7 channels present (`t1_volt`/`t2_volt`/`s1_volt`/`s2_volt`/`a1_g`/`a2_g`/`a3_g`), `P.s1_volt` shaped `[1066 x 513]` as expected, kept scans' `pressure` monotonically increasing from 233.6 to 324.5 dbar in time order (100% of adjacent diffs non-negative) - confirms only real descent got through the gate.
+- Confirmed standalone single-file usage: calling `MODprocess_single_L1_to_L2` directly on one loaded L1 file + a loaded `PressureTimeseries.mat` reproduces the same scan count (1066) as the batch run.
 
 ### 2026-07-24 — Cable twist counting: reviewed and fixed Ana's draft, wired into L0->L1 pipeline (branch `l0_to_l1_conversion`)
 
