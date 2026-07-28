@@ -1,14 +1,15 @@
-function ktemp = MODprocess_L2_thermal_diffusivity(S, T, P)
-% MODprocess_L2_thermal_diffusivity        Part of MOD_fish_processing
+function ktemp = mod_scan_thermal_diffusivity(S, T, P)
+% mod_scan_thermal_diffusivity        Part of MOD_fish_processing
 %
-% ktemp = MODprocess_L2_thermal_diffusivity(S, T, P)
+% ktemp = mod_scan_thermal_diffusivity(S, T, P)
 %
 % DESCRIPTION
 %   Thermal diffusivity of seawater, ktemp = k / (rho * cp), where k is
 %   thermal conductivity, rho is density, cp is specific heat at constant
-%   pressure. This is the ktemp MODprocess_L2_calc_chi.m needs
-%   (chi = 6*ktemp*dk*sum(temperature-gradient spectrum)) - a physical
-%   property of the water the FP07 is sitting in, not of the instrument.
+%   pressure. This is the ktemp both mod_scan_calc_chi_obs.m
+%   (chi_obs = 6*ktemp*dk*sum(temperature-gradient spectrum)) and
+%   mod_scan_calc_chi_mle.m need - a physical property of the water
+%   the FP07 is sitting in, not of the instrument.
 %
 %   Density and specific heat are the already-vendored, standard CSIRO/
 %   UNESCO-1983 (EOS-80) toolbox/seawater/sw_dens.m and sw_cp.m -
@@ -38,7 +39,7 @@ function ktemp = MODprocess_L2_thermal_diffusivity(S, T, P)
 %   on a term that is itself already a small correction (thermal
 %   diffusivity varies only mildly with P) - not the kind of bug this
 %   exercise is centrally about, but flagged here rather than silently
-%   reproduced, same spirit as MODprocess_L2_fpo7_cutoff.m's NOTES.
+%   reproduced, same spirit as mod_scan_fpo7_cutoff.m's NOTES.
 %
 % INPUTS
 %   S - salinity [psu], scalar
@@ -53,8 +54,8 @@ function ktemp = MODprocess_L2_thermal_diffusivity(S, T, P)
 %
 % CALLED BY
 %   MODprocess_single_L1_to_L2.m (once per scan, from scan-center S/T/P -
-%   the resulting ktemp is then passed into MODprocess_L2_calc_chi.m as an
-%   argument, not computed inside it)
+%   the resulting ktemp is then passed into mod_scan_calc_chi_obs.m /
+%   mod_scan_calc_chi_mle.m as an argument, not computed inside them)
 %
 % CALLS
 %   sw_dens.m, sw_cp.m (toolbox/seawater)

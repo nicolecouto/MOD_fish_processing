@@ -79,7 +79,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     rate) if the key is absent - so older
 %                                     setup.yml files don't need an edit.
 %     PROCESS.nfft, .dof            - spectral processing parameters for
-%                                     MODprocess_L2_get_scan_spectra.m, from
+%                                     mod_scan_get_spectra.m, from
 %                                     setup.yml's spectral.nfft/.dof.
 %                                     Defaults 1024/3 (same defaults as the
 %                                     old MOD_fish_lib Acquisition/setup.yml
@@ -89,7 +89,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %              .gap_factor,
 %              .buffer_bins          - profiling-direction detection
 %                                     parameters for
-%                                     MODprocess_L1_detect_profiling_direction.m,
+%                                     mod_L1_detect_profiling_direction.m,
 %                                     from setup.yml's profile_detection:
 %                                     block. Defaults 3/5/1 if the block is
 %                                     absent - see that function's header
@@ -189,7 +189,7 @@ if isfield(yml, 'afe') && isfield(yml.afe, 'sample_rate')
     metadata.PROCESS.Fs_epsi = yml.afe.sample_rate;
 end
 
-%% Spectral processing parameters (MODprocess_L2_get_scan_spectra.m) -
+%% Spectral processing parameters (mod_scan_get_spectra.m) -
 % optional, same defaults MOD_fish_lib's Acquisition/setup.yml templates used.
 metadata.PROCESS.nfft = 1024;
 metadata.PROCESS.dof = 3;
@@ -203,7 +203,7 @@ if isfield(yml, 'spectral')
 end
 
 %% Profiling-direction detection parameters
-% (MODprocess_L1_detect_profiling_direction.m) - optional. Defaults sized
+% (mod_L1_detect_profiling_direction.m) - optional. Defaults sized
 % for sparse, irregularly-sampled pressure records (e.g. DeepSolo's
 % fallrise data, ~60-120 s between samples) - see that function's header
 % for the reasoning behind lowpass_factor=2/gap_factor=5/buffer_bins=1.

@@ -4,7 +4,7 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, met
 % TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, meta_dir)
 %
 % DESCRIPTION
-%   Chains every L1 file's twist field (added by MODprocess_L1_add_twist.m)
+%   Chains every L1 file's twist field (added by mod_L1_add_twist.m)
 %   into one continuous, non-resetting rotation count for the whole
 %   deployment. Each L1 file's count_gyro/count_compass restarts from 0
 %   (it comes from a per-file cumsum) - this function offsets each file's
@@ -65,7 +65,7 @@ validFile = false(nFiles,1);
 % Not every L1 file necessarily has vnav data - a raw file can legitimately
 % contain zero VNAV blocks (comms dropout, logging started mid-file, ...),
 % in which case L0 parsing sets vnav = [] and MODprocess_single_L0_to_L1
-% never calls MODprocess_L1_add_twist, so 'twist' is simply absent from
+% never calls mod_L1_add_twist, so 'twist' is simply absent from
 % that file. That's expected, not a processing failure - skip the file and
 % move on, rather than treat it as an error.
 for i = 1:nFiles

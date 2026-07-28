@@ -5,6 +5,7 @@ Background on the physics and math behind the pipeline, as opposed to the [workf
 Pages will be added here over time. Planned topics:
 
 - Calculating epsilon from shear
+- Calculating chi from temperature
 - How profiles are detected from a pressure timeseries
 - Figure of merit: what it means and when to trust it
 - Getting the noise spectrum

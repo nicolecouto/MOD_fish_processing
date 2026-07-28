@@ -8,7 +8,7 @@ function PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir)
 %   by file start time, into one deployment-length pressure record. This is
 %   the deployment-level pressure timeseries PLAN.md Section 6.3 sketched as
 %   modProcess_make_pressure_timeseries.m - built now because
-%   MODprocess_L1_detect_profiling_direction.m needs a continuous,
+%   mod_L1_detect_profiling_direction.m needs a continuous,
 %   whole-deployment record (a single L1 file's pressure data is too short
 %   and too sparse, for vehicles like DeepSolo, to smooth/classify direction
 %   on its own without edge artifacts at every file boundary).

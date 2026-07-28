@@ -1,16 +1,17 @@
-function fc_index = MODprocess_L2_fpo7_cutoff(f, Pxx, noise_coefs)
-% MODprocess_L2_fpo7_cutoff        Part of MOD_fish_processing
+function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
+% mod_scan_fpo7_cutoff        Part of MOD_fish_processing
 %
-% fc_index = MODprocess_L2_fpo7_cutoff(f, Pxx, noise_coefs)
+% fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
 %
 % DESCRIPTION
 %   Finds where an observed FP07 voltage spectrum (Pxx) drops down into
 %   the instrument's own bench-measured noise floor, and returns the index
 %   (into f/Pxx, unchanged) of the last frequency bin still trustworthy
 %   above that floor. This is the upper integration bound (kc, once
-%   divided by fall speed) MODprocess_L2_calc_chi.m needs - chi is only
-%   integrated over wavenumbers where the FP07 channel is actually
-%   measuring turbulence, not its own electronic noise.
+%   divided by fall speed) mod_scan_calc_chi_obs.m and
+%   mod_scan_calc_chi_mle.m both need - chi is only computed over
+%   wavenumbers where the FP07 channel is actually measuring turbulence,
+%   not its own electronic noise.
 %
 %   The noise floor itself is a cubic fit in log10(f) vs. log10(noise
 %   power), pre-measured on a bench with no probe attached
@@ -52,7 +53,7 @@ function fc_index = MODprocess_L2_fpo7_cutoff(f, Pxx, noise_coefs)
 %              (i.e. "trust the whole spectrum").
 %
 % CALLED BY
-%   MODprocess_L2_calc_chi.m
+%   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
 %
 % CALLS
 %   (none)
@@ -83,7 +84,7 @@ function fc_index = MODprocess_L2_fpo7_cutoff(f, Pxx, noise_coefs)
 %   Both would have made the old code's chi integration cut off a little
 %   early (excluding a few valid high-wavenumber bins) - a small, one-
 %   directional bias, not the kind of factor-of-2 issue the FP07 time
-%   constant itself is (see MODprocess_L2_fpo7_transfer_function.m), but
+%   constant itself is (see mod_scan_fpo7_transfer_function.m), but
 %   worth having fixed given how much this whole exercise is about
 %   auditing exactly this kind of thing.
 %
@@ -97,7 +98,7 @@ Pxx = Pxx(:);
 
 valid = find(f > 0);
 if numel(valid) <= n_skip
-    error('MODprocess_L2_fpo7_cutoff:tooFewBins', ...
+    error('mod_scan_fpo7_cutoff:tooFewBins', ...
         'Need more than %d frequency bins with f > 0 to find a noise-floor cutoff.', n_skip);
 end
 
@@ -113,7 +114,7 @@ medspec = smoothdata(Pxx(valid), 'movmean', 15);
 high_freq = f(valid) > 0.7 * f(valid(end));
 adjust_spec = median(medspec(high_freq) ./ 10.^noise(high_freq), 'omitmissing');
 if adjust_spec > 10
-    warning('MODprocess_L2_fpo7_cutoff:highNoiseFloor', ...
+    warning('mod_scan_fpo7_cutoff:highNoiseFloor', ...
         ['Observed noise floor is >10x the bench measurement - either a ' ...
         'noisy scan or a probe/electronics issue worth checking.']);
 end

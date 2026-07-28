@@ -16,7 +16,7 @@ This first cut computes **raw, uncorrected power spectra only** - no epsilon, no
 
 ## Profiling-direction detection is an L1 concern, not L2
 
-`ctd.P`/`dPdt` are computed in L1 already (`process_ctd_fields`, see [L0 → L1](L0_to_L1_conversion.md)). Classifying up/down from that pressure record is naturally an L1-level derived product too - not something L2 computes for itself. This mirrors the cable-twist-counting pattern (`MODprocess_L1_add_twist.m` computes a per-file field; `MODprocess_L1_accumulate_twist_timeseries.m` chains all files into a deployment-level `meta/TwistTimeseries.mat`): two functions, called once per deployment from the end of `MODprocess_all_L0_to_L1.m`, build `meta/PressureTimeseries.mat`.
+`ctd.P`/`dPdt` are computed in L1 already (`process_ctd_fields`, see [L0 → L1](L0_to_L1_conversion.md)). Classifying up/down from that pressure record is naturally an L1-level derived product too - not something L2 computes for itself. This mirrors the cable-twist-counting pattern (`mod_L1_add_twist.m` computes a per-file field; `MODprocess_L1_accumulate_twist_timeseries.m` chains all files into a deployment-level `meta/TwistTimeseries.mat`): two functions, called once per deployment from the end of `MODprocess_all_L0_to_L1.m`, build `meta/PressureTimeseries.mat`.
 
 This also directly answers "can I process a single L1 file to L2 on its own?" - **yes**, because all the direction information a single L1 file needs already lives in a small, cheap `meta/PressureTimeseries.mat`, rather than something L2 has to compute from the whole deployment on the fly.
 
@@ -28,10 +28,10 @@ PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir)
 
 Concatenates `ctd.dnum`/`ctd.P` out of every L1 `.mat` file in `L1_dir`, sorted by file start time (loads only the `ctd` field per file, not full files). Pure - no metadata needed, no file writing. This is the deployment-length pressure record PLAN.md Section 6.3 originally sketched as `modProcess_make_pressure_timeseries.m`.
 
-### `MODprocess_L1_detect_profiling_direction.m`
+### `mod_L1_detect_profiling_direction.m`
 
 ```matlab
-PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata)
+PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata)
 ```
 
 Adds `dPdt_smoothed` and a logical `is_down` (descending) to every sample. Four steps, in order:
@@ -54,10 +54,10 @@ Real output, `epsi_deepsolo/26_0520_ljc` (sandbox test run, 2026-07-26): pressur
 
 ## L2 spectra
 
-### `MODprocess_L2_get_scan_spectra.m`
+### `mod_scan_get_spectra.m` (`processing/scans/`)
 
 ```matlab
-scan = MODprocess_L2_get_scan_spectra(epsi_chunk, metadata)
+scan = mod_scan_get_spectra(epsi_chunk, metadata)
 ```
 
 Pure function - `epsi_chunk` is `data.epsi` already sliced to one scan's `N_epsi = (dof-1)*nfft` samples. For each channel in `metadata.PROCESS.channels` whose `metadata.AFE.(ch).type` is `shear`/`fpo7`/`acc`, computes `[Pxx, f] = pwelch(detrend(x), nfft, [], nfft, Fs_epsi, 'psd')` - the same call shape as the old `mod_efe_scan_acceleration.m`, minus the `h_freq` transfer-function correction (SOM filters, PLAN.md Section 6.2, aren't implemented yet - these spectra are **uncorrected**, documented as such rather than silently glossed over). Returns `scan.f` (shared frequency vector) and `scan.P.(channel)`.
@@ -78,8 +78,8 @@ L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
 
 1. Tiles `data.epsi` **within this file only**, `N_epsi`-sample windows with 50% overlap (`scan_step = N_epsi/2`).
 2. For each scan's center time, nearest-matches against `PressureTimeseries.dnum`/`.is_down`. Deliberately **no extrapolation** here: a scan center time outside `[min(PressureTimeseries.dnum), max(PressureTimeseries.dnum)]` has no real pressure information at all - e.g. epsi logging that started hours before DeepSolo's pressure record begins (real case: `epsi_deepsolo/26_0520_ljc`'s first 14 L1 files, ~18.5 h of epsi data recorded before the first fallrise pressure sample) - and gets excluded rather than nearest-matched to a potentially far-distant, meaningless sample. This was caught during testing: an earlier version used `interp1(...,'nearest','extrap')`, which would have nearest-matched all of those early scans to whatever the first `PressureTimeseries` sample happened to be classified as, regardless of how many hours away it was.
-3. For kept (descending) scans, slices `data.epsi` and calls `MODprocess_L2_get_scan_spectra`.
-4. Assembles output arrays over the scan dimension: `dnum`, `pressure`/`w` (interpolated from this file's own `data.ctd.P`/`.dzdt` at scan center), `f` (shared, `1 × nfreq`), per-channel `P.(channel)` matrices (`nbscan × nfreq`), plus provenance (`nfft`, `dof`, `Fs_epsi`, `N_epsi`, `scan_step`). **Update (branch `chi_processing`):** also `temperature`/`salinity` (from `data.ctd.T`/`.S` at scan center, only when this file's CTD has real T/S) and `chi.(channel)`/`chi_kc.(channel)` for every fpo7 channel with a resolved `volts_to_C` calibration - see [FP07 calibration and chi](L2_calc_chi.md).
+3. For kept (descending) scans, slices `data.epsi` and calls `mod_scan_get_spectra`.
+4. Assembles output arrays over the scan dimension: `dnum`, `pressure`/`w` (interpolated from this file's own `data.ctd.P`/`.dzdt` at scan center), `f` (shared, `1 × nfreq`), per-channel `P.(channel)` matrices (`nbscan × nfreq`), plus provenance (`nfft`, `dof`, `Fs_epsi`, `N_epsi`, `scan_step`). **Update (branch `chi_processing`):** also `temperature`/`salinity` (from `data.ctd.T`/`.S` at scan center, only when this file's CTD has real T/S) and `chi_obs.(channel)`/`chi_obs_kc.(channel)` for every fpo7 channel with a resolved `volts_to_C` calibration - see [FP07 calibration and chi](L2_calc_chi.md).
 
 Returns an all-empty `L2data` (consistent field shapes, `nbscan = 0`) if this file has no epsi data, is too short for even one scan, or no scan lands on a descending part of the record - not an error, since that's expected for files recorded entirely during an upcast or before pressure logging started.
 
@@ -129,7 +129,7 @@ L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L
 ## Known limitations
 
 - **File-boundary coverage gaps** - a partial window at the end of an L1 file that doesn't reach a full `N_epsi` samples is dropped, not padded from the next file. Accepted cost of "realtime" per-file mode - see "What this step does" above.
-- **No epsilon or SOM transfer-function correction yet** - `MODprocess_L2_get_scan_spectra.m`'s spectra are still raw and uncorrected. See PLAN.md Section 6.2/6.4 for what's still open. Chi (direct-integration, no Batchelor MLE/FOM yet) is now implemented downstream for deployments with a real onboard CTD - see [FP07 calibration and chi](L2_calc_chi.md); DeepSolo itself still can't get chi (no CTD T).
+- **No epsilon or SOM transfer-function correction yet** - `mod_scan_get_spectra.m`'s spectra are still raw and uncorrected. See PLAN.md Section 6.2/6.4 for what's still open. `chi_obs`/`chi_mle` are now implemented downstream for deployments with a real onboard CTD - see [FP07 calibration and chi](L2_calc_chi.md); DeepSolo itself still can't get chi (no CTD T).
 - **Direction classification quality depends entirely on how sparse/gappy the pressure record is for a given deployment** - `lowpass_factor`/`gap_factor`/`buffer_bins` are tunable per deployment in `setup.yml`'s `profile_detection:` block precisely because a different DeepSolo deployment (or a different vehicle's fallrise-style sparse pressure product) may need different values. Always worth a diagnostic plot (see "Diagnostic" above) after a new deployment's first run.
 
 ## History

@@ -13,7 +13,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %
 %   Loads meta/PressureTimeseries.mat once (built by
 %   MODprocess_all_L0_to_L1.m via MODprocess_L1_make_pressure_timeseries.m
-%   + MODprocess_L1_detect_profiling_direction.m) and passes it into every
+%   + mod_L1_detect_profiling_direction.m) and passes it into every
 %   MODprocess_single_L1_to_L2.m call, so the per-file work stays a pure
 %   function while the file-I/O cost is paid once per batch run rather than
 %   once per file.
@@ -63,7 +63,7 @@ if ~exist(pressure_timeseries_file, 'file')
     error('MODprocess_all_L1_to_L2:noPressureTimeseries', ...
         ['%s does not exist yet. It is built by MODprocess_all_L0_to_L1.m ' ...
          '(via MODprocess_L1_make_pressure_timeseries.m and ' ...
-         'MODprocess_L1_detect_profiling_direction.m) once this deployment has ' ...
+         'mod_L1_detect_profiling_direction.m) once this deployment has ' ...
          'CTD data in its L1 files - run that first.'], pressure_timeseries_file);
 end
 PressureTimeseries = load(pressure_timeseries_file);

@@ -1,7 +1,7 @@
-function data = MODprocess_L1_add_twist(data)
-% MODprocess_L1_add_twist        Part of MOD_fish_processing
+function data = mod_L1_add_twist(data)
+% mod_L1_add_twist        Part of MOD_fish_processing
 %
-% data = MODprocess_L1_add_twist(data)
+% data = mod_L1_add_twist(data)
 %
 % DESCRIPTION
 %   Computes cumulative twist count from VecNav gyro and compass data and
@@ -37,7 +37,7 @@ function data = MODprocess_L1_add_twist(data)
 
 % Check vnav exists and if so, load it
 if ~isfield(data, 'vnav') || isempty(data.vnav) || isempty(data.vnav.time_s)
-    warning('MODprocess_L1_add_twist: data.vnav is missing or empty. Returning data unchanged.');
+    warning('mod_L1_add_twist: data.vnav is missing or empty. Returning data unchanged.');
     return
 end
 vnav = data.vnav;

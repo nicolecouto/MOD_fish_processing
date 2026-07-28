@@ -19,7 +19,7 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %
 %   Only descending (PressureTimeseries.is_down) data is used for the fit.
 %   Two independent reasons for this, not one: (1) it matches how the
-%   calibration will actually be used downstream - MODprocess_L2_calc_chi.m
+%   calibration will actually be used downstream - mod_scan_calc_chi_obs.m
 %   only computes chi on descending scans in the first place (shear/FPO7
 %   are only trustworthy on the way down for vehicles like DeepSolo/Mako -
 %   see PLAN.md Section 4), so fitting on the same subset the correction
@@ -31,8 +31,8 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %   No error, no calibration is not exceptional - a deployment with no CTD
 %   temperature at all (DeepSolo's fallrise record is pressure-only) simply
 %   never gets metadata.AFE.(ch).volts_to_C set, and every downstream
-%   consumer (MODprocess_L2_calc_chi.m) is expected to check for that field
-%   before trying to use it, the same way shear's .cal is only present when
+%   consumer (mod_scan_calc_chi_obs.m) is expected to check for that
+%   field before trying to use it, the same way shear's .cal is only present when
 %   a probe SN resolved to a real calibration file.
 %
 % INPUTS
@@ -45,7 +45,7 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %              metadata.PROCESS.channels, metadata.AFE.(ch).type (to find
 %              which channels are 'fpo7')
 %   PressureTimeseries - struct with dnum, is_down (from
-%              MODprocess_L1_detect_profiling_direction.m via
+%              mod_L1_detect_profiling_direction.m via
 %              meta/PressureTimeseries.mat) - the whole-deployment record.
 %              Required argument, not self-loaded - same pure-function,
 %              caller-supplies-it precedent as

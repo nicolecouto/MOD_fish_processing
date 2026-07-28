@@ -1,7 +1,7 @@
-function scan = MODprocess_L2_get_scan_spectra(epsi_chunk, metadata)
-% MODprocess_L2_get_scan_spectra        Part of MOD_fish_processing
+function scan = mod_scan_get_spectra(epsi_chunk, metadata)
+% mod_scan_get_spectra        Part of MOD_fish_processing
 %
-% scan = MODprocess_L2_get_scan_spectra(epsi_chunk, metadata)
+% scan = mod_scan_get_spectra(epsi_chunk, metadata)
 %
 % DESCRIPTION
 %   Computes a raw (uncorrected) power spectrum vs. frequency for every

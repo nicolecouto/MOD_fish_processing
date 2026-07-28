@@ -200,10 +200,10 @@ Given the altimeter's raw slant-range reading (`alt.dst`/`isap.dst`, already in 
 
 This is exactly what `calibrate_altimeter_hab` computes: `hab = dst.*cos(theta) - (feet2meters(H) - inches2meters(P))`, i.e. `dst*cos(theta) - H + P` once `H`/`P` are converted to meters. Confirmed against `blt2021_0715`'s real geometry (θ=10°, H=5 ft, P=2.02 in).
 
-### `MODprocess_L1_add_twist.m` and cable twist counting
+### `mod_L1_add_twist.m` and cable twist counting
 
 ```matlab
-data = MODprocess_L1_add_twist(data)
+data = mod_L1_add_twist(data)
 ```
 
 Called automatically inside `MODprocess_single_L0_to_L1.m` (after `process_ctd_fields`, so it has calibrated pressure to interpolate) whenever `data.vnav` is present and non-empty - a no-op (with a warning) otherwise, so deployments without a VecNav just don't get a `twist` field.
@@ -214,7 +214,7 @@ Algorithm (ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`):
 
 1. Drop bad vnav samples (NaN/Inf/non-monotonic `dnum`).
 2. Interpolate CTD pressure onto the vnav timebase (`interp1(ctd.dnum, ctd.P, vnav.dnum)`) - `NaN` if there's no CTD on this deployment. Used downstream to mark upcast/downcast on the twist plot.
-3. For each sample, rotate the compass and gyro vectors into the gravity-aligned z-axis frame using `SN_RotateToZAxis` (a local subfunction inside `MODprocess_L1_add_twist.m`, written by San Nguyen - finds the Euler rotation that takes the local acceleration vector to `[0 0 |a|]`). Not split into its own file since nothing else calls it.
+3. For each sample, rotate the compass and gyro vectors into the gravity-aligned z-axis frame using `SN_RotateToZAxis` (a local subfunction inside `mod_L1_add_twist.m`, written by San Nguyen - finds the Euler rotation that takes the local acceleration vector to `[0 0 |a|]`). Not split into its own file since nothing else calls it.
 4. **Compass method (cross-check):** normalize the rotated horizontal compass components to a unit vector, `unwrap(angle(...))` gives the instantaneous heading in radians.
 5. **Gyro method (primary):** cumulative sum of the rotated z-axis gyro rate × `dt`, divided by `2*pi` to convert radians to full rotations - the unit operators actually count fin/spool adjustments against.
 
@@ -240,11 +240,11 @@ ax = MODvis_twist_timeseries(TwistTimeseries, ax)
 
 Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`) and marking any spool swap events as vertical lines. "Neutral is Negative" - setting the fin to neutral makes the count go down. Not called automatically - run manually against `meta/TwistTimeseries.mat` when you want to look at the deployment picture (e.g. during a cruise, to decide when to adjust the fin).
 
-### `MODprocess_L1_make_pressure_timeseries.m` and `MODprocess_L1_detect_profiling_direction.m`
+### `MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`
 
 ```matlab
 PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
-PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata);
+PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
 ```
 
 Called automatically at the end of `MODprocess_all_L0_to_L1.m` (right after the twist accumulation step), whenever this deployment has any CTD data - builds `meta/PressureTimeseries.mat`, the deployment-length pressure record with a smoothed `dPdt` and an `is_down` (descending) classification per sample. This is deliberately an L1-level product, not an L2 one - see [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md) for the full writeup of the classification algorithm and why it lives here rather than in L2.
@@ -263,7 +263,7 @@ Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_ext
 
 At the end of every call, if `metadata.manifest.has_vnav` is true, also calls `MODprocess_L1_accumulate_twist_timeseries` once to re-chain every L1 file's twist field into `meta/TwistTimeseries.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
 
-Also, if this deployment has any CTD data, calls `MODprocess_L1_make_pressure_timeseries` + `MODprocess_L1_detect_profiling_direction` once to build/update `meta/PressureTimeseries.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `MODprocess_L1_detect_profiling_direction.m`" above.
+Also, if this deployment has any CTD data, calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/PressureTimeseries.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
 
 **Update (branch `chi_processing`):** if this deployment specifically has a *real onboard* CTD (`metadata.CTD.cal` non-empty - stricter than the "any CTD data" check above, since that also covers DeepSolo's P-only external CTD), also calls `MODprocess_L1_apply_fpo7_calibration.m` right after `PressureTimeseries` is built, and persists the result (`metadata.AFE.(channel).volts_to_C`) to `meta/metadata.mat` via `MODsetup_save_metadata.m` - see [FP07 calibration and chi](L2_calc_chi.md).
 
@@ -305,6 +305,6 @@ Ported from `mod_som_read_epsi_files_v4.m` in the old `MOD_fish_lib` monolith - 
 - Fixed a latent bug found in `MODprocess_single_modraw_to_L0.m` while porting the altimeter logic: it called `orderfields(alt, {..., 'hab'})` but never set `alt.hab` - `hab` needs instrument geometry that L0 deliberately doesn't have. Would have thrown a hard error on any deployment with `alt` data; none of the four `data_for_reorg` deployments tested so far have any, so it was never hit until now. `hab` is now correctly computed here instead, for both `alt` and `isap`.
 - Renamed `MODprocess_new_modraw_to_L0.m` → `MODprocess_all_modraw_to_L0.m` so the L0 and L1 batch orchestrators share the same `MODprocess_all_*` naming pattern.
 - Tested against all 96 files of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` - see PLAN.md Session Log (2026-07-09) for full results.
-- **Cable twist counting added** (2026-07-24, PLAN.md Section 7 - Ana's project): `MODprocess_L1_add_twist.m`, `MODprocess_L1_accumulate_twist_timeseries.m`, `MODvis_twist_timeseries.m`, ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`. `SN_RotateToZAxis` (written by San Nguyen, MOD) is folded in as a local subfunction of `MODprocess_L1_add_twist.m` rather than a separate/vendored file, since it's only called there. Wired into the pipeline automatically (per-file inside `MODprocess_single_L0_to_L1.m`, per-deployment at the end of `MODprocess_all_L0_to_L1.m`). Tested against all 96 files of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` - see PLAN.md Session Log (2026-07-24) for full results.
-- **DeepSolo external CTD reader implemented, `calibrate_ctd` renamed to `process_ctd_fields`, `PressureTimeseries.mat`/profiling-direction detection added** (2026-07-26, branch `l1_to_l2_conversion` - prerequisite work for [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md)): `ctd/DeepSoloFallrise.mat` (a sparse, P-only pressure record) appeared in `epsi_deepsolo/26_0520_ljc`'s data folder, so `MODprocess_read_external_ctd.m` got a real DeepSolo branch instead of erroring unconditionally. Since that file has no T/C, the CTD subfunction inside `MODprocess_single_L0_to_L1.m` (renamed `calibrate_ctd` → `process_ctd_fields` - see above) now guards its S/th/sgth derivation behind `isfield(ctd,'T') && isfield(ctd,'C')` rather than assuming they're always present. Also added `MODprocess_L1_make_pressure_timeseries.m`/`MODprocess_L1_detect_profiling_direction.m`, called at the end of `MODprocess_all_L0_to_L1.m`. Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` (45 files, `reprocess_all=true`): `ctd.P`/`dPdt`/`z` now populated (T/C/S/th/sgth correctly absent), `meta/PressureTimeseries.mat` built with 757 samples classified 30.1% `is_down` - see PLAN.md Session Log (2026-07-26) for full numbers.
+- **Cable twist counting added** (2026-07-24, PLAN.md Section 7 - Ana's project): `mod_L1_add_twist.m`, `MODprocess_L1_accumulate_twist_timeseries.m`, `MODvis_twist_timeseries.m`, ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`. `SN_RotateToZAxis` (written by San Nguyen, MOD) is folded in as a local subfunction of `mod_L1_add_twist.m` rather than a separate/vendored file, since it's only called there. Wired into the pipeline automatically (per-file inside `MODprocess_single_L0_to_L1.m`, per-deployment at the end of `MODprocess_all_L0_to_L1.m`). Tested against all 96 files of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` - see PLAN.md Session Log (2026-07-24) for full results.
+- **DeepSolo external CTD reader implemented, `calibrate_ctd` renamed to `process_ctd_fields`, `PressureTimeseries.mat`/profiling-direction detection added** (2026-07-26, branch `l1_to_l2_conversion` - prerequisite work for [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md)): `ctd/DeepSoloFallrise.mat` (a sparse, P-only pressure record) appeared in `epsi_deepsolo/26_0520_ljc`'s data folder, so `MODprocess_read_external_ctd.m` got a real DeepSolo branch instead of erroring unconditionally. Since that file has no T/C, the CTD subfunction inside `MODprocess_single_L0_to_L1.m` (renamed `calibrate_ctd` → `process_ctd_fields` - see above) now guards its S/th/sgth derivation behind `isfield(ctd,'T') && isfield(ctd,'C')` rather than assuming they're always present. Also added `MODprocess_L1_make_pressure_timeseries.m`/`mod_L1_detect_profiling_direction.m`, called at the end of `MODprocess_all_L0_to_L1.m`. Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` (45 files, `reprocess_all=true`): `ctd.P`/`dPdt`/`z` now populated (T/C/S/th/sgth correctly absent), `meta/PressureTimeseries.mat` built with 757 samples classified 30.1% `is_down` - see PLAN.md Session Log (2026-07-26) for full numbers.
 - **FP07 in-situ `volts_to_C` calibration added** (2026-07-27, branch `chi_processing` - prerequisite for [FP07 calibration and chi](L2_calc_chi.md)): `MODprocess_L1_apply_fpo7_calibration.m`, called at the end of `MODprocess_all_L0_to_L1.m` whenever `metadata.CTD.cal` is non-empty (a real onboard CTD, not DeepSolo's external one). Tested against a sandbox copy of `epsi_mako/blt2021_0715` - see PLAN.md Session Log (2026-07-27) for full numbers.

@@ -1,12 +1,12 @@
-function PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata)
-% MODprocess_L1_detect_profiling_direction        Part of MOD_fish_processing
+function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata)
+% mod_L1_detect_profiling_direction        Part of MOD_fish_processing
 %
-% PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata)
+% PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata)
 %
 % DESCRIPTION
 %   Classifies every sample in a deployment-length pressure timeseries
 %   (from MODprocess_L1_make_pressure_timeseries.m) as descending
-%   ('is_down' = true, dPdt > 0) or not, so MODprocess_L2_get_scan_spectra.m
+%   ('is_down' = true, dPdt > 0) or not, so mod_scan_get_spectra.m
 %   only computes spectra for downcast data (shear/high-res temperature are
 %   only trustworthy on the way down for vehicles like DeepSolo - see
 %   PLAN.md Section 4). This is deliberately an L1-level function, not L2 -
@@ -82,7 +82,7 @@ if isfield(metadata, 'PROFILES')
     if isfield(metadata.PROFILES, 'buffer_bins'), buffer_bins = metadata.PROFILES.buffer_bins; end
 end
 if lowpass_factor <= 2
-    error('MODprocess_L1_detect_profiling_direction:invalidLowpassFactor', ...
+    error('mod_L1_detect_profiling_direction:invalidLowpassFactor', ...
         ['metadata.PROFILES.lowpass_factor must be > 2 (got %.2f) - the normalized filter ' ...
          'cutoff Fc = 2/lowpass_factor must be strictly less than 1 (Nyquist) for cheby2 to ' ...
          'accept it. lowpass_factor = 2 gives Fc = 1 exactly (degenerate); 3 (Fc ~= 0.67) is ' ...

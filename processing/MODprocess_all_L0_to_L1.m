@@ -25,7 +25,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   meta/PressureTimeseries.mat - the deployment-length pressure record,
 %   with a smoothed dPdt and an is_down (descending) classification per
 %   sample (MODprocess_L1_make_pressure_timeseries.m +
-%   MODprocess_L1_detect_profiling_direction.m). This is what
+%   mod_L1_detect_profiling_direction.m). This is what
 %   MODprocess_single_L1_to_L2.m gates spectra-computation scans against -
 %   see PLAN.md Section 4.
 %
@@ -35,8 +35,8 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   FP07 channel's in-situ volts->degC calibration
 %   (MODprocess_L1_apply_fpo7_calibration.m -> metadata.AFE.(ch).volts_to_C,
 %   saved back to meta/metadata.mat via MODsetup_save_metadata.m). This is
-%   the calibration MODprocess_L2_calc_chi.m needs; deployments without a
-%   real CTD simply never get it set.
+%   the calibration mod_scan_calc_chi_obs.m needs; deployments without
+%   a real CTD simply never get it set.
 %
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
@@ -59,7 +59,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
 %   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
-%   MODprocess_L1_make_pressure_timeseries.m, MODprocess_L1_detect_profiling_direction.m
+%   MODprocess_L1_make_pressure_timeseries.m, mod_L1_detect_profiling_direction.m
 %   (only when this deployment has CTD data)
 %   MODprocess_L1_apply_fpo7_calibration.m, MODsetup_save_metadata.m
 %   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
@@ -174,7 +174,7 @@ has_ctd = (~isempty(metadata.CTD.cal)) || ~isempty(external_ctd_full);
 if has_ctd
     PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
     if ~isempty(PressureTimeseries.dnum)
-        PressureTimeseries = MODprocess_L1_detect_profiling_direction(PressureTimeseries, metadata);
+        PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
         save(fullfile(metadata.paths.meta, 'PressureTimeseries.mat'), '-struct', 'PressureTimeseries');
 
         % FP07 in-situ volts->degC calibration: needs real CTD temperature,

@@ -16,7 +16,7 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %              INPUTS.
 %     alt, isap - raw distance -> height above bottom (hab)
 %     vnav   - cable twist count added as data.twist (see
-%              MODprocess_L1_add_twist.m), computed after ctd so
+%              mod_L1_add_twist.m), computed after ctd so
 %              twist.pressure can be interpolated from it
 %   Every other field (gps, seg, spec, ...) passes through
 %   unchanged. Pure transformation - no file I/O, no metadata mutation
@@ -55,7 +55,7 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %
 % CALLS
 %   toolbox/seawater/sw_salt.m, sw_ptmp.m, sw_pden.m, sw_dpth.m
-%   MODprocess_L1_add_twist.m
+%   mod_L1_add_twist.m
 %   (local subfunctions: convert_efe_channels, process_ctd_fields, calibrate_altimeter_hab)
 %
 % NOTES
@@ -122,7 +122,7 @@ end
 %% VecNav: cable twist count (needs data.ctd already calibrated, for
 % twist.pressure) - no-ops (with a warning) if this deployment has no vnav
 if isfield(data, 'vnav') && ~isempty(data.vnav)
-    data = MODprocess_L1_add_twist(data);
+    data = mod_L1_add_twist(data);
 end
 
 end %end function

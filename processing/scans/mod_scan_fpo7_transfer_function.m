@@ -1,7 +1,7 @@
-function H = MODprocess_L2_fpo7_transfer_function(f, w, tau0, exponent)
-% MODprocess_L2_fpo7_transfer_function        Part of MOD_fish_processing
+function H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
+% mod_scan_fpo7_transfer_function        Part of MOD_fish_processing
 %
-% H = MODprocess_L2_fpo7_transfer_function(f, w, tau0, exponent)
+% H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
 %
 % DESCRIPTION
 %   Returns the magnitude-squared of the FP07 thermistor's dynamic
@@ -73,10 +73,10 @@ function H = MODprocess_L2_fpo7_transfer_function(f, w, tau0, exponent)
 % OUTPUTS
 %   H - magnitude-squared transfer function, same size as f. Divide a raw
 %       temperature-gradient-related spectrum by H to deconvolve (correct
-%       for) the thermal rolloff - see MODprocess_L2_calc_chi.m.
+%       for) the thermal rolloff - see mod_scan_fpo7_volts_to_Tg_spectrum.m.
 %
 % CALLED BY
-%   MODprocess_L2_calc_chi.m
+%   mod_scan_fpo7_volts_to_Tg_spectrum.m
 %
 % CALLS
 %   (none)
@@ -85,7 +85,7 @@ function H = MODprocess_L2_fpo7_transfer_function(f, w, tau0, exponent)
 %   Why this correction matters enough to make tau an explicit,
 %   overridable parameter: chi (thermal variance dissipation rate) is
 %   computed by integrating the temperature-gradient wavenumber spectrum
-%   up to a noise-floor cutoff kc (see MODprocess_L2_fpo7_cutoff.m) - right
+%   up to a noise-floor cutoff kc (see mod_scan_fpo7_cutoff.m) - right
 %   in the frequency range where H(f) has rolled off the most and this
 %   deconvolution matters most. A wrong tau biases chi roughly by how much
 %   1/H(f) is wrong right at that cutoff. Epsilon (turbulent kinetic energy
