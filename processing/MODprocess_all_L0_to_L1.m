@@ -7,6 +7,15 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   Converts every L0 .mat file in L0_dir to a physical-units .mat file in
 %   L1_dir, using MODprocess_single_L0_to_L1.
 %
+%   Also resolves each AFE channel's deployment-constant electronics/ADC
+%   transfer function (MODsetup_define_filters.m ->
+%   metadata.AFE.(ch).electronics_filter, saved back via
+%   MODsetup_save_metadata.m) unconditionally, before the per-file loop -
+%   needs only metadata.PROCESS/.AFE, no L0/L1 data or CTD, unlike the
+%   fpo7 calibration step below. This is what lets mod_scan_calc_chi_obs.m
+%   deconvolve the AFE's sinc^4 ADC rolloff, not just the FP07 thermal
+%   rolloff - see docs/workflow/L2_calc_chi.md.
+%
 %   Skips files that already have an up-to-date L1 .mat (L1 file modified
 %   at or after its source L0 file), except the most recently modified L0
 %   file, which is always reprocessed in case the raw file behind it was
@@ -56,6 +65,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   (top-level scripts / notebooks)
 %
 % CALLS
+%   MODsetup_define_filters.m, MODsetup_save_metadata.m (unconditional)
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
 %   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
@@ -96,6 +106,14 @@ end
 if ~exist(L1_dir, 'dir')
     mkdir(L1_dir);
 end
+
+% Deployment-constant electronics/ADC transfer functions
+% (metadata.AFE.(ch).electronics_filter) - needs only metadata.PROCESS/
+% .AFE, no L0/L1 data, so resolved unconditionally here rather than gated
+% on CTD presence like fpo7_calibration below. See MODsetup_define_filters.m.
+metadata = MODsetup_define_filters(metadata);
+MODsetup_save_metadata(metadata, metadata.paths.meta, ...
+    'define_filters', mfilename('fullpath'));
 
 list_L0file = dir(fullfile(L0_dir, '*.mat'));
 nfiles = length(list_L0file);

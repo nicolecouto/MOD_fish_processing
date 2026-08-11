@@ -29,9 +29,13 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   metadata.AFE.(ch).volts_to_C (MODprocess_L1_apply_fpo7_calibration.m) -
 %   i.e. deployments with a real onboard CTD, not DeepSolo's P-only
 %   external CTD. Needs scan-center temperature/salinity (interpolated the
-%   same way pressure already was) and the FP07 bench noise floor file
+%   same way pressure already was), the FP07 bench noise floor file
 %   (MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat, via
-%   metadata.paths.calibrations_root) - see
+%   metadata.paths.calibrations_root), and - if resolved -
+%   metadata.AFE.(ch).electronics_filter (MODsetup_define_filters.m) to
+%   deconvolve the AFE's sinc^4 ADC rolloff alongside the FP07 thermal
+%   rolloff; missing (older metadata.mat) is not an error, just no
+%   electronics correction for that channel. See
 %   docs/workflow/L2_calc_chi.md for the full chain
 %   (mod_scan_fpo7_transfer_function.m, mod_scan_fpo7_cutoff.m,
 %   mod_scan_thermal_diffusivity.m, mod_scan_calc_chi_obs.m).
@@ -45,6 +49,7 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %               metadata.AFE.(channel).type (passed through to
 %               mod_scan_get_spectra.m), and
 %               metadata.AFE.(channel).volts_to_C /
+%               .electronics_filter (optional - MODsetup_define_filters.m) /
 %               metadata.paths.calibrations_root (to compute chi_obs for
 %               fpo7 channels that have a resolved in-situ calibration - see
 %               OUTPUTS)
@@ -224,9 +229,18 @@ for iScan = 1:nbscan_candidate
             for iC = 1:numel(chi_obs_channels)
                 ch = chi_obs_channels{iC};
                 volt_field = [ch '_volt'];
+                % electronics_filter (MODsetup_define_filters.m) is
+                % missing, not an error, for metadata.mat built before
+                % that step existed - mod_scan_calc_chi_obs.m defaults to
+                % no correction (1) in that case.
+                electronics_filter = [];
+                if isfield(metadata.AFE.(ch), 'electronics_filter')
+                    electronics_filter = metadata.AFE.(ch).electronics_filter;
+                end
                 [chi_obs_all.(ch)(iScan), chi_obs_kc_all.(ch)(iScan)] = mod_scan_calc_chi_obs( ...
                     scan_results{iScan}.f, scan_results{iScan}.P.(volt_field), ...
-                    w_all(iScan), metadata.AFE.(ch).volts_to_C, ktemp, noise_coefs);
+                    w_all(iScan), metadata.AFE.(ch).volts_to_C, ktemp, noise_coefs, ...
+                    [], [], electronics_filter);
             end
         end
     end

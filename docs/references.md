@@ -1,0 +1,5 @@
+- Osborn, T.R. and Cox, C.S. (1972), "Oceanic Fine Structure," Geophysical & Astrophysical Fluid Dynamics, 3, 321-345 — the original derivation of the relation, giving χ = 2κ_T⟨|∇T'|²⟩, which reduces to χ = 6κ_T⟨(∂T'/∂z)²⟩ under the local-isotropy assumption (single-component variance = 1/3 of the full 3-D gradient variance).
+
+- Oakey, N.S. (1982), "Determination of the rate of dissipation of turbulent energy from simultaneous temperature and velocity shear microstructure measurements," J. Phys. Oceanogr., 12, 256-271 — cited directly in your own repo, in the header comment of EPSILOMETER/EPSILON/process/batchelor.m.
+
+- Ruddick, B., Anis, A., and Thompson, K. (2000), "Maximum Likelihood Spectral Fitting: The Batchelor Spectrum," J. Atmos. Oceanic Technol., 17, 1541-1555 — this is the actual source of the ruddick_misfit function called in mod_efe_scan_chi_mle.m and mod_efe_scan_epsilon.m, so it's not just a generic reference, it's the specific method your MLE chi-fitting is built on.

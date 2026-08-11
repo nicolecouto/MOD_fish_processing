@@ -1,6 +1,6 @@
 # FP07 calibration and chi: the time-constant deconvolution
 
-**Status:** working, tested against real `epsi_mako/blt2021_0715` and `epsi_mako/astral` data in a sandbox. Built on branch `chi_processing`, off `l1_to_l2_conversion`, following [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md). Two chi estimators now exist - `chi_obs` (direct wavenumber integration) and `chi_mle` (Batchelor-spectrum MLE fit) - see Modules 5-8 below.
+**Status:** working, tested against real `epsi_mako/blt2021_0715` and `epsi_mako/astral` data in a sandbox. Built on branch `chi_processing`, off `l1_to_l2_conversion`, following [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md). Two chi estimators now exist - `chi_obs` (direct wavenumber integration) and `chi_mle` (Batchelor-spectrum MLE fit) - see Modules 5-8 below. The AFE electronics/ADC transfer function (`MODsetup_define_filters.m`, Module 2b) is now also implemented, closing a second gap from `MOD_fish_lib`'s chi calculation - see "Why this branch exists" and Module 2b.
 
 ## Why this branch exists
 
@@ -40,10 +40,28 @@ This is the one term the whole branch is about. A physical FP07 bead can't insta
 `tau0`/`exponent` default to the historical, unchanged `MOD_fish_lib` values, but are real function arguments, not hardcoded - a tau sensitivity comparison is just calling this twice with different values and diffing the resulting chi (see "Running a tau sensitivity comparison" below).
 
 **Deliberately narrow scope**: this is *only* the FP07 thermal rolloff. It does not bundle:
-- The AFE electronics/ADC sinc⁴ filter response (`H.electFPO7` in the old `get_filters_MADRE.m`) - a separate, much smaller correction whose rolloff sits near Nyquist, far above where the thermal rolloff (tens of Hz) matters. That belongs to `modProcess_L1_apply_filters.m` (PLAN.md Section 6.2, not started).
-- The old "Tdiff" analog-differentiator filter term - only relevant for MADRE-era electronics with a physical dT/dt circuit ahead of the ADC. Confirmed via `MOD_fish_lib`'s actual `blt2021_0715` process config (`Meta_Data_Process_blt_2021.txt`) that `Meta_Data.MAP.temperature` was never `'Tdiff'` for this deployment - every deployment this repo processes uses raw, undifferentiated FP07 voltage, so this term simply doesn't apply here.
+- The AFE electronics/ADC sinc⁴ filter response (`H.electFPO7` in the old `get_filters_MADRE.m`/`get_filters_SOM.m`) - **not actually a small correction** (see Module 2b below): confirmed by back-solving a real `Profile100.mat`'s own stored spectrum for the correction factor it was generated with, this term is already a ~1.65x factor on top of the thermal rolloff by f≈62 Hz for a typical fall speed, right in the frequency range chi's integration is most sensitive to. Resolved separately, once per deployment (it depends only on `f`/metadata, not per-scan fall speed) by `MODsetup_define_filters.m` -> `metadata.AFE.(ch).electronics_filter`, and combined with this function's output by `mod_scan_fpo7_volts_to_Tg_spectrum.m` (Module 5).
+- The old "Tdiff" analog-differentiator filter term - only relevant for MADRE-era electronics with a physical dT/dt circuit ahead of the ADC. Confirmed via `MOD_fish_lib`'s actual `blt2021_0715` process config (`Meta_Data_Process_blt_2021.txt`) that `Meta_Data.MAP.temperature` was never `'Tdiff'` for this deployment - every deployment this repo processes uses raw, undifferentiated FP07 voltage, so this term simply doesn't apply here. Still not ported (see Module 2b) - no deployment this repo processes has ever used it.
 
 **Verified**: the half-power (`H=0.5`) frequency matches the analytic `1/(2*pi*tau)` to within numerical grid resolution across several fall speeds (e.g. w=1.0 m/s → tau=0.005s → fc=31.83 Hz predicted vs. 31.77 Hz measured), and doubling `tau0` correctly shifts the rolloff to a lower frequency (stronger correction), as expected physically.
+
+### 2b. `setup/MODsetup_define_filters.m` — AFE electronics/ADC transfer function
+
+```matlab
+metadata = MODsetup_define_filters(metadata)   % once per deployment, right after MODsetup_read_yaml.m
+```
+
+Ports the rest of `MOD_fish_lib`'s `get_filters_SOM.m` - everything that depends only on `f` (from `metadata.PROCESS.nfft`/`.Fs_epsi`) and `metadata.AFE.(ch)`, not on per-scan fall speed, so (unlike Module 2's thermal rolloff) it's a genuine deployment-level constant, resolved once and persisted the same way `volts_to_C` is:
+
+- **fpo7**: `electronics_filter = H_adc²`, where `H_adc = (sinc(f/(2*f(end))))⁴` is the AFE's sinc⁴ ADC anti-alias response (`metadata.AFE.(ch).ADCfilter`, defaulted to `'sinc4'` by `MODsetup_read_yaml.m` if the yaml doesn't specify one) - matches `get_filters_SOM.m`'s `H.electFPO7.^2` term inside `H.FPO7`.
+- **shear**: `electronics_filter = (H_ca .* H_adc)²`, where `H_ca` is the probe's charge-amp response, interpolated from a network-analysis measurement (`cap1nFres200Meg_5KohmInput.mat`, vendored from `MOD_fish_lib` into `calibrations_root/SHEAR/` - not yet committed, see "Calibration file" below). Missing file → warning, channel left without `electronics_filter`, same "missing calibration is not exceptional" convention as shear's `.cal`/fpo7's `.volts_to_C`.
+- **acc**: `electronics_filter = H_adc²` (gain 1).
+
+Not ported: the old "Tdiff" term (see Module 2's bullet above - no current deployment uses it).
+
+`mod_scan_fpo7_volts_to_Tg_spectrum.m` (Module 5) is the only real consumer today - `metadata.AFE.(ch).electronics_filter` for shear/acc channels is resolved and available, but nothing consumes it yet (no epsilon/Nasmyth-fit module exists in this repo - PLAN.md Section 6.4). Deliberately no generic "apply this to any channel's spectrum" wrapper built alongside it (PLAN.md's `modProcess_L1_apply_filters.m` design note originally proposed one) - with only one real caller (fpo7/chi) so far, that would be a wrapper with no second caller, the same pattern this repo has previously removed (`MODprocess_L2_kinematic_viscosity.m`). Split one out the moment shear/accel needs to apply its own `electronics_filter` too.
+
+**Verified**: resolves without error against a real `blt2021_0715` `setup.yml`/`metadata.mat` (sandboxed copy) for all 7 AFE channels (t1/t2 fpo7, s1/s2 shear, a1/a2/a3 acc); shear channels correctly get no `electronics_filter` (warning, not error) when `calibrations_root` doesn't have `SHEAR/cap1nFres200Meg_5KohmInput.mat` yet, and correctly resolve one (range differs from the fpo7/acc sinc⁴-only range, as expected from the extra charge-amp term) once it does.
 
 ### 3. `mod_scan_fpo7_cutoff.m` — noise-floor cutoff (kc)
 
@@ -72,16 +90,16 @@ ktemp = mod_scan_thermal_diffusivity(S, T, P)   % [psu, degC, dbar] -> m^2/s
 ### 5. `mod_scan_fpo7_volts_to_Tg_spectrum.m` — shared spectrum conversion
 
 ```matlab
-[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent)
+[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter)
 ```
 
 The first three steps both chi estimators need, split into its own function once `chi_mle` needed the identical conversion `chi_obs` already did (originally these lived inline in one monolithic `MODprocess_L2_calc_chi.m`):
 
 1. `Pt_T_f = Pxx * volts_to_C(1)^2` (slope-squared - equivalent to a second `pwelch` of the calibrated-to-degC signal, since `pwelch` detrends and `detrend(a*x+b) = a*detrend(x)`, so no second FFT is needed).
-2. Deconvolve: `Pt_T_f = Pt_T_f ./ mod_scan_fpo7_transfer_function(f, w, tau0, exponent)` - **the step that was missing from `MOD_fish_lib`**.
+2. Deconvolve both the FP07 thermal rolloff AND the AFE electronics/ADC response: `H_total = electronics_filter .* mod_scan_fpo7_transfer_function(f, w, tau0, exponent); Pt_T_f = Pt_T_f ./ H_total` - the thermal half is **the step that was missing from `MOD_fish_lib`**; the electronics half (`electronics_filter`, normally `metadata.AFE.(ch).electronics_filter` from Module 2b) is optional (default 1, no correction) so existing callers built before this parameter existed keep working.
 3. `k = f / abs(w)`; `Pt_Tg_k = (2*pi*k).^2 .* Pt_T_f * abs(w)` (temperature-gradient wavenumber spectrum).
 
-Keeping this in one place means a tau sensitivity comparison (`tau0`/`exponent` overrides) applies identically to `chi_obs` and `chi_mle`, rather than risking the two drifting out of sync.
+Keeping this in one place means a tau sensitivity comparison (`tau0`/`exponent` overrides) applies identically to `chi_obs` and `chi_mle`, rather than risking the two drifting out of sync - same reasoning now extends to the electronics correction.
 
 ### 6. `mod_scan_calc_chi_obs.m` — direct-integration chi_obs
 
@@ -133,6 +151,10 @@ Copied from `MOD_fish_lib/EPSILOMETER/CALIBRATION/FPO7/FPO7_notdiffnoise.mat`, r
 
 **Not yet committed to `MOD_fish_calibrations`** - that repo has an unrelated, in-progress uncommitted `README.md` edit (tag-naming convention update) that shouldn't be swept up in this branch's commit.
 
+## Calibration file: `MOD_fish_calibrations/SHEAR/cap1nFres200Meg_5KohmInput.mat`
+
+Copied from `MOD_fish_lib/EPSILOMETER/EPSILON/FILTER/cap1nFres200Meg_5KohmInput.mat` (a network-analysis measurement, `freq`/`coef_filt`) - the shear probe charge-amp electronics filter `MODsetup_define_filters.m`'s shear branch needs. Not per-probe - one shared bench measurement, like the FPO7 noise file above. Also **not yet committed** to `MOD_fish_calibrations`, same reason as above.
+
 ## Running a tau/chi_obs-vs-chi_mle comparison
 
 `analysis/chi_tau_mle_comparison.m` (new, not a `MODprocess_` pipeline function - see its own header) is the actual point of this whole branch: call `mod_scan_calc_chi_obs.m` and `mod_scan_calc_chi_mle.m` each twice, once at the historical (wrong) `tau0=0.005` and once at a candidate `tau0=0.0086` (the middle of `astral_chi.md`'s documented 0.0083-0.0089 s range), and compare all four results:
@@ -169,14 +191,25 @@ t1's chi_obs looks like an unremarkable, quiet deep-water value. **t2 is ~200x h
 
 **Both changes push chi up, and both matter, but the MLE-vs-direct-integration choice is the bigger of the two on this profile**: correcting tau (0.005 → 0.0086) raises chi_obs/chi_mle by ~17-27%, while switching from chi_obs to chi_mle at a fixed tau roughly doubles chi (1.78-2.01x). Physically sensible in both directions - a larger tau means the FP07 rolloff correction boosts more high-wavenumber content before integration (larger tau -> more correction -> larger chi), and chi_mle recovering variance past the noise-floor cutoff that direct integration simply truncates is exactly the effect Module 8 exists to capture. Neither result should be read as "the other method is wrong" - they're answering slightly different questions (what's in the healthy spectrum vs. what the full Batchelor spectrum implies given that same data), which is why `astral_chi.md` wanted both computed side by side in the first place.
 
+### ASTRAL `Profile100.mat` vs. `electronics_filter` (Module 2b) - does chi_obs now reproduce `Profile.chi`?
+
+Back-solving `Profile100.mat`'s own stored `Pt_Tg_k` for the deconvolution it was generated with (frequency-by-frequency, against 10 points spanning the spectrum) matched `MOD_fish_lib`'s `H.FPO7 = H.electFPO7² .* H.magsq(speed)` to 4 significant figures - confirming Profile100.mat was itself computed at tau0=0.005 **with** the electronics term, not some other tau and not without it. Adding `electronics_filter` (Module 2b's sinc⁴ formula) to `chi_obs`/`chi_mle` at tau0=0.005 and comparing scan-by-scan against `Profile.chi(:,1)`/`(:,2)`:
+
+- For scans where the noise-floor cutoff `kc` this repo computes matches `Profile.tg_kc` (most scans in the profile's upper-middle depth range, spot-checked against scans 5-27), `chi_obs` with `electronics_filter` now lands at **85-100% of `Profile.chi`** - a large improvement over the same scans without it (previously 30-90%, and often the wrong side of "systematically low" the original investigation flagged).
+- Across the **full** 317-scan profile, though, the per-scan `chi_obs(elec) / Profile.chi` ratio has a much wider spread - median ~0.39-0.40, 10th/90th percentile ~0.13/~1.0 (see `analysis/chi_tau_mle_comparison.m`'s report). This is **not** attributable to `electronics_filter` itself (verified: using the old-format file's flat `Meta_Data.AFE.t1.cal` instead of its pressure-binned `cal_profile` makes the full-profile match *worse*, not better, ruling out calibration-source noise as the main driver) - it traces back to the same open `kc` question flagged under Module 3: recomputing the noise-floor cutoff from `Profile100.mat`'s own stored `Pt_volt_f` with the same bench noise coefficients doesn't reproduce `Profile.tg_kc` for a meaningful fraction of scans, for reasons not yet root-caused (see Known limitations).
+
 ## Known limitations
 
 - **No figure-of-merit QC flag** for either chi_obs or chi_mle (see Modules 6 and 8). Deferred as a follow-up module.
 - **t1/t2 chi discrepancy on `blt2021_0715` not yet root-caused** - see "Real test results" above. Worth investigating before trusting t2 for anything gamma-related on that deployment.
+- **Full-profile `chi_obs`/`Profile.chi` match still has a wide residual even with `electronics_filter` applied** (see "ASTRAL `Profile100.mat` vs. `electronics_filter`" above) - median per-scan ratio ~0.4, not the ~0.9-1.0 seen for the subset of scans where `kc` matches `Profile.tg_kc`. Traced (not yet root-caused) to `kc` itself diverging from `Profile.tg_kc` for many scans despite identical bench noise coefficients and algorithm - not a gap in the electronics/thermal deconvolution math, which is independently verified against Profile100's own stored spectrum to 4 significant figures.
 - **`chi_mle` not wired into `MODprocess_single_L1_to_L2.m`** - blocked on `modProcess_L2_calc_epsilon.m` (PLAN.md Section 6.4, not started), since the pipeline doesn't have an epsilon estimate to feed it yet. Usable standalone today wherever epsilon already exists (see the ASTRAL comparison above).
 - **`cal_profile`-based `volts_to_C` in `analysis/chi_tau_mle_comparison.m` is old-format-specific** - it reads a pressure-binned in-situ calibration already present in `Profile100.mat`, not a fresh deployment-wide fit from `MODprocess_L1_apply_fpo7_calibration.m`. Fine for this comparison, but not a template for how this repo's own L1→L2 pipeline gets `volts_to_C`.
-- **`FPO7_benchnoise.mat` not yet committed** to `MOD_fish_calibrations` (see above).
+- **`FPO7_benchnoise.mat`/`cap1nFres200Meg_5KohmInput.mat` not yet committed** to `MOD_fish_calibrations` (see "Calibration file" sections above).
+- **Shear/accel `electronics_filter` resolved but not consumed by anything yet** - no epsilon/Nasmyth-fit module exists in this repo (PLAN.md Section 6.4). Sanity-checked standalone (`MODsetup_define_filters.m` resolves without error for all 7 channel types on a real sandboxed deployment), not against real shear-channel output.
 
 ## History
 
 Built on branch `chi_processing`, off `l1_to_l2_conversion`. `chi_obs` (originally just "chi") - 2026-07-27, one module at a time, each tested standalone against real `epsi_mako/blt2021_0715` data in a scratchpad sandbox copy (`meta`/`calibrations`/`L1` only - `L0`/`raw` left out, ~930 MB not needed for this work) before being wired into the next piece. See PLAN.md Section 12 session log entry (2026-07-27) for full numbers. `chi_mle` (plus the `chi` → `chi_obs` rename across the codebase) - 2026-07-28, ported from `MOD_fish_lib`'s Ruddick-et-al.-2000 MLE machinery and validated end-to-end against real ASTRAL data. See PLAN.md Section 12 session log entry (2026-07-28).
+
+`MODsetup_define_filters.m` (AFE electronics/ADC term, Module 2b) - also 2026-07-28, found while comparing this repo's `chi_obs` directly against a real `Profile100.mat`'s `Profile.chi` (a comparison the `chi_mle` validation above didn't do): `chi_obs` came out systematically low, traced to the AFE sinc⁴ ADC response `mod_scan_fpo7_transfer_function.m`'s own docstring had already flagged as deliberately excluded. Implemented per PLAN.md Section 6.2's design note (fpo7/shear/acc, not just fpo7 - shear/acc resolved for future use, not yet consumed). See PLAN.md Section 12 session log entry (2026-07-28) and "ASTRAL `Profile100.mat` vs. `electronics_filter`" above for validation results and the residual full-profile `kc` question this surfaced.

@@ -100,6 +100,12 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     setup.yml's afe.channels.(channel)
 %     AFE.(channel).type           - 'shear', 'fpo7', 'acc', etc., from
 %                                     setup.yml's instrument_manifest.afe
+%     AFE.(channel).ADCfilter      - ADC anti-alias filter type, e.g.
+%                                     'sinc4', from setup.yml's
+%                                     afe.channels.(channel).ADCfilter.
+%                                     Defaults to 'sinc4' if absent (the
+%                                     standard EFE board filter - see
+%                                     MODsetup_define_filters.m)
 %     AFE.(channel).SN             - only set when the manifest's
 %                                     channel_N.sn is present and non-empty
 %     AFE.(channel).cal            - only set for 'shear' type channels
@@ -260,6 +266,17 @@ for iC = 1:numel(slot_fields)
     metadata.AFE.(ch).full_range = yml.afe.channels.(ch).full_range;
     metadata.AFE.(ch).ADCconf    = yml.afe.channels.(ch).ADCconf;
     metadata.AFE.(ch).type       = slot.type;
+
+    % ADC anti-alias filter type - optional, defaults to 'sinc4' (every
+    % deployment's EFE board uses a sinc^4 decimation filter today, same
+    % as the legacy MOD_fish_lib metadata this was ported from - see
+    % MODsetup_define_filters.m, the only consumer). Exposed as a real
+    % yaml field rather than hardcoded downstream in case a future board
+    % ever differs.
+    metadata.AFE.(ch).ADCfilter = 'sinc4';
+    if isfield(yml.afe.channels.(ch), 'ADCfilter')
+        metadata.AFE.(ch).ADCfilter = yml.afe.channels.(ch).ADCfilter;
+    end
 
     % Probe serial number - identifies which physical probe is on this
     % channel, whether or not its calibration comes from a lookup file.

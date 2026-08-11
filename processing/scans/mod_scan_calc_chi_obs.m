@@ -1,7 +1,7 @@
-function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent)
+function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter)
 % mod_scan_calc_chi_obs        Part of MOD_fish_processing
 %
-% [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent)
+% [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter)
 %
 % DESCRIPTION
 %   Computes chi_obs (thermal variance dissipation rate, degC^2/s) for one
@@ -57,6 +57,13 @@ function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noi
 %                not editing code.
 %   exponent   - (optional) fall-speed exponent, passed straight through
 %                the same way (default there: -0.32).
+%   electronics_filter - (optional) AFE electronics/ADC transfer function,
+%                magnitude-squared, same shape as f - passed straight
+%                through to mod_scan_fpo7_volts_to_Tg_spectrum.m (default
+%                there: 1, no correction). Normally
+%                metadata.AFE.(ch).electronics_filter from
+%                MODsetup_define_filters.m - see that function's
+%                DESCRIPTION for why this matters as much as tau0 does.
 %
 % OUTPUTS
 %   chi_obs - thermal variance dissipation rate [degC^2/s]. NaN if the
@@ -82,13 +89,16 @@ end
 if nargin < 8
     exponent = [];
 end
+if nargin < 9
+    electronics_filter = [];
+end
 
 kmin = 3; % cpm - fixed, matches MOD_fish_lib's mod_efe_scan_chi.m
 
 f = f(:)';
 Pxx = Pxx(:)';
 
-[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent);
+[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter);
 
 fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs);
 kc = k(fc_index);

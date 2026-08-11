@@ -1,7 +1,7 @@
-function [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent)
+function [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter)
 % mod_scan_fpo7_volts_to_Tg_spectrum        Part of MOD_fish_processing
 %
-% [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent)
+% [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter)
 %
 % DESCRIPTION
 %   Converts one scan's raw FP07 channel voltage power spectrum into a
@@ -18,8 +18,12 @@ function [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C
 %        the calibrated-to-degC timeseries directly, since pwelch detrends
 %        its input and detrend(a*x+b) = a*detrend(x) - no second pwelch
 %        call needed.)
-%     2. Deconvolve the FP07 thermal rolloff:
-%          Pt_T_f = Pt_T_f ./ mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
+%     2. Deconvolve the FP07 thermal rolloff AND the AFE's fixed
+%        electronics/ADC response (sinc^4 anti-alias filter, resolved
+%        once per deployment by MODsetup_define_filters.m -> see
+%        electronics_filter below):
+%          H_total = electronics_filter .* mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
+%          Pt_T_f = Pt_T_f ./ H_total
 %     3. Convert to a temperature-gradient wavenumber spectrum:
 %          k = f / abs(w)
 %          Pt_Tg_k = (2*pi*k).^2 .* Pt_T_f .* abs(w)
@@ -51,6 +55,20 @@ function [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C
 %   exponent   - (optional) fall-speed exponent, passed straight through
 %                to mod_scan_fpo7_transfer_function.m (default there:
 %                -0.32).
+%   electronics_filter - (optional) AFE electronics/ADC transfer function,
+%                magnitude-squared, same shape as f - normally
+%                metadata.AFE.(ch).electronics_filter from
+%                MODsetup_define_filters.m. Default 1 (no correction) if
+%                omitted or empty, so existing callers that predate this
+%                parameter (e.g. analysis/chi_tau_mle_comparison.m before
+%                it was updated) keep working unchanged. This is the term
+%                MOD_fish_lib's get_filters_SOM.m calls H.electFPO7 -
+%                confirmed against a real Profile####.mat that omitting
+%                it is why this repo's chi_obs came out systematically
+%                low relative to MOD_fish_lib's (not a small correction:
+%                a ~1.65x factor on top of the thermal rolloff by
+%                f~62 Hz for a typical fall speed - see
+%                docs/workflow/L2_calc_chi.md).
 %
 % OUTPUTS
 %   k       - wavenumber vector [cpm], same shape as f, k = f / abs(w)
@@ -71,13 +89,18 @@ end
 if nargin < 6
     exponent = [];
 end
+if nargin < 7 || isempty(electronics_filter)
+    electronics_filter = 1;
+end
 
 f = f(:)';
 Pxx = Pxx(:)';
+electronics_filter = electronics_filter(:)';
 
 Pt_T_f = Pxx * volts_to_C(1)^2;
-H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent);
-Pt_T_f = Pt_T_f ./ H;
+H_thermal = mod_scan_fpo7_transfer_function(f, w, tau0, exponent);
+H_total = electronics_filter .* H_thermal;
+Pt_T_f = Pt_T_f ./ H_total;
 
 k = f / abs(w);
 Pt_Tg_k = (2*pi*k).^2 .* Pt_T_f * abs(w);
