@@ -1,7 +1,7 @@
-function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter)
+function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter, chi_params)
 % mod_scan_calc_chi_obs        Part of MOD_fish_processing
 %
-% [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter)
+% [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter, chi_params)
 %
 % DESCRIPTION
 %   Computes chi_obs (thermal variance dissipation rate, degC^2/s) for one
@@ -64,6 +64,14 @@ function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noi
 %                metadata.AFE.(ch).electronics_filter from
 %                MODsetup_define_filters.m - see that function's
 %                DESCRIPTION for why this matters as much as tau0 does.
+%   chi_params - (optional) struct of chi processing choices, normally
+%                metadata.PROCESS.CHI (MODsetup_read_yaml.m). Passed
+%                straight through to mod_scan_fpo7_cutoff.m
+%                (.noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/
+%                .n_skip). Also supplies .kmin_obs, the low-wavenumber
+%                integration bound [cpm] (default 3 if chi_params is
+%                omitted or the field is missing - this function's
+%                historical hardcoded kmin).
 %
 % OUTPUTS
 %   chi_obs - thermal variance dissipation rate [degC^2/s]. NaN if the
@@ -92,15 +100,21 @@ end
 if nargin < 9
     electronics_filter = [];
 end
+if nargin < 10
+    chi_params = [];
+end
 
-kmin = 3; % cpm - fixed, matches MOD_fish_lib's mod_efe_scan_chi.m
+kmin = 3; % cpm - historical default, matches MOD_fish_lib's mod_efe_scan_chi.m
+if isfield(chi_params, 'kmin_obs')
+    kmin = chi_params.kmin_obs;
+end
 
 f = f(:)';
 Pxx = Pxx(:)';
 
 [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter);
 
-fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs);
+fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params);
 kc = k(fc_index);
 
 if kc <= kmin

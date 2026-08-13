@@ -559,6 +559,13 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-08-12 - Nicole's notes
+
+ATOMIX best practices says "FFT length is the number of samples used to compute the fast Fourier Transform. **It is recommended that the displacement of the vehicle during fft-length (converted in second) should not exceed the length of the profiler**, unless the profiler is a rigidly fixed platform that is not swayed by the eddies in the flow. FFT length should be 2^N where N is the power of 2 the closest to time required for the vehicle to travel over a full body length. Consequently, the FFT-length and length of the vehicle sets a lower limit to the wavenumber of shear that can be resolved."
+
+At approximately 0.7 m/s fall speed, nfft = 512 would be 2 m which is a bit longer than the fish, but not by much. Our default should be 512.
+
+
 ### 2026-07-28 — AFE electronics/ADC transfer function: `MODsetup_define_filters.m` (branch `chi_processing`)
 
 Found while comparing this repo's `chi_obs` directly against a real `epsi_mako/astral/profiles/Profile100.mat`'s `Profile.chi(:,1)` (Ankitha's `MOD_fish_lib` run) - a direct comparison the `chi_mle`/tau-sensitivity validation earlier the same day hadn't done. `chi_obs` at tau0=0.005 came out systematically low. Confirmed `kc`, the FP07 calibration slope, and thermal diffusivity all already matched; back-solving `Profile100.mat`'s own stored `Pt_Tg_k` for the correction factor it was actually generated with matched `MOD_fish_lib`'s `H.FPO7 = H.electFPO7² .* H.magsq(speed)` (`get_filters_SOM.m`) to 4 significant figures - i.e. the AFE's sinc⁴ ADC anti-alias filter, which `mod_scan_fpo7_transfer_function.m`'s own docstring had already flagged as deliberately excluded and deferred to `modProcess_L1_apply_filters.m` (§6.2, "not started"). Not a small correction here: ~1.65x on top of the thermal rolloff by f≈62 Hz for a typical fall speed, right where chi's integration is most sensitive.

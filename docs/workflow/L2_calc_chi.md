@@ -35,6 +35,8 @@ H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
 % H   = 1 ./ (1 + (2*pi*tau*f).^2)      (magnitude-squared, single-pole low-pass)
 ```
 
+The `tau ~ w^exponent` scaling (exponent = -0.32) is the tow-tank-measured flow-speed dependence of a glass-rod FP07 thermistor's time constant, from Gregg, M.C. and Meagher, T.B. (1980), "The dynamic response of glass rod thermistors," *J. Geophys. Res.*, 85(C5), 2779-2786, doi:10.1029/JC085iC05p02779 - see `docs/references.md`.
+
 This is the one term the whole branch is about. A physical FP07 bead can't instantaneously track water temperature - it responds like a first-order low-pass filter, faster (smaller tau) at higher flow speed. `H(f)` is how much of the true temperature-gradient spectrum survives at each frequency once the bead's own thermal inertia has rolled it off; dividing an observed spectrum by `H` is the deconvolution that recovers what the water was actually doing.
 
 `tau0`/`exponent` default to the historical, unchanged `MOD_fish_lib` values, but are real function arguments, not hardcoded - a tau sensitivity comparison is just calling this twice with different values and diffing the resulting chi (see "Running a tau sensitivity comparison" below).

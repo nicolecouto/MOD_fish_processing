@@ -3,3 +3,5 @@
 - Oakey, N.S. (1982), "Determination of the rate of dissipation of turbulent energy from simultaneous temperature and velocity shear microstructure measurements," J. Phys. Oceanogr., 12, 256-271 — cited directly in your own repo, in the header comment of EPSILOMETER/EPSILON/process/batchelor.m.
 
 - Ruddick, B., Anis, A., and Thompson, K. (2000), "Maximum Likelihood Spectral Fitting: The Batchelor Spectrum," J. Atmos. Oceanic Technol., 17, 1541-1555 — this is the actual source of the ruddick_misfit function called in mod_efe_scan_chi_mle.m and mod_efe_scan_epsilon.m, so it's not just a generic reference, it's the specific method your MLE chi-fitting is built on.
+
+- Gregg, M.C. and Meagher, T.B. (1980), "The dynamic response of glass rod thermistors," J. Geophys. Res., 85(C5), 2779-2786, doi:10.1029/JC085iC05p02779 — tow-tank source of the tau = tau0 * w^exponent (exponent = -0.32) flow-speed scaling of the FP07 thermistor's time constant, used in mod_scan_fpo7_transfer_function.m.

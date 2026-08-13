@@ -1,7 +1,7 @@
-function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
+function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
 % mod_scan_fpo7_cutoff        Part of MOD_fish_processing
 %
-% fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
+% fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
 %
 % DESCRIPTION
 %   Finds where an observed FP07 voltage spectrum (Pxx) drops down into
@@ -17,9 +17,10 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
 %   power), pre-measured on a bench with no probe attached
 %   (noise_coefs.n0..n3 - see MOD_fish_calibrations/FPO7/README.md for
 %   where this file comes from). The observed spectrum is smoothed
-%   (movmean, 15-point window) and compared, bin by bin, against
-%   SN_min (=3) times the noise floor - skipping the lowest 2 remaining
-%   (f > 0) bins entirely, since those are dominated by low-frequency
+%   (movmean, n_smooth_f_spectrum-point window, default 15) and compared,
+%   bin by bin, against SN_min (default 3) times the noise floor - skipping
+%   the lowest n_skip (default 2) remaining (f > 0) bins entirely, since
+%   those are dominated by low-frequency
 %   structure rather than sensor noise and would otherwise trip the
 %   threshold spuriously; the first (higher-frequency) bin where the
 %   smoothed spectrum drops below that threshold is where "signal" gives
@@ -32,7 +33,7 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
 %
 % INPUTS
 %   f          - frequency vector [Hz], any shape, must include more than
-%                n_skip (2, hardcoded below) bins with f > 0 - the DC/f=0
+%                n_skip (default 2, see chi_params below) bins with f > 0 - the DC/f=0
 %                bin, if present, is excluded from the noise-floor search
 %                since log10(0) is undefined, and the first n_skip
 %                remaining bins are excluded too (see DESCRIPTION) - see
@@ -43,6 +44,20 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
 %   noise_coefs - struct with fields n0, n1, n2, n3 (bench noise floor
 %                polynomial coefficients, e.g. loaded from
 %                MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat)
+%   chi_params - (optional) struct of chi processing choices, normally
+%                metadata.PROCESS.CHI (MODsetup_read_yaml.m). Fields used
+%                here, each defaulting to this function's historical
+%                hardcoded value if chi_params is omitted or the field is
+%                missing:
+%                  .noise_adjusted_to_f (default 0.7) - fraction of
+%                    f(end) above which the observed spectrum's noise
+%                    floor is normalized onto the bench measurement's scale
+%                  .n_smooth_f_spectrum (default 15) - movmean smoothing
+%                    window [bins]
+%                  .sn_min (default 3) - signal-to-noise multiplier (SN_min
+%                    in DESCRIPTION/NOTES above)
+%                  .n_skip (default 2) - lowest-frequency bins excluded
+%                    (n_skip in DESCRIPTION/NOTES above)
 %
 % OUTPUTS
 %   fc_index - index into the ORIGINAL f/Pxx arrays (as passed in - no
@@ -90,8 +105,25 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
+if nargin < 4
+    chi_params = [];
+end
+noise_adjusted_to_f = 0.7;
+n_smooth_f_spectrum = 15;
 SN_min = 3;
 n_skip = 2; % don't trust the first 2 (lowest-frequency) Fourier coefficients
+if isfield(chi_params, 'noise_adjusted_to_f')
+    noise_adjusted_to_f = chi_params.noise_adjusted_to_f;
+end
+if isfield(chi_params, 'n_smooth_f_spectrum')
+    n_smooth_f_spectrum = chi_params.n_smooth_f_spectrum;
+end
+if isfield(chi_params, 'sn_min')
+    SN_min = chi_params.sn_min;
+end
+if isfield(chi_params, 'n_skip')
+    n_skip = chi_params.n_skip;
+end
 
 f = f(:);
 Pxx = Pxx(:);
@@ -104,14 +136,14 @@ end
 
 logf = log10(f(valid));
 noise = noise_coefs.n0 + noise_coefs.n1.*logf + noise_coefs.n2.*logf.^2 + noise_coefs.n3.*logf.^3;
-medspec = smoothdata(Pxx(valid), 'movmean', 15);
+medspec = smoothdata(Pxx(valid), 'movmean', n_smooth_f_spectrum);
 
 % Normalize the observed spectrum's noise floor onto the bench
-% measurement's scale, using only the top 30% of the frequency range
-% (0.7*f(end) to f(end)) - close to Nyquist, where real turbulent signal
-% has long since rolled off and what remains should be almost pure
-% instrument noise on both sides of the comparison.
-high_freq = f(valid) > 0.7 * f(valid(end));
+% measurement's scale, using only the top frequency range
+% (noise_adjusted_to_f*f(end) to f(end)) - close to Nyquist, where real
+% turbulent signal has long since rolled off and what remains should be
+% almost pure instrument noise on both sides of the comparison.
+high_freq = f(valid) > noise_adjusted_to_f * f(valid(end));
 adjust_spec = median(medspec(high_freq) ./ 10.^noise(high_freq), 'omitmissing');
 if adjust_spec > 10
     warning('mod_scan_fpo7_cutoff:highNoiseFloor', ...

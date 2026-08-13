@@ -10,6 +10,12 @@ function H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
 %       tau = tau0 * abs(w)^exponent
 %       H   = 1 ./ (1 + (2*pi*tau*f).^2)
 %
+%   The tau ~ w^exponent scaling (exponent = -0.32, the tow-tank-measured
+%   flow-speed dependence of a glass-rod FP07 thermistor's time constant)
+%   is from Gregg, M.C. and Meagher, T.B. (1980), "The dynamic response
+%   of glass rod thermistors," J. Geophys. Res., 85(C5), 2779-2786,
+%   doi:10.1029/JC085iC05p02779 - see docs/references.md.
+%
 %   A physical FP07 bead cannot instantaneously track the water
 %   temperature around it - it responds like a first-order low-pass
 %   filter with time constant tau, and tau itself shrinks as the fish
@@ -64,7 +70,8 @@ function H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
 %   tau0/exponent default to the historical MOD_fish_lib values
 %   (get_filters_MADRE.m / mod_efe_scan_chi.m / h_fp07.m - identical across
 %   every copy in that repo's git history, confirmed unchanged since the
-%   very first commit). They are exposed here as arguments, not hardcoded,
+%   very first commit, and traceable to Gregg and Meagher (1980) above -
+%   see docs/references.md). They are exposed here as arguments, not hardcoded,
 %   specifically so a tau sensitivity comparison (the actual point of this
 %   module - see PLAN.md, "how much does changing the time constant affect
 %   chi/gamma") is just calling this function twice with different values

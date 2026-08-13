@@ -1,7 +1,7 @@
-function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent, electronics_filter)
+function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent, electronics_filter, chi_params)
 % mod_scan_calc_chi_mle        Part of MOD_fish_processing
 %
-% [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent, electronics_filter)
+% [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent, electronics_filter, chi_params)
 %
 % DESCRIPTION
 %   Computes chi_mle (thermal variance dissipation rate, degC^2/s) for one
@@ -54,9 +54,10 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %       edge (low, high), but since a single search here only ever climbs
 %       in one direction at a time (never needs both budgets on the same
 %       call), one shared cc<10-sized budget mirrors it directly rather
-%       than doubling it. Seeding still starts three decades wide on each
-%       side (chi_seed * [1e-3, 1e3]), not narrower, despite widening
-%       being free of the pass budget now: spectral_loglikelihood computes
+%       than doubling it. Seeding defaults to three decades wide on each
+%       side (chi_seed * [1e-3, 1e3], chi_params.chi_mle_start_search/
+%       .chi_mle_end_search below), not narrower, despite widening being
+%       free of the pass budget now: spectral_loglikelihood computes
 %       log(chi2pdf(z,dof)), and chi2pdf underflows to exactly 0 in double
 %       precision once a candidate is many decades from the truth - so a
 %       too-narrow starting grid can end up with EVERY candidate
@@ -64,6 +65,12 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %       ever runs, returning NaN having never gotten to widen at all. The
 %       wide starting net keeps at least one edge candidate close enough
 %       to stay numerically finite, giving widening something to act on.
+%       A deployment that narrows this via chi_params (e.g. the
+%       temp_to_chi.ipynb-documented 0.1/10, one decade each side) trades
+%       away some of that safety margin - widening still recovers if the
+%       true chi lands outside the narrower net, but a scan whose seed is
+%       already many decades from the true chi is more likely to hit the
+%       all-underflowed NaN case before widening gets a chance to run.
 %     - No figure-of-merit (FOM) QC flag - MOD_fish_lib's mod_efe_scan_chi.m
 %       computes one (compute_fom.m) alongside chi_mle. Left out for now
 %       as a separate, later module, same "no QC flag yet" scoping
@@ -108,6 +115,19 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %                metadata.AFE.(ch).electronics_filter from
 %                MODsetup_define_filters.m - see mod_scan_calc_chi_obs.m's
 %                matching parameter for why this matters.
+%   chi_params - (optional) struct of chi processing choices, normally
+%                metadata.PROCESS.CHI (MODsetup_read_yaml.m). Passed
+%                straight through to mod_scan_fpo7_cutoff.m
+%                (.noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/
+%                .n_skip). Also supplies:
+%                  .kmin_obs (default 3 if chi_params is omitted or the
+%                    field is missing) - low-wavenumber integration bound
+%                    [cpm], matches mod_scan_calc_chi_obs.m
+%                  .chi_mle_start_search, .chi_mle_end_search (defaults
+%                    1e-3/1e3 if omitted/missing - this function's
+%                    historical search range) - multipliers on the
+%                    chi_obs-seeded starting value bounding
+%                    mle_search_chi's grid search (see DESCRIPTION)
 %
 % OUTPUTS
 %   chi_mle - thermal variance dissipation rate [degC^2/s], from the
@@ -146,15 +166,29 @@ end
 if nargin < 12
     electronics_filter = [];
 end
+if nargin < 13
+    chi_params = [];
+end
 
-kmin = 3; % cpm - matches mod_scan_calc_chi_obs.m
+kmin = 3; % cpm - historical default, matches mod_scan_calc_chi_obs.m
+if isfield(chi_params, 'kmin_obs')
+    kmin = chi_params.kmin_obs;
+end
+chi_mle_start_search = 1e-3; % historical default multiplier on chi_seed
+chi_mle_end_search = 1e3;
+if isfield(chi_params, 'chi_mle_start_search')
+    chi_mle_start_search = chi_params.chi_mle_start_search;
+end
+if isfield(chi_params, 'chi_mle_end_search')
+    chi_mle_end_search = chi_params.chi_mle_end_search;
+end
 
 f = f(:)';
 Pxx = Pxx(:)';
 
 [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter);
 
-fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs);
+fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params);
 kc = k(fc_index);
 
 if kc <= kmin
@@ -175,19 +209,21 @@ if ~isfinite(chi_seed) || chi_seed <= 0
     return
 end
 
-chi_mle = mle_search_chi(k_fit, Pk_fit, dof, epsilon, nu, ktemp, chi_seed);
+chi_mle = mle_search_chi(k_fit, Pk_fit, dof, epsilon, nu, ktemp, chi_seed, ...
+    chi_mle_start_search, chi_mle_end_search);
 
 end %end function
 
 %% Grid-search MLE for the chi that best fits Pk (observed) with the
 % Batchelor spectrum SHAPE fixed by epsilon/nu/ktemp - see DESCRIPTION.
-function chi_fit = mle_search_chi(k, Pk, dof, epsilon, nu, ktemp, chi_seed)
+function chi_fit = mle_search_chi(k, Pk, dof, epsilon, nu, ktemp, chi_seed, ...
+    chi_mle_start_search, chi_mle_end_search)
 % Loop n_pass times through a n_grid-point array of possibilities between search_lo and search_hi,
-% narrowing to the best candidate +/- 1 index each time. 
+% narrowing to the best candidate +/- 1 index each time.
 % If a search picks the best option as exactly
 % search_lo, the low bound is divided by 10 and the high bound is set to the 2nd-lowest search value from before (mirror image
 % if it lands at search_hi) - that's a widening step, not a narrowing one, so it does NOT count against
-% n_pass. 
+% n_pass.
 % Widening is capped at max_widen attempts (mirroring MOD_fish_lib's mle_any_model.m cc<10 guard)
 % so a pathological scan can't loop forever.
 
@@ -195,8 +231,8 @@ n_grid = 200;
 n_pass = 4;
 max_widen = 10; % mirrors mle_any_model.m's per-edge cc<10 guard - one shared
 
-search_lo = chi_seed * 1e-3;
-search_hi = chi_seed * 1e3;
+search_lo = chi_seed * chi_mle_start_search;
+search_hi = chi_seed * chi_mle_end_search;
 
 pass = 0;
 n_widen = 0;

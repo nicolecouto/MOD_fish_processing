@@ -21,7 +21,12 @@ function scan = mod_scan_get_spectra(epsi_chunk, metadata)
 %                metadata.PROCESS.Fs_epsi, metadata.AFE.(channel).type
 %                (to know each channel's field suffix - '_volt' for
 %                shear/fpo7, '_g' for acc, same branch
-%                MODprocess_single_L0_to_L1.m's convert_efe_channels uses)
+%                MODprocess_single_L0_to_L1.m's convert_efe_channels uses),
+%                metadata.PROCESS.CHI.hamming_window_length_nfft (optional -
+%                pwelch's Hamming window length, as a fraction of nfft;
+%                default 1, i.e. window length = nfft, if
+%                metadata.PROCESS.CHI is absent or the field is missing -
+%                this function's historical hardcoded window length)
 %
 % OUTPUTS
 %   scan - struct with:
@@ -37,9 +42,11 @@ function scan = mod_scan_get_spectra(epsi_chunk, metadata)
 %   (none - uses MATLAB's Signal Processing Toolbox pwelch, detrend)
 %
 % NOTES
-%   pwelch call shape (`pwelch(detrend(x), nfft, [], nfft, Fs_epsi, 'psd')`)
-%   matches the old MOD_fish_lib mod_efe_scan_acceleration.m exactly, minus
-%   the h_freq transfer-function division and fc1/fc2 band integration that
+%   pwelch call shape (`pwelch(detrend(x), window_length, [], nfft, Fs_epsi, 'psd')`,
+%   window_length = hamming_window_length_nfft*nfft, default window_length
+%   = nfft) matches the old MOD_fish_lib mod_efe_scan_acceleration.m
+%   exactly at the default ratio, minus the h_freq transfer-function
+%   division and fc1/fc2 band integration that
 %   function also did - both need calibration/filter machinery this repo
 %   doesn't have yet.
 %
@@ -47,6 +54,12 @@ function scan = mod_scan_get_spectra(epsi_chunk, metadata)
 
 nfft = metadata.PROCESS.nfft;
 Fs_epsi = metadata.PROCESS.Fs_epsi;
+
+hamming_window_length_nfft = 1;
+if isfield(metadata.PROCESS, 'CHI') && isfield(metadata.PROCESS.CHI, 'hamming_window_length_nfft')
+    hamming_window_length_nfft = metadata.PROCESS.CHI.hamming_window_length_nfft;
+end
+window_length = round(hamming_window_length_nfft * nfft);
 
 scan.P = struct();
 f = [];
@@ -65,7 +78,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
         continue
     end
 
-    [Pxx, f] = pwelch(detrend(epsi_chunk.(field)), nfft, [], nfft, Fs_epsi, 'psd');
+    [Pxx, f] = pwelch(detrend(epsi_chunk.(field)), window_length, [], nfft, Fs_epsi, 'psd');
     scan.P.(field) = Pxx(:)';
 end
 

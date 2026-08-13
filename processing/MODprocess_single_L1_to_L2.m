@@ -46,6 +46,10 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   data      - struct from an L1 .mat file (has epsi, ctd, ...)
 %   metadata  - metadata struct (from MODsetup_read_yaml.m). Uses:
 %               metadata.PROCESS.nfft, .dof, .Fs_epsi, .channels,
+%               .CHI (chi processing choices - time_constant_s passed as
+%               chi_obs's tau0, and the whole struct passed straight
+%               through as chi_obs's chi_params - see
+%               mod_scan_calc_chi_obs.m/mod_scan_fpo7_cutoff.m),
 %               metadata.AFE.(channel).type (passed through to
 %               mod_scan_get_spectra.m), and
 %               metadata.AFE.(channel).volts_to_C /
@@ -240,7 +244,7 @@ for iScan = 1:nbscan_candidate
                 [chi_obs_all.(ch)(iScan), chi_obs_kc_all.(ch)(iScan)] = mod_scan_calc_chi_obs( ...
                     scan_results{iScan}.f, scan_results{iScan}.P.(volt_field), ...
                     w_all(iScan), metadata.AFE.(ch).volts_to_C, ktemp, noise_coefs, ...
-                    [], [], electronics_filter);
+                    metadata.PROCESS.CHI.time_constant_s, [], electronics_filter, metadata.PROCESS.CHI);
             end
         end
     end

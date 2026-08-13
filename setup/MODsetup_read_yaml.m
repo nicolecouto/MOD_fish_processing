@@ -94,6 +94,67 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     block. Defaults 3/5/1 if the block is
 %                                     absent - see that function's header
 %                                     for what each one controls.
+%     PROCESS.CHI.time_constant_s  - FP07 time-constant coefficient tau0
+%                                     [s] (mod_scan_fpo7_transfer_function.m:
+%                                     tau = tau0*abs(w)^exponent), from
+%                                     setup.yml's chi.time_constant_s.
+%                                     Default 0.005 (the historical
+%                                     MOD_fish_lib value) if absent.
+%     PROCESS.CHI.noise_adjusted_to_f
+%                                   - fraction of f(end) (Nyquist) above
+%                                     which mod_scan_fpo7_cutoff.m
+%                                     normalizes the observed spectrum onto
+%                                     the bench noise floor's scale, from
+%                                     setup.yml's chi.noise_adjusted_to_f.
+%                                     Default 0.7 if absent.
+%     PROCESS.CHI.n_smooth_f_spectrum
+%                                   - movmean smoothing window [bins] applied
+%                                     to the observed spectrum before the
+%                                     noise-floor search
+%                                     (mod_scan_fpo7_cutoff.m), from
+%                                     setup.yml's chi.n_smooth_f_spectrum.
+%                                     Default 15 if absent.
+%     PROCESS.CHI.sn_min           - signal-to-noise multiplier
+%                                     (mod_scan_fpo7_cutoff.m: cutoff is
+%                                     where the smoothed spectrum drops
+%                                     below sn_min x the bench noise
+%                                     floor), from setup.yml's chi.sn_min.
+%                                     Default 3 if absent.
+%     PROCESS.CHI.n_skip           - number of lowest-frequency bins
+%                                     excluded from the noise-floor search
+%                                     (mod_scan_fpo7_cutoff.m), from
+%                                     setup.yml's chi.n_skip. Default 2 if
+%                                     absent.
+%     PROCESS.CHI.hamming_window_length_nfft
+%                                   - pwelch Hamming window length, as a
+%                                     fraction of nfft (mod_scan_get_spectra.m:
+%                                     window_length = hamming_window_length_nfft
+%                                     * nfft), from setup.yml's
+%                                     chi.hamming_window_length_nfft.
+%                                     Default 1 (window length = nfft) if
+%                                     absent.
+%     PROCESS.CHI.kmin_obs         - low-wavenumber integration bound [cpm]
+%                                     for chi_obs/chi_mle
+%                                     (mod_scan_calc_chi_obs.m,
+%                                     mod_scan_calc_chi_mle.m), from
+%                                     setup.yml's chi.kmin_obs. Default 3
+%                                     if absent.
+%     PROCESS.CHI.chi_mle_start_search,
+%                 .chi_mle_end_search
+%                                   - chi_mle's grid-search range, as
+%                                     multipliers on the chi_obs-seeded
+%                                     starting value (mod_scan_calc_chi_mle.m:
+%                                     search_lo = chi_seed*chi_mle_start_search,
+%                                     search_hi = chi_seed*chi_mle_end_search),
+%                                     from setup.yml's chi.chi_mle_start_search/
+%                                     .chi_mle_end_search. Defaults 1e-3/1e3
+%                                     if absent (the historical wide search
+%                                     range this function has always used -
+%                                     narrower than the 0.1/10 range
+%                                     documented in the chi processing
+%                                     notebook, kept as the default so
+%                                     existing behavior doesn't change for
+%                                     deployments that don't opt in).
 %     AFE.(channel).full_range     - volts, for counts->volts conversion,
 %                                     from setup.yml's afe.channels.(channel)
 %     AFE.(channel).ADCconf        - 'Bipolar' or 'Unipolar', from
@@ -229,6 +290,32 @@ if isfield(yml, 'profile_detection')
     end
     if isfield(yml.profile_detection, 'buffer_bins')
         metadata.PROFILES.buffer_bins = yml.profile_detection.buffer_bins;
+    end
+end
+
+%% Chi processing parameters (mod_scan_fpo7_cutoff.m, mod_scan_get_spectra.m,
+% mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m) - optional. Defaults
+% match the historical hardcoded values each function used before this
+% block existed, so deployments that don't declare a chi: block keep
+% today's exact behavior.
+metadata.PROCESS.CHI.time_constant_s = 0.005;
+metadata.PROCESS.CHI.noise_adjusted_to_f = 0.7;
+metadata.PROCESS.CHI.n_smooth_f_spectrum = 15;
+metadata.PROCESS.CHI.sn_min = 3;
+metadata.PROCESS.CHI.n_skip = 2;
+metadata.PROCESS.CHI.hamming_window_length_nfft = 1;
+metadata.PROCESS.CHI.kmin_obs = 3;
+metadata.PROCESS.CHI.chi_mle_start_search = 1e-3;
+metadata.PROCESS.CHI.chi_mle_end_search = 1e3;
+if isfield(yml, 'chi')
+    chi_fields = {'time_constant_s', 'noise_adjusted_to_f', 'n_smooth_f_spectrum', ...
+        'sn_min', 'n_skip', 'hamming_window_length_nfft', 'kmin_obs', ...
+        'chi_mle_start_search', 'chi_mle_end_search'};
+    for iF = 1:numel(chi_fields)
+        field = chi_fields{iF};
+        if isfield(yml.chi, field)
+            metadata.PROCESS.CHI.(field) = yml.chi.(field);
+        end
     end
 end
 
