@@ -1,7 +1,7 @@
-function scan = mod_scan_get_spectra(epsi_chunk, metadata)
+function scan = mod_scan_get_spectra(scan, metadata)
 % mod_scan_get_spectra        Part of MOD_fish_processing
 %
-% scan = mod_scan_get_spectra(epsi_chunk, metadata)
+% scan = mod_scan_get_spectra(scan, metadata)
 %
 % DESCRIPTION
 %   Computes a raw (uncorrected) power spectrum vs. frequency for every
@@ -13,10 +13,11 @@ function scan = mod_scan_get_spectra(epsi_chunk, metadata)
 %   deliberately the minimal first cut (PLAN.md Section 4): spectra only.
 %
 % INPUTS
-%   epsi_chunk - data.epsi already sliced to exactly one scan's N_epsi
-%                samples (N_epsi = (dof-1)*nfft), by the caller
-%                (MODprocess_single_L1_to_L2.m)
-%   metadata   - metadata struct (from MODsetup_read_yaml.m). Uses:
+%   scan     - struct with:
+%                epsi - data.epsi already sliced to exactly one scan's
+%                       N_epsi samples (N_epsi = (dof-1)*nfft), by the
+%                       caller (MODprocess_single_L1_to_L2.m)
+%   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %                metadata.PROCESS.channels, metadata.PROCESS.nfft,
 %                metadata.PROCESS.Fs_epsi, metadata.AFE.(channel).type
 %                (to know each channel's field suffix - '_volt' for
@@ -29,11 +30,17 @@ function scan = mod_scan_get_spectra(epsi_chunk, metadata)
 %                this function's historical hardcoded window length)
 %
 % OUTPUTS
-%   scan - struct with:
-%     f        - frequency vector [Hz], 1 x nfreq
-%     P.(ch)   - power spectrum for channel ch (e.g. 's1_volt', 'a2_g'),
-%                1 x nfreq, one field per channel in metadata.PROCESS.channels
-%                whose type is shear/fpo7/acc
+%   scan - same struct, with added:
+%     spectra.f    - frequency vector [Hz], 1 x nfreq, shared across every
+%                    channel below
+%     spectra.(field)_f - power spectrum for channel ch, 1 x nfreq, one
+%                    field per channel in metadata.PROCESS.channels whose
+%                    type is shear/fpo7/acc - key is the channel's
+%                    raw-timeseries field name (field = [ch '_volt'] or
+%                    [ch '_g']) with '_f' appended to mark it
+%                    frequency-domain (e.g. 's1_volt_f', 't1_volt_f',
+%                    'a2_g_f'), matching MOD_fish_lib's
+%                    Ps_volt_f/Pt_volt_f/Pa_g_f convention
 %
 % CALLED BY
 %   MODprocess_single_L1_to_L2.m
@@ -61,7 +68,7 @@ if isfield(metadata.PROCESS, 'CHI') && isfield(metadata.PROCESS.CHI, 'hamming_wi
 end
 window_length = round(hamming_window_length_nfft * nfft);
 
-scan.P = struct();
+scan.spectra = struct();
 f = [];
 for iC = 1:numel(metadata.PROCESS.channels)
     ch = metadata.PROCESS.channels{iC};
@@ -74,14 +81,14 @@ for iC = 1:numel(metadata.PROCESS.channels)
             continue
     end
 
-    if ~isfield(epsi_chunk, field)
+    if ~isfield(scan.epsi, field)
         continue
     end
 
-    [Pxx, f] = pwelch(detrend(epsi_chunk.(field)), window_length, [], nfft, Fs_epsi, 'psd');
-    scan.P.(field) = Pxx(:)';
+    [Pxx, f] = pwelch(detrend(scan.epsi.(field)), window_length, [], nfft, Fs_epsi, 'psd');
+    scan.spectra.([field '_f']) = Pxx(:)';
 end
 
-scan.f = f(:)';
+scan.spectra.f = f(:)';
 
 end %end function

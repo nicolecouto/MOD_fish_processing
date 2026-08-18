@@ -45,6 +45,72 @@ end
 
 This makes every processing function trivially testable: load a file in a test script, pass the struct, inspect the output. No temp files, no side effects.
 
+### mod_scan_* functions: (scan, metadata) in/out, with a carve-out for generic helpers
+
+`processing/scans/` pipeline-step functions (fpo7 cutoff, chi_obs, chi_mle, volts-to-Tg-spectrum)
+follow the same struct-in/struct-out shape as `mod_L1_*` — `metadata`, plus a `channel` argument
+wherever the function needs a per-channel deployment constant (`metadata.AFE.(channel).*`), and a
+`noise_coefs` argument for the one value not yet part of the persisted metadata schema (resolved
+per file from a calibration file, not per deployment from `setup.yml`):
+
+```matlab
+scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs);
+scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs);
+```
+
+Same two rules as `mod_L1_*` (Section 2, "metadata" below) apply: only pass `metadata` when the
+function actually uses it, and the header must name the specific `scan.*`/`metadata.*` fields
+read — not just "scan struct" / "metadata struct". `channel`/`noise_coefs` are the "extra things
+if absolutely necessary" allowance — kept as explicit arguments rather than folded into `scan` or
+`metadata`, so someone with just a hand-built `f`/spectrum can call any of these by constructing a
+minimal `scan` (and, for the per-channel functions, a minimal `metadata.AFE.(channel)`) without
+needing the rest of a real deployment's metadata.
+
+**Naming inside `scan`: everything spectral lives under `scan.spectra`, named like
+`MOD_fish_lib`'s old `P<type><units>_<domain>` convention** (`Ps_volt_f`, `Pt_volt_f`, `Pt_Tg_k`,
+`Pa_g_f`, `domain` = `f` frequency or `k` wavenumber) — not a bare `Pxx`/`P` (meaningless name,
+and `P` collides with pressure, `data.ctd.P`/`scan.pressure`). `mod_scan_get_spectra.m`'s
+multi-channel output is `scan.spectra.f` (shared) plus one `scan.spectra.(ch)_volt_f`/`.(ch)_g_f`
+per manifest channel (e.g. `spectra.t1_volt_f`, `spectra.a2_g_f`). The single-channel working
+struct the four FP07/chi functions pass between each other is also `scan.spectra`, shaped
+differently (one channel's worth): `.f`, `.Pt_volt_f` (type-level name, no channel number — these
+functions are always FP07-generic), `.k`/`.Pt_Tg_k` (added by
+`mod_scan_fpo7_volts_to_Tg_spectrum.m`), `.fc_index` (added by `mod_scan_fpo7_cutoff.m`) — `f`/`k`
+are the axes, and the values/index they index live alongside them rather than as separate
+top-level `scan` fields, so a caller handed just `scan.spectra` has everything self-contained.
+`scan.w`/`.ktemp`/`.nu`/`.epsilon` stay top-level `scan` fields — scalar physical properties of
+the scan, not spectra or axes. Forward-looking, no code yet: cross-spectra (e.g. shear/accel
+coherence, `Ps_shear_co_k`'s analog) are meant to land in this same `spectra` struct too, e.g.
+`spectra.s1a3_co_k` — the naming scheme shouldn't need another rename when that's built.
+`mod_scan_calc_chi_obs.m`/`mod_scan_calc_chi_mle.m` thread `scan` straight through their two
+sub-calls (not disposable local copies) specifically so `spectra.k`/`.Pt_Tg_k`/`.fc_index` survive
+on the struct they return — `MODprocess_single_L1_to_L2.m` persists those into `L2data.spectra`
+alongside `chi_obs`/`chi_obs_kc`, not just the summary scalars.
+
+**Carve-out:** generic physics/math helpers with no natural home in a `scan` struct — reusable
+outside the fish-scan pipeline entirely — stay scalar-in/scalar-out. Currently:
+`mod_scan_batchelor_spectrum.m`, `mod_scan_thermal_diffusivity.m`,
+`mod_scan_fpo7_transfer_function.m`. Everything else under `processing/scans/` should take
+`(scan, metadata, ...)`.
+
+*Status: this reconciles with the top-of-section principle above ("every L1/L2/L3 processing
+function takes a data struct and returns a modified data struct") — `mod_scan_*` had drifted from
+it toward scalar args (commit `6dfe18a`, design note in Section 6.2 below) based on the reasoning
+that deployment-constant values should resolve once into `metadata`. That reasoning still holds,
+it just means those values belong in `metadata` fields read by the function, not extra positional
+args. Done (2026-08-18): all 5 pipeline-step functions
+(`mod_scan_get_spectra.m`/`mod_scan_fpo7_cutoff.m`/`mod_scan_fpo7_volts_to_Tg_spectrum.m`/
+`mod_scan_calc_chi_obs.m`/`mod_scan_calc_chi_mle.m`) converted to this shape, and
+`MODprocess_single_L1_to_L2.m`'s call site updated to match; `docs/workflow/L1_to_L2_conversion.md`
+and `docs/workflow/L2_calc_chi.md` updated to match, tested against synthetic data in a MATLAB
+sandbox (`checkcode` clean, full chi_obs/chi_mle chain runs end to end). Same day, follow-up pass:
+`scan.P`/`scan.Pxx` renamed to `scan.spectra.*` per the naming convention above, `f`/`k` moved
+inside `spectra`, and `MODprocess_single_L1_to_L2.m` extended to persist `spectra.k`/
+`.(ch)_Tg_k`/`.(ch)_fc_index` into `L2data` (previously computed per scan/channel then discarded -
+a real gap, not just a naming issue). `visualization/matlab/MODvis_spectra.m` updated to match
+(`ChannelOrder`, `.spectra` field access) - GUI, not exercised by the sandbox test; needs a manual
+check against a real L2 file.*
+
 ### metadata (lowercase, no paths saved)
 `Meta_Data` → `metadata`. Two key rules:
 
@@ -148,6 +214,27 @@ function data = modProcess_L1_add_twist(data)
 ```
 
 The `CALLED BY` line is especially important — it tells a new user how to find context for why this function exists.
+
+### No hard-coded values without a documented reason
+
+A hardcoded constant is an untested claim that one value is right for every deployment, vehicle, and probe forever. This repo has already been bitten by exactly that: `a3_g` hardcoded as *the* coherent acc channel (line ~507 below), `kmin = 3` cpm independently duplicated in two files (line ~519), `sbe_type = 'SBE49'` hardcoded with a claimed-but-nonexistent SBE41 fallback that silently produced all-NaN CTD output (line ~776), `raw_file_suffix` hardcoded to `.modraw` (line ~746).
+
+Rule: if a different deployment, vehicle, or probe could plausibly need a different value, it is a `metadata` field — sourced from `setup.yml`, with a documented default in `defaults.yml` (below) — not a literal in the function body. If a value truly is universal (a physical constant, a unit conversion, a coefficient from a cited equation), it may stay in code, but the line must carry a one-line citation or explicit reasoning for why it holds 100% of the time — a source, a paper, a physical law. "It worked for the deployments I tested" is not that reasoning.
+
+### Centralized defaults (`defaults.yml`) + missing-value validation
+
+**Not started.** Today, functions that fall back to a default when a `metadata`/yaml field is absent do so silently and independently — the default lives wherever that function happens to check for the field, which means it can drift, duplicate (see `kmin` above), or go unnoticed for months if one deployment's `setup.yml` is just missing a key. Fix:
+
+**Phase 1 — `defaults.yml` + explicit warning (build first):**
+- One file, `setup/defaults.yml`, is the single source of truth for every configurable field's default value — well-commented, one entry per field: default, units, why that default was chosen, which function(s) consume it.
+- Every real `setup.yml` gets a header comment: `# Defaults and detailed explanations for every variable: setup/defaults.yml`.
+- `MODsetup_read_yaml.m` diffs the incoming yaml's keys against `defaults.yml`'s key set. For each key present in `defaults.yml` but absent from the deployment's yaml: uses the default, prints an explicit warning naming the yaml key, the default value substituted, and the resulting `metadata` field (e.g. `PROCESS.nfft missing from setup.yml -> using default 1024 -> metadata.PROCESS.nfft = 1024`), and appends a `used_default` event to `metadata.header.history` (Section 2, "Metadata provenance and archiving") so any `metadata.mat` on disk carries a permanent record of which values were never actually specified by the operator.
+- Non-blocking, so it doesn't stall unattended/at-sea batch runs (Section 2 notes `MODsetup_read_yaml` gets called "often many times an hour" during a cruise). This mirrors the dialog/prompt/batch-skip fallback chain already shipped for `pad_raw_filenames` (2026-07-23, Section 12) — reuse that pattern rather than inventing a new one.
+
+**Phase 2 — interactive review/edit GUI (later, builds on Section 3's existing long-term-goal line):**
+- A multi-tab `uifigure`/`uitabgroup` popup (one tab per config domain — manifest, AFE/electronics, CTD, PROCESS parameters, ...), shown only in interactive sessions, triggered when `MODsetup_read_yaml` finds missing keys — same interactive-vs-batch fallback as Phase 1/`pad_raw_filenames`.
+- Lists every default value about to be used, editable in place, plus the ability to review/change any other value while the operator is already in there. On accept, writes the chosen values back into the deployment's own `setup.yml`, so the next read has no missing keys and creating `metadata` from that yaml can no longer proceed without the operator having explicitly seen and confirmed the value.
+- Build after Phase 1 ships and once there are a couple of real `setup.yml` files in daily use, so the tab layout is validated against real fields instead of guessed.
 
 ---
 
@@ -558,6 +645,21 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-08-15 Nicole's notes
+
+For the plan of having no hard-coded values and needing all of them to come from the yaml file. Instead of checking first if every single one of the values we need for all the processing are in the file, check whenever it comes up. Once you get to a processing step that requires a value that is not in meta_data, check again in the yaml file. If it's not there, have a pop-up that says that value has not been defined. Suggest what the default value is, and say that the .yml file will be updated with whatever value the user chooses. Update the yaml and re-read it and continue processing. 
+
+### 2026-08-13 - Nicole's notes
+
+There's strong, well-established consensus: use GSW (TEOS-10), not the old SEAWATER (sw_) toolbox.
+
+Background
+
+The sw_ scripts implement EOS-80 (the 1980 equation of state), built around practical salinity (PSS-78).
+The gsw_ scripts implement TEOS-10 (Thermodynamic Equation of Seawater 2010), built around Absolute Salinity (SA) and Conservative Temperature (CT) rather than practical salinity and potential temperature.
+
+We should get rid of sw_ dependence and move to gsw_. We should also keep very careful notes of what units all our variables are in.
 
 ### 2026-08-12 - Nicole's notes
 

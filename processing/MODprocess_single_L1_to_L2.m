@@ -29,34 +29,38 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   metadata.AFE.(ch).volts_to_C (MODprocess_L1_apply_fpo7_calibration.m) -
 %   i.e. deployments with a real onboard CTD, not DeepSolo's P-only
 %   external CTD. Needs scan-center temperature/salinity (interpolated the
-%   same way pressure already was), the FP07 bench noise floor file
+%   same way pressure already was) and the FP07 bench noise floor file
 %   (MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat, via
-%   metadata.paths.calibrations_root), and - if resolved -
-%   metadata.AFE.(ch).electronics_filter (MODsetup_define_filters.m) to
-%   deconvolve the AFE's sinc^4 ADC rolloff alongside the FP07 thermal
-%   rolloff; missing (older metadata.mat) is not an error, just no
-%   electronics correction for that channel. See
-%   docs/workflow/L2_calc_chi.md for the full chain
+%   metadata.paths.calibrations_root), loaded once here and passed into
+%   mod_scan_calc_chi_obs.m as noise_coefs. The AFE electronics/ADC
+%   deconvolution (metadata.AFE.(ch).electronics_filter,
+%   MODsetup_define_filters.m) happens inside
+%   mod_scan_fpo7_volts_to_Tg_spectrum.m, not here; missing (older
+%   metadata.mat) is not an error there, just no electronics correction
+%   for that channel. See docs/workflow/L2_calc_chi.md for the full chain
 %   (mod_scan_fpo7_transfer_function.m, mod_scan_fpo7_cutoff.m,
 %   mod_scan_thermal_diffusivity.m, mod_scan_calc_chi_obs.m).
+%   mod_scan_calc_chi_obs.m's intermediate deconvolved spectrum/cutoff
+%   index (spectra.k/spectra.(ch)_Tg_k/spectra.(ch)_fc_index) are kept, not
+%   discarded, alongside the chi_obs/chi_obs_kc summary scalars - see
+%   OUTPUTS.
 %   chi_mle (mod_scan_calc_chi_mle.m) is not computed here - it needs
 %   an epsilon estimate this pipeline doesn't produce yet.
 %
 % INPUTS
 %   data      - struct from an L1 .mat file (has epsi, ctd, ...)
-%   metadata  - metadata struct (from MODsetup_read_yaml.m). Uses:
-%               metadata.PROCESS.nfft, .dof, .Fs_epsi, .channels,
-%               .CHI (chi processing choices - time_constant_s passed as
-%               chi_obs's tau0, and the whole struct passed straight
-%               through as chi_obs's chi_params - see
-%               mod_scan_calc_chi_obs.m/mod_scan_fpo7_cutoff.m),
-%               metadata.AFE.(channel).type (passed through to
-%               mod_scan_get_spectra.m), and
-%               metadata.AFE.(channel).volts_to_C /
-%               .electronics_filter (optional - MODsetup_define_filters.m) /
-%               metadata.paths.calibrations_root (to compute chi_obs for
-%               fpo7 channels that have a resolved in-situ calibration - see
-%               OUTPUTS)
+%   metadata  - metadata struct (from MODsetup_read_yaml.m). Directly used
+%               here: metadata.PROCESS.nfft, .dof, .Fs_epsi, .channels,
+%               metadata.AFE.(channel).type, .volts_to_C (isfield-checked
+%               to decide chi_obs_channels), metadata.paths.calibrations_root
+%               (to load the FPO7 bench noise file). Passed straight
+%               through, whole, to mod_scan_get_spectra.m and
+%               mod_scan_calc_chi_obs.m - those functions (and
+%               mod_scan_fpo7_volts_to_Tg_spectrum.m/mod_scan_fpo7_cutoff.m,
+%               which they call in turn) read the specific
+%               metadata.AFE.(channel).volts_to_C/.electronics_filter and
+%               metadata.PROCESS.CHI.* fields they need - see their own
+%               headers for the exact list.
 %   PressureTimeseries - struct with dnum, is_down (from
 %               mod_L1_detect_profiling_direction.m via
 %               meta/PressureTimeseries.mat) - the whole-deployment record,
@@ -84,9 +88,27 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   DeepSolo's P-only external CTD) - stays NaN otherwise.
 %     salinity    - CTD salinity at scan center [psu], same conditions as
 %                   temperature, nbscan x 1.
-%     f           - frequency vector [Hz], shared across all scans, 1 x nfreq
-%     P.(channel) - power spectrum matrix, nbscan x nfreq, one field per
-%                   shear/fpo7/acc channel (see mod_scan_get_spectra.m)
+%     spectra.f              - frequency vector [Hz], shared across all
+%                   scans and channels, 1 x nfreq
+%     spectra.(channel)_f    - power spectrum matrix, nbscan x nfreq, one
+%                   field per shear/fpo7/acc channel (see
+%                   mod_scan_get_spectra.m; key already includes the '_f'
+%                   domain suffix, e.g. 't1_volt_f', 'a2_g_f')
+%     spectra.k              - wavenumber matrix [cpm], nbscan x nfreq,
+%                   k = f / abs(w) - depends on scan (via w) but not on
+%                   channel, so one shared matrix rather than a copy per
+%                   channel. Only populated when chi_obs_channels is
+%                   non-empty (see below) - it's a byproduct of that
+%                   computation, not computed independently.
+%     spectra.(channel)_Tg_k - deconvolved temperature-gradient wavenumber
+%                   spectrum, nbscan x nfreq, one field per fpo7 channel in
+%                   chi_obs_channels (see chi_obs.(channel) below) -
+%                   mod_scan_calc_chi_obs.m's intermediate Pt_Tg_k, kept
+%                   rather than discarded after computing chi_obs from it.
+%     spectra.(channel)_fc_index - noise-floor cutoff index into
+%                   spectra.f/spectra.k/spectra.(channel)_f, nbscan x 1,
+%                   one field per fpo7 channel in chi_obs_channels - see
+%                   mod_scan_fpo7_cutoff.m's OUTPUTS.
 %     chi_obs.(channel)    - direct-integration thermal variance
 %                   dissipation rate [degC^2/s], nbscan x 1, one field per
 %                   fpo7 channel that both has a resolved
@@ -101,7 +123,9 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   cutoff range for that scan).
 %     chi_obs_kc.(channel) - the noise-floor cutoff wavenumber [cpm] used
 %                   for each chi_obs.(channel) value - diagnostic, see
-%                   mod_scan_calc_chi_obs.m's OUTPUTS.
+%                   mod_scan_calc_chi_obs.m's OUTPUTS. Same values as
+%                   spectra.k(:, spectra.(channel)_fc_index), just
+%                   pre-indexed for convenience.
 %     nfft, dof, Fs_epsi, N_epsi, scan_step - provenance
 %   nbscan is 0 (all fields empty) if this file has no epsi data or no
 %   scans land on a descending part of the record.
@@ -215,8 +239,9 @@ for iScan = 1:nbscan_candidate
         continue
     end
 
-    epsi_chunk = slice_epsi(data.epsi, idx0, idx1);
-    scan_results{iScan} = mod_scan_get_spectra(epsi_chunk, metadata);
+    scan = struct();
+    scan.epsi = slice_epsi(data.epsi, idx0, idx1);
+    scan_results{iScan} = mod_scan_get_spectra(scan, metadata);
 
     dnum_all(iScan) = center_dnum;
     if have_ctd
@@ -232,19 +257,15 @@ for iScan = 1:nbscan_candidate
                 salinity_all(iScan), temperature_all(iScan), pressure_all(iScan));
             for iC = 1:numel(chi_obs_channels)
                 ch = chi_obs_channels{iC};
-                volt_field = [ch '_volt'];
-                % electronics_filter (MODsetup_define_filters.m) is
-                % missing, not an error, for metadata.mat built before
-                % that step existed - mod_scan_calc_chi_obs.m defaults to
-                % no correction (1) in that case.
-                electronics_filter = [];
-                if isfield(metadata.AFE.(ch), 'electronics_filter')
-                    electronics_filter = metadata.AFE.(ch).electronics_filter;
-                end
-                [chi_obs_all.(ch)(iScan), chi_obs_kc_all.(ch)(iScan)] = mod_scan_calc_chi_obs( ...
-                    scan_results{iScan}.f, scan_results{iScan}.P.(volt_field), ...
-                    w_all(iScan), metadata.AFE.(ch).volts_to_C, ktemp, noise_coefs, ...
-                    metadata.PROCESS.CHI.time_constant_s, [], electronics_filter, metadata.PROCESS.CHI);
+                volt_field = [ch '_volt_f'];
+                chan_scan = struct();
+                chan_scan.spectra.f = scan_results{iScan}.spectra.f;
+                chan_scan.spectra.Pt_volt_f = scan_results{iScan}.spectra.(volt_field);
+                chan_scan.w = w_all(iScan);
+                chan_scan.ktemp = ktemp;
+                scan_results{iScan}.chi.(ch) = mod_scan_calc_chi_obs(chan_scan, metadata, ch, noise_coefs);
+                chi_obs_all.(ch)(iScan) = scan_results{iScan}.chi.(ch).chi_obs;
+                chi_obs_kc_all.(ch)(iScan) = scan_results{iScan}.chi.(ch).chi_obs_kc;
             end
         end
     end
@@ -266,18 +287,51 @@ for iC = 1:numel(chi_obs_channels)
     L2data.chi_obs.(ch) = chi_obs_all.(ch)(keep);
     L2data.chi_obs_kc.(ch) = chi_obs_kc_all.(ch)(keep);
 end
-L2data.f = scan_results{1}.f;
+L2data.spectra.f = scan_results{1}.spectra.f;
 
-channels = fieldnames(scan_results{1}.P);
+channels = setdiff(fieldnames(scan_results{1}.spectra), {'f'}, 'stable');
 nbscan = numel(scan_results);
-nfreq = numel(L2data.f);
+nfreq = numel(L2data.spectra.f);
 for iC = 1:numel(channels)
     ch = channels{iC};
     Pmat = nan(nbscan, nfreq);
     for iScan = 1:nbscan
-        Pmat(iScan, :) = scan_results{iScan}.P.(ch);
+        Pmat(iScan, :) = scan_results{iScan}.spectra.(ch);
     end
-    L2data.P.(ch) = Pmat;
+    L2data.spectra.(ch) = Pmat;
+end
+
+% Deconvolved temperature-gradient spectrum + noise-floor cutoff index,
+% per fpo7 channel with chi_obs computed above - kept rather than
+% discarded, so a caller can see exactly what mod_scan_calc_chi_obs.m
+% integrated, not just the resulting scalar.
+for iC = 1:numel(chi_obs_channels)
+    ch = chi_obs_channels{iC};
+    Tg_k_mat = nan(nbscan, nfreq);
+    fc_index_vec = nan(nbscan, 1);
+    for iScan = 1:nbscan
+        if isfield(scan_results{iScan}, 'chi') && isfield(scan_results{iScan}.chi, ch)
+            Tg_k_mat(iScan, :) = scan_results{iScan}.chi.(ch).spectra.Pt_Tg_k;
+            fc_index_vec(iScan) = scan_results{iScan}.chi.(ch).spectra.fc_index;
+        end
+    end
+    L2data.spectra.([ch '_Tg_k']) = Tg_k_mat;
+    L2data.spectra.([ch '_fc_index']) = fc_index_vec;
+end
+
+% k = f/abs(w) depends on scan (via w), not on which fpo7 channel computed
+% it - one shared matrix, pulled from whichever chi_obs_channel happened
+% to run (every chi_obs_channel gets the same k for a given scan, since
+% they all share the same w).
+if ~isempty(chi_obs_channels)
+    k_mat = nan(nbscan, nfreq);
+    first_ch = chi_obs_channels{1};
+    for iScan = 1:nbscan
+        if isfield(scan_results{iScan}, 'chi') && isfield(scan_results{iScan}.chi, first_ch)
+            k_mat(iScan, :) = scan_results{iScan}.chi.(first_ch).spectra.k;
+        end
+    end
+    L2data.spectra.k = k_mat;
 end
 
 end %end function
@@ -303,8 +357,7 @@ L2data.pressure = [];
 L2data.w = [];
 L2data.temperature = [];
 L2data.salinity = [];
-L2data.f = [];
-L2data.P = struct();
+L2data.spectra = struct('f', []);
 L2data.chi_obs = struct();
 L2data.chi_obs_kc = struct();
 L2data.nfft = nfft;

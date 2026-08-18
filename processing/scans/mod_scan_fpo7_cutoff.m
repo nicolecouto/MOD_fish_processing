@@ -1,13 +1,13 @@
-function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
+function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 % mod_scan_fpo7_cutoff        Part of MOD_fish_processing
 %
-% fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
+% scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %
 % DESCRIPTION
-%   Finds where an observed FP07 voltage spectrum (Pxx) drops down into
-%   the instrument's own bench-measured noise floor, and returns the index
-%   (into f/Pxx, unchanged) of the last frequency bin still trustworthy
-%   above that floor. This is the upper integration bound (kc, once
+%   Finds where an observed FP07 voltage spectrum (Pt_volt_f) drops down
+%   into the instrument's own bench-measured noise floor, and returns the
+%   index (into f/Pt_volt_f, unchanged) of the last frequency bin still
+%   trustworthy above that floor. This is the upper integration bound (kc, once
 %   divided by fall speed) mod_scan_calc_chi_obs.m and
 %   mod_scan_calc_chi_mle.m both need - chi is only computed over
 %   wavenumbers where the FP07 channel is actually measuring turbulence,
@@ -32,40 +32,47 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
 %   absolute scales.
 %
 % INPUTS
-%   f          - frequency vector [Hz], any shape, must include more than
-%                n_skip (default 2, see chi_params below) bins with f > 0 - the DC/f=0
-%                bin, if present, is excluded from the noise-floor search
-%                since log10(0) is undefined, and the first n_skip
-%                remaining bins are excluded too (see DESCRIPTION) - see
-%                NOTES for how the f=0 exclusion differs from the old
-%                FPO7_cutoff.m
-%   Pxx        - FP07 channel's raw volts^2/Hz power spectrum, same
-%                size/order as f
+%   scan       - struct with:
+%                  spectra.f         - frequency vector [Hz], any shape,
+%                        must include more than n_skip (default 2, see
+%                        metadata below) bins with f > 0 - the DC/f=0 bin,
+%                        if present, is excluded from the noise-floor
+%                        search since log10(0) is undefined, and the
+%                        first n_skip remaining bins are excluded too (see
+%                        DESCRIPTION) - see NOTES for how the f=0
+%                        exclusion differs from the old FPO7_cutoff.m
+%                  spectra.Pt_volt_f - FP07 channel's raw volts^2/Hz power
+%                        spectrum, same size/order as spectra.f
+%   metadata   - metadata struct (from MODsetup_read_yaml.m). Uses (each
+%                optional, defaulting to this function's historical
+%                hardcoded value if metadata.PROCESS.CHI or the field is
+%                missing):
+%                  metadata.PROCESS.CHI.noise_adjusted_to_f (default 0.7) -
+%                    fraction of f(end) above which the observed
+%                    spectrum's noise floor is normalized onto the bench
+%                    measurement's scale
+%                  metadata.PROCESS.CHI.n_smooth_f_spectrum (default 15) -
+%                    movmean smoothing window [bins]
+%                  metadata.PROCESS.CHI.sn_min (default 3) - signal-to-
+%                    noise multiplier (SN_min in DESCRIPTION/NOTES above)
+%                  metadata.PROCESS.CHI.n_skip (default 2) - lowest-
+%                    frequency bins excluded (n_skip in DESCRIPTION/NOTES
+%                    above)
 %   noise_coefs - struct with fields n0, n1, n2, n3 (bench noise floor
 %                polynomial coefficients, e.g. loaded from
-%                MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat)
-%   chi_params - (optional) struct of chi processing choices, normally
-%                metadata.PROCESS.CHI (MODsetup_read_yaml.m). Fields used
-%                here, each defaulting to this function's historical
-%                hardcoded value if chi_params is omitted or the field is
-%                missing:
-%                  .noise_adjusted_to_f (default 0.7) - fraction of
-%                    f(end) above which the observed spectrum's noise
-%                    floor is normalized onto the bench measurement's scale
-%                  .n_smooth_f_spectrum (default 15) - movmean smoothing
-%                    window [bins]
-%                  .sn_min (default 3) - signal-to-noise multiplier (SN_min
-%                    in DESCRIPTION/NOTES above)
-%                  .n_skip (default 2) - lowest-frequency bins excluded
-%                    (n_skip in DESCRIPTION/NOTES above)
+%                MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat). Not yet
+%                part of the metadata schema (resolved by the caller per
+%                file, not persisted per deployment) - passed as its own
+%                argument rather than through metadata.
 %
 % OUTPUTS
-%   fc_index - index into the ORIGINAL f/Pxx arrays (as passed in - no
-%              truncation) of the last bin still above the noise floor.
-%              Caller converts to a cutoff wavenumber via
-%              kc = f(fc_index) / abs(w). If the spectrum never crosses
-%              the noise floor at all, fc_index is the last f > 0 bin
-%              (i.e. "trust the whole spectrum").
+%   scan - same struct, with added:
+%     spectra.fc_index - index into spectra.f/spectra.Pt_volt_f (as passed
+%                in - no truncation) of the last bin still above the noise
+%                floor. Caller converts to a cutoff wavenumber via
+%                kc = k(fc_index). If the spectrum never crosses the
+%                noise floor at all, fc_index is the last f > 0 bin (i.e.
+%                "trust the whole spectrum").
 %
 % CALLED BY
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
@@ -87,8 +94,8 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
 %        bins were dropped (1, for a standard one-sided pwelch f that
 %        starts at 0). This function instead tracks original-array
 %        indices throughout, so the index it returns is always valid
-%        against the f/Pxx exactly as passed in - no reindexing required
-%        by the caller.
+%        against the f/Pt_volt_f exactly as passed in - no reindexing
+%        required by the caller.
 %     2. The old function's "don't compare the first 2 Fourier
 %        coefficients" step searched within medspec(3:end), then returned
 %        that sub-array's index directly as fc_index without adding the
@@ -105,28 +112,28 @@ function fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-if nargin < 4
-    chi_params = [];
-end
 noise_adjusted_to_f = 0.7;
 n_smooth_f_spectrum = 15;
 SN_min = 3;
 n_skip = 2; % don't trust the first 2 (lowest-frequency) Fourier coefficients
-if isfield(chi_params, 'noise_adjusted_to_f')
-    noise_adjusted_to_f = chi_params.noise_adjusted_to_f;
-end
-if isfield(chi_params, 'n_smooth_f_spectrum')
-    n_smooth_f_spectrum = chi_params.n_smooth_f_spectrum;
-end
-if isfield(chi_params, 'sn_min')
-    SN_min = chi_params.sn_min;
-end
-if isfield(chi_params, 'n_skip')
-    n_skip = chi_params.n_skip;
+if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI')
+    chi_params = metadata.PROCESS.CHI;
+    if isfield(chi_params, 'noise_adjusted_to_f')
+        noise_adjusted_to_f = chi_params.noise_adjusted_to_f;
+    end
+    if isfield(chi_params, 'n_smooth_f_spectrum')
+        n_smooth_f_spectrum = chi_params.n_smooth_f_spectrum;
+    end
+    if isfield(chi_params, 'sn_min')
+        SN_min = chi_params.sn_min;
+    end
+    if isfield(chi_params, 'n_skip')
+        n_skip = chi_params.n_skip;
+    end
 end
 
-f = f(:);
-Pxx = Pxx(:);
+f = scan.spectra.f(:);
+Pxx = scan.spectra.Pt_volt_f(:);
 
 valid = find(f > 0);
 if numel(valid) <= n_skip
@@ -166,5 +173,7 @@ else
     fc_index = first_noisy_orig - 1;
     fc_index = max(fc_index, valid(1));
 end
+
+scan.spectra.fc_index = fc_index;
 
 end %end function

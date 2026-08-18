@@ -68,7 +68,7 @@ Not ported: the old "Tdiff" term (see Module 2's bullet above - no current deplo
 ### 3. `mod_scan_fpo7_cutoff.m` — noise-floor cutoff (kc)
 
 ```matlab
-fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs)
+scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)   % scan.spectra.f, .Pt_volt_f in; scan.spectra.fc_index added
 ```
 
 Finds where an observed FP07 volts spectrum drops into the instrument's own bench-measured noise floor (`noise_coefs.n0..n3`, a cubic fit in log10(f) vs. log10(noise power) - see "Calibration file" below), so chi only integrates over wavenumbers where the channel is measuring turbulence, not its own electronic noise. Ports the old `FPO7_cutoff.m`'s approach (movmean smoothing, `SN_min=3` threshold, skip the first 2 Fourier coefficients as unreliable) but **fixes two indexing bugs** found while tracing it - both would have made the old code cut off a couple of bins too early:
@@ -92,7 +92,7 @@ ktemp = mod_scan_thermal_diffusivity(S, T, P)   % [psu, degC, dbar] -> m^2/s
 ### 5. `mod_scan_fpo7_volts_to_Tg_spectrum.m` — shared spectrum conversion
 
 ```matlab
-[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter)
+scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel)   % scan.spectra.f, .Pt_volt_f, scan.w in; scan.spectra.k, .Pt_Tg_k added
 ```
 
 The first three steps both chi estimators need, split into its own function once `chi_mle` needed the identical conversion `chi_obs` already did (originally these lived inline in one monolithic `MODprocess_L2_calc_chi.m`):
@@ -106,7 +106,7 @@ Keeping this in one place means a tau sensitivity comparison (`tau0`/`exponent` 
 ### 6. `mod_scan_calc_chi_obs.m` — direct-integration chi_obs
 
 ```matlab
-[chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent)
+scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)   % scan.spectra.f, .Pt_volt_f, scan.w, .ktemp in; scan.chi_obs, .chi_obs_kc added (scan.spectra.k, .Pt_Tg_k, .fc_index also kept, not discarded)
 ```
 
 Renamed from `MODprocess_L2_calc_chi.m` once a second estimator (`chi_mle`, Module 8) existed and the ambiguous plain "chi" needed disambiguating everywhere - the function, its output variable, and every field/variable that held its result (`MODprocess_single_L1_to_L2.m`'s `L2data.chi`/`chi_kc` → `L2data.chi_obs`/`chi_obs_kc`) were all renamed together.
@@ -134,7 +134,7 @@ The theoretical Batchelor (1959) temperature-gradient spectrum, ported from the 
 ### 8. `mod_scan_calc_chi_mle.m` — Batchelor-spectrum MLE chi_mle
 
 ```matlab
-[chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent)
+scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)   % scan.spectra.f, .Pt_volt_f, scan.w, .ktemp, .nu, .epsilon in; scan.chi_mle, .chi_mle_kc added (scan.spectra.k, .Pt_Tg_k, .fc_index also kept)
 ```
 
 Fits the Batchelor spectrum to the same observed temperature-gradient spectrum `chi_obs` integrates directly, via Maximum Likelihood Estimation (Ruddick, Ozsoy & Vagle 2000) - a from-scratch reimplementation of the same fixed-epsilon method as `MOD_fish_lib`'s `get_chi_mle.m`/`mle_any_model.m`/`logLikelihood.m`, not a line-by-line port:
@@ -159,14 +159,21 @@ Copied from `MOD_fish_lib/EPSILOMETER/EPSILON/FILTER/cap1nFres200Meg_5KohmInput.
 
 ## Running a tau/chi_obs-vs-chi_mle comparison
 
-`analysis/chi_tau_mle_comparison.m` (new, not a `MODprocess_` pipeline function - see its own header) is the actual point of this whole branch: call `mod_scan_calc_chi_obs.m` and `mod_scan_calc_chi_mle.m` each twice, once at the historical (wrong) `tau0=0.005` and once at a candidate `tau0=0.0086` (the middle of `astral_chi.md`'s documented 0.0083-0.0089 s range), and compare all four results:
+`analysis/chi_tau_mle_comparison.m` (a one-off comparison script, not a `MODprocess_` pipeline function - added in commit `6dfe18a`, removed again in `d1ebd5d` once its results below were recorded; not present in the working tree) was the actual point of this whole branch: call `mod_scan_calc_chi_obs.m` and `mod_scan_calc_chi_mle.m` each twice, once at the historical (wrong) `tau0=0.005` and once at a candidate `tau0=0.0086` (the middle of `astral_chi.md`'s documented 0.0083-0.0089 s range), and compare all four results. The numbers below are exactly as that script (and the scalar-arg `mod_scan_calc_chi_obs`/`mod_scan_calc_chi_mle` signatures that existed at the time) produced them. Reproducing the comparison today, against the current `(scan, metadata, channel, noise_coefs)` signature (PLAN.md's "mod_scan_* functions" guiding principle - `tau0` is now a metadata override, not a function argument) would look like:
 
 ```matlab
-chi_obs_default   = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, 0.005,  -0.32);
-chi_obs_candidate = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, 0.0086, -0.32);
+metadata_default = metadata;
+metadata_default.PROCESS.CHI.time_constant_s = 0.005;
+metadata_candidate = metadata;
+metadata_candidate.PROCESS.CHI.time_constant_s = 0.0086;
 
-chi_mle_default   = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, 0.005,  -0.32);
-chi_mle_candidate = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, 0.0086, -0.32);
+scan.spectra.f = f; scan.spectra.Pt_volt_f = Pxx; scan.w = w; scan.ktemp = ktemp;
+chi_obs_default   = mod_scan_calc_chi_obs(scan, metadata_default,   channel, noise_coefs);
+chi_obs_candidate = mod_scan_calc_chi_obs(scan, metadata_candidate, channel, noise_coefs);
+
+scan.nu = nu; scan.epsilon = epsilon;
+chi_mle_default   = mod_scan_calc_chi_mle(scan, metadata_default,   channel, noise_coefs);
+chi_mle_candidate = mod_scan_calc_chi_mle(scan, metadata_candidate, channel, noise_coefs);
 ```
 
 Run against a real ASTRAL profile (`epsi_mako/astral/profiles/Profile100.mat`) rather than `blt2021_0715` - an old-format `MOD_fish_lib` `Profile` struct, not this repo's own L2 output, but its `Pt_volt_f.(ch)` field is exactly the raw FP07 voltage spectrum both chi functions expect as `Pxx`, so no `.modraw` reprocessing was needed. It also already carries a per-scan `epsilon_final`, which is what makes `chi_mle` runnable at all here even though this repo doesn't compute epsilon yet (see Module 8, and the script's own header for the full list of old-format-specific assumptions - notably: `volts_to_C`'s slope comes from this file's own pressure-binned `cal_profile`, not a fresh `MODprocess_L1_apply_fpo7_calibration.m` fit).

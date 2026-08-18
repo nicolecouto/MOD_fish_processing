@@ -1,7 +1,7 @@
-function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent, electronics_filter, chi_params)
+function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 % mod_scan_calc_chi_mle        Part of MOD_fish_processing
 %
-% [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu, epsilon, dof, noise_coefs, tau0, exponent, electronics_filter, chi_params)
+% scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %
 % DESCRIPTION
 %   Computes chi_mle (thermal variance dissipation rate, degC^2/s) for one
@@ -18,10 +18,10 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %   some of the variance direct integration cannot see at all past the
 %   noise floor.
 %
-%     1. f/Pxx -> deconvolved temperature-gradient wavenumber spectrum and
-%        noise-floor cutoff, exactly as chi_obs does:
-%          [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent)
-%          kc = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs), converted to wavenumber
+%     1. f/Pt_volt_f -> deconvolved temperature-gradient wavenumber spectrum
+%        and noise-floor cutoff, exactly as chi_obs does:
+%          scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel)
+%          scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %     2. Restrict to the same healthy wavenumber range chi_obs integrates,
 %        kmin = 3 cpm to kc.
 %     3. Seed a search range from chi_obs's direct-integration value on
@@ -55,21 +55,22 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %       in one direction at a time (never needs both budgets on the same
 %       call), one shared cc<10-sized budget mirrors it directly rather
 %       than doubling it. Seeding defaults to three decades wide on each
-%       side (chi_seed * [1e-3, 1e3], chi_params.chi_mle_start_search/
-%       .chi_mle_end_search below), not narrower, despite widening being
-%       free of the pass budget now: spectral_loglikelihood computes
-%       log(chi2pdf(z,dof)), and chi2pdf underflows to exactly 0 in double
-%       precision once a candidate is many decades from the truth - so a
-%       too-narrow starting grid can end up with EVERY candidate
-%       underflowed (all(~isfinite(logL)) true) before the widen logic
-%       ever runs, returning NaN having never gotten to widen at all. The
-%       wide starting net keeps at least one edge candidate close enough
-%       to stay numerically finite, giving widening something to act on.
-%       A deployment that narrows this via chi_params (e.g. the
-%       temp_to_chi.ipynb-documented 0.1/10, one decade each side) trades
-%       away some of that safety margin - widening still recovers if the
-%       true chi lands outside the narrower net, but a scan whose seed is
-%       already many decades from the true chi is more likely to hit the
+%       side (chi_seed * [1e-3, 1e3], metadata.PROCESS.CHI.
+%       chi_mle_start_search/.chi_mle_end_search below), not narrower,
+%       despite widening being free of the pass budget now:
+%       spectral_loglikelihood computes log(chi2pdf(z,dof)), and chi2pdf
+%       underflows to exactly 0 in double precision once a candidate is
+%       many decades from the truth - so a too-narrow starting grid can
+%       end up with EVERY candidate underflowed (all(~isfinite(logL))
+%       true) before the widen logic ever runs, returning NaN having
+%       never gotten to widen at all. The wide starting net keeps at
+%       least one edge candidate close enough to stay numerically finite,
+%       giving widening something to act on. A deployment that narrows
+%       this via metadata.PROCESS.CHI (e.g. the temp_to_chi.ipynb-
+%       documented 0.1/10, one decade each side) trades away some of
+%       that safety margin - widening still recovers if the true chi
+%       lands outside the narrower net, but a scan whose seed is already
+%       many decades from the true chi is more likely to hit the
 %       all-underflowed NaN case before widening gets a chance to run.
 %     - No figure-of-merit (FOM) QC flag - MOD_fish_lib's mod_efe_scan_chi.m
 %       computes one (compute_fom.m) alongside chi_mle. Left out for now
@@ -77,72 +78,82 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %       mod_scan_calc_chi_obs.m already used for chi_obs.
 %
 % INPUTS
-%   f          - frequency vector [Hz], nfreq x 1 or 1 x nfreq (same shape
-%                as Pxx)
-%   Pxx        - one scan's raw FP07 channel power spectrum [V^2/Hz],
-%                same shape as f (e.g. from mod_scan_get_spectra.m)
-%   w          - fall speed at this scan's center [m/s], scalar - see
-%                mod_scan_fpo7_transfer_function.m for why w=0 is not
-%                a meaningful input here.
-%   volts_to_C - [slope, intercept] from metadata.AFE.(channel).volts_to_C
-%                (only slope is used - see mod_scan_fpo7_volts_to_Tg_spectrum.m)
-%   ktemp      - thermal diffusivity of the water at this scan [m^2/s]
-%                (mod_scan_thermal_diffusivity.m, from scan-center S/T/P)
-%   nu         - kinematic viscosity of the water at this scan [m^2/s]
-%                (toolbox/seawater/sw_visc.m, from scan-center S/T/P)
-%   epsilon    - turbulent kinetic energy dissipation rate at this scan
-%                [W/kg], scalar. NOT computed by this repo yet (PLAN.md's
-%                modProcess_L2_calc_epsilon.m, shear-channel Nasmyth fit,
-%                is not started) - callers must supply it from elsewhere.
-%                For the chi_obs-vs-chi_mle/tau comparison this function
-%                was built for, an old-format MOD_fish_lib Profile####.mat
-%                already carries a per-scan epsilon_final field that works
-%                directly - see docs/workflow/L2_calc_chi.md.
-%   dof        - degrees of freedom of the power spectrum estimate
-%                (metadata.PROCESS.dof) - sets how tightly the MLE trusts
-%                each spectral bin against the model.
+%   scan       - struct with:
+%                  spectra.f         - frequency vector [Hz], nfreq x 1 or
+%                            1 x nfreq (same shape as spectra.Pt_volt_f)
+%                  spectra.Pt_volt_f - one scan's raw FP07 channel power
+%                            spectrum [V^2/Hz], same shape as spectra.f
+%                            (e.g. from mod_scan_get_spectra.m's
+%                            scan.spectra.(channel)_volt_f, selected by
+%                            the caller for this one channel)
+%                  w       - fall speed at this scan's center [m/s],
+%                            scalar - see mod_scan_fpo7_transfer_function.m
+%                            for why w=0 is not a meaningful input here.
+%                  ktemp   - thermal diffusivity of the water at this scan
+%                            [m^2/s] (mod_scan_thermal_diffusivity.m, from
+%                            scan-center S/T/P)
+%                  nu      - kinematic viscosity of the water at this scan
+%                            [m^2/s] (toolbox/seawater/sw_visc.m, from
+%                            scan-center S/T/P)
+%                  epsilon - turbulent kinetic energy dissipation rate at
+%                            this scan [W/kg], scalar. NOT computed by
+%                            this repo yet (PLAN.md's
+%                            modProcess_L2_calc_epsilon.m, shear-channel
+%                            Nasmyth fit, is not started) - callers must
+%                            supply it from elsewhere. For the
+%                            chi_obs-vs-chi_mle/tau comparison this
+%                            function was built for, an old-format
+%                            MOD_fish_lib Profile####.mat already carries
+%                            a per-scan epsilon_final field that works
+%                            directly - see docs/workflow/L2_calc_chi.md.
+%   metadata   - metadata struct (from MODsetup_read_yaml.m). Passed
+%                straight through to mod_scan_fpo7_volts_to_Tg_spectrum.m
+%                (metadata.AFE.(channel).volts_to_C, .electronics_filter,
+%                metadata.PROCESS.CHI.time_constant_s, .fall_speed_exponent)
+%                and mod_scan_fpo7_cutoff.m (metadata.PROCESS.CHI.
+%                noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/.n_skip -
+%                see those functions for exact fields and defaults). Also
+%                used directly here:
+%                  metadata.PROCESS.dof (required) - degrees of freedom of
+%                    the power spectrum estimate, sets how tightly the MLE
+%                    trusts each spectral bin against the model
+%                  metadata.PROCESS.CHI.kmin_obs (optional, default 3) -
+%                    low-wavenumber integration bound [cpm], matches
+%                    mod_scan_calc_chi_obs.m
+%                  metadata.PROCESS.CHI.chi_mle_start_search,
+%                    .chi_mle_end_search (optional, default 1e-3/1e3 -
+%                    this function's historical search range) -
+%                    multipliers on the chi_obs-seeded starting value
+%                    bounding mle_search_chi's grid search (see
+%                    DESCRIPTION)
+%   channel    - channel name string (e.g. 't1'), selects which
+%                metadata.AFE.(channel) to read.
 %   noise_coefs - FP07 bench noise floor struct (n0..n3), passed straight
 %                through to mod_scan_fpo7_cutoff.m
-%   tau0       - (optional) FP07 time-constant coefficient [s], passed
-%                straight through (default in
-%                mod_scan_fpo7_transfer_function.m: 0.005).
-%   exponent   - (optional) fall-speed exponent, passed straight through
-%                (default there: -0.32).
-%   electronics_filter - (optional) AFE electronics/ADC transfer function,
-%                magnitude-squared, same shape as f - passed straight
-%                through to mod_scan_fpo7_volts_to_Tg_spectrum.m (default
-%                there: 1, no correction). Normally
-%                metadata.AFE.(ch).electronics_filter from
-%                MODsetup_define_filters.m - see mod_scan_calc_chi_obs.m's
-%                matching parameter for why this matters.
-%   chi_params - (optional) struct of chi processing choices, normally
-%                metadata.PROCESS.CHI (MODsetup_read_yaml.m). Passed
-%                straight through to mod_scan_fpo7_cutoff.m
-%                (.noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/
-%                .n_skip). Also supplies:
-%                  .kmin_obs (default 3 if chi_params is omitted or the
-%                    field is missing) - low-wavenumber integration bound
-%                    [cpm], matches mod_scan_calc_chi_obs.m
-%                  .chi_mle_start_search, .chi_mle_end_search (defaults
-%                    1e-3/1e3 if omitted/missing - this function's
-%                    historical search range) - multipliers on the
-%                    chi_obs-seeded starting value bounding
-%                    mle_search_chi's grid search (see DESCRIPTION)
 %
 % OUTPUTS
-%   chi_mle - thermal variance dissipation rate [degC^2/s], from the
-%             Batchelor-spectrum MLE fit. NaN if the noise-floor cutoff kc
-%             does not exceed kmin (same "genuinely unusable scan"
-%             condition as chi_obs), if the direct-integration seed is
-%             non-positive (a scan with no usable spectral power to seed a
-%             log-spaced search from), or if every candidate in the search
-%             range is equally unable to explain the data (all bins
-%             clamped to zero by mod_scan_batchelor_spectrum.m -
-%             typically kc sitting far past the Batchelor rolloff kb).
-%   kc      - the noise-floor cutoff wavenumber used [cpm], or NaN
-%             alongside a NaN chi_mle. Same value mod_scan_calc_chi_obs.m
-%             would return for the same inputs (same
-%             mod_scan_fpo7_cutoff.m call).
+%   scan - same struct, with added:
+%     chi_mle    - thermal variance dissipation rate [degC^2/s], from the
+%                  Batchelor-spectrum MLE fit. NaN if the noise-floor
+%                  cutoff kc does not exceed kmin (same "genuinely
+%                  unusable scan" condition as chi_obs), if the
+%                  direct-integration seed is non-positive (a scan with
+%                  no usable spectral power to seed a log-spaced search
+%                  from), or if every candidate in the search range is
+%                  equally unable to explain the data (all bins clamped
+%                  to zero by mod_scan_batchelor_spectrum.m - typically
+%                  kc sitting far past the Batchelor rolloff kb).
+%     chi_mle_kc - the noise-floor cutoff wavenumber used [cpm], or NaN
+%                  alongside a NaN chi_mle (only in the kc<=kmin case -
+%                  the non-positive-seed and all-underflowed cases still
+%                  return the valid kc, since kc itself was fine; only
+%                  the fit failed). Same value mod_scan_calc_chi_obs.m
+%                  would return for the same inputs (same
+%                  mod_scan_fpo7_cutoff.m call).
+%     spectra.k, spectra.Pt_Tg_k, spectra.fc_index - added by the
+%                  mod_scan_fpo7_volts_to_Tg_spectrum.m/mod_scan_fpo7_cutoff.m
+%                  calls below and left on the returned scan (not
+%                  discarded), same as mod_scan_calc_chi_obs.m.
 %
 % CALLED BY
 %   (not yet wired into MODprocess_single_L1_to_L2.m - blocked on
@@ -157,43 +168,37 @@ function [chi_mle, kc] = mod_scan_calc_chi_mle(f, Pxx, w, volts_to_C, ktemp, nu,
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-if nargin < 10
-    tau0 = [];
-end
-if nargin < 11
-    exponent = [];
-end
-if nargin < 12
-    electronics_filter = [];
-end
-if nargin < 13
-    chi_params = [];
-end
+dof = metadata.PROCESS.dof;
 
 kmin = 3; % cpm - historical default, matches mod_scan_calc_chi_obs.m
-if isfield(chi_params, 'kmin_obs')
-    kmin = chi_params.kmin_obs;
-end
 chi_mle_start_search = 1e-3; % historical default multiplier on chi_seed
 chi_mle_end_search = 1e3;
-if isfield(chi_params, 'chi_mle_start_search')
-    chi_mle_start_search = chi_params.chi_mle_start_search;
+if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI')
+    chi_params = metadata.PROCESS.CHI;
+    if isfield(chi_params, 'kmin_obs')
+        kmin = chi_params.kmin_obs;
+    end
+    if isfield(chi_params, 'chi_mle_start_search')
+        chi_mle_start_search = chi_params.chi_mle_start_search;
+    end
+    if isfield(chi_params, 'chi_mle_end_search')
+        chi_mle_end_search = chi_params.chi_mle_end_search;
+    end
 end
-if isfield(chi_params, 'chi_mle_end_search')
-    chi_mle_end_search = chi_params.chi_mle_end_search;
-end
 
-f = f(:)';
-Pxx = Pxx(:)';
+scan.spectra.f = scan.spectra.f(:)';
+scan.spectra.Pt_volt_f = scan.spectra.Pt_volt_f(:)';
 
-[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter);
+scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel);
+scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs);
 
-fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params);
-kc = k(fc_index);
+k = scan.spectra.k;
+Pt_Tg_k = scan.spectra.Pt_Tg_k;
+kc = k(scan.spectra.fc_index);
 
 if kc <= kmin
-    chi_mle = NaN;
-    kc = NaN;
+    scan.chi_mle = NaN;
+    scan.chi_mle_kc = NaN;
     return
 end
 
@@ -202,15 +207,17 @@ k_fit = k(krange);
 Pk_fit = Pt_Tg_k(krange);
 
 dk = mean(diff(k), 'omitnan');
-chi_seed = 6 * ktemp * dk * sum(Pk_fit, 'omitnan');
+chi_seed = 6 * scan.ktemp * dk * sum(Pk_fit, 'omitnan');
 
 if ~isfinite(chi_seed) || chi_seed <= 0
-    chi_mle = NaN;
+    scan.chi_mle = NaN;
+    scan.chi_mle_kc = kc;
     return
 end
 
-chi_mle = mle_search_chi(k_fit, Pk_fit, dof, epsilon, nu, ktemp, chi_seed, ...
+scan.chi_mle = mle_search_chi(k_fit, Pk_fit, dof, scan.epsilon, scan.nu, scan.ktemp, chi_seed, ...
     chi_mle_start_search, chi_mle_end_search);
+scan.chi_mle_kc = kc;
 
 end %end function
 
@@ -270,6 +277,3 @@ end
 
 chi_fit = chi_grid(best);
 end
-
-
-

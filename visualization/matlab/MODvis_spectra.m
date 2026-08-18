@@ -68,7 +68,7 @@ classdef MODvis_spectra < handle
         ChannelOn struct = struct()     % channel name -> logical, persists across files
         ChannelCheckPanel
         ChannelCheck struct = struct()  % channel name -> uicheckbox handle
-        ChannelOrder cell = {'t1_volt','t2_volt','s1_volt','s2_volt','a1_g','a2_g','a3_g'}
+        ChannelOrder cell = {'t1_volt_f','t2_volt_f','s1_volt_f','s2_volt_f','a1_g_f','a2_g_f','a3_g_f'}
         SpecTitle matlab.ui.control.Label
 
         GlobalDnum double = []   % L2 scan-center dnum (drives x-window + scan picking)
@@ -561,10 +561,15 @@ classdef MODvis_spectra < handle
 
         function channels = getChannelList(app)
             channels = strings(0,1);
-            if ~isfield(app.CurrentData,'P') || ~isstruct(app.CurrentData.P)
+            if ~isfield(app.CurrentData,'spectra') || ~isstruct(app.CurrentData.spectra)
                 return
             end
-            present = fieldnames(app.CurrentData.P);
+            present = fieldnames(app.CurrentData.spectra);
+            % 'f'/'k' are shared axes, not channels; '_Tg_k'/'_fc_index'
+            % are per-channel chi diagnostics, not independently
+            % plottable raw spectra - exclude all from the channel list.
+            present = present(~ismember(present, {'f','k'}));
+            present = present(~endsWith(present, {'_Tg_k','_fc_index'}));
             ordered = app.ChannelOrder(ismember(app.ChannelOrder, present));
             rest = setdiff(present, ordered, 'stable');
             channels = string([ordered(:); rest(:)]);
@@ -1097,10 +1102,10 @@ classdef MODvis_spectra < handle
         end
 
         function plotSpectrum(app, idx)
-            if ~isfield(app.CurrentData,'f') || isempty(app.CurrentData.f)
+            if ~isfield(app.CurrentData,'spectra') || ~isfield(app.CurrentData.spectra,'f') || isempty(app.CurrentData.spectra.f)
                 return
             end
-            f = app.CurrentData.f(:)';
+            f = app.CurrentData.spectra.f(:)';
             keep = f > 0; % f=0 can't be shown on a log axis
 
             cla(app.SpecAxes);
@@ -1110,7 +1115,7 @@ classdef MODvis_spectra < handle
             channels = app.getChannelList();
             for i = 1:numel(channels)
                 ch = char(channels(i));
-                Pxx = app.CurrentData.P.(ch)(idx,:);
+                Pxx = app.CurrentData.spectra.(ch)(idx,:);
                 clr = app.getSignalColor(ch);
                 h = loglog(app.SpecAxes, f(keep), Pxx(keep), '-', 'Color', clr, 'LineWidth', 1.2);
                 if isfield(app.ChannelOn, ch)

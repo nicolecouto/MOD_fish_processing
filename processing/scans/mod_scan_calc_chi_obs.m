@@ -1,7 +1,7 @@
-function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter, chi_params)
+function scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)
 % mod_scan_calc_chi_obs        Part of MOD_fish_processing
 %
-% [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noise_coefs, tau0, exponent, electronics_filter, chi_params)
+% scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)
 %
 % DESCRIPTION
 %   Computes chi_obs (thermal variance dissipation rate, degC^2/s) for one
@@ -14,8 +14,8 @@ function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noi
 %   output) specifically to keep that distinction unambiguous now that a
 %   second chi estimator exists - see docs/workflow/L2_calc_chi.md.
 %
-%     1. f/Pxx -> deconvolved temperature-gradient wavenumber spectrum:
-%          [k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent)
+%     1. f/Pt_volt_f -> deconvolved temperature-gradient wavenumber spectrum:
+%          scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel)
 %        (this is the step that includes dividing by the FP07 thermal
 %        rolloff transfer function - the deconvolution that was silently
 %        dropped from MOD_fish_lib's live chi calculation on 2025-10-06,
@@ -33,55 +33,56 @@ function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noi
 %   (mod_scan_calc_chi_mle.m) is validated against real data.
 %
 % INPUTS
-%   f          - frequency vector [Hz], nfreq x 1 or 1 x nfreq (same shape
-%                as Pxx)
-%   Pxx        - one scan's raw FP07 channel power spectrum [V^2/Hz],
-%                same shape as f (e.g. from mod_scan_get_spectra.m)
-%   w          - fall speed at this scan's center [m/s], scalar. Sign
-%                does not matter (abs'd internally) - see
-%                mod_scan_fpo7_transfer_function.m for why w=0 is not
-%                a meaningful input here.
-%   volts_to_C - [slope, intercept] from
-%                metadata.AFE.(channel).volts_to_C (only slope is used -
-%                see mod_scan_fpo7_volts_to_Tg_spectrum.m)
-%   ktemp      - thermal diffusivity of the water at this scan [m^2/s]
-%                (mod_scan_thermal_diffusivity.m, from scan-center
-%                S/T/P)
+%   scan       - struct with:
+%                  spectra.f         - frequency vector [Hz], nfreq x 1 or
+%                          1 x nfreq (same shape as spectra.Pt_volt_f)
+%                  spectra.Pt_volt_f - one scan's raw FP07 channel power
+%                          spectrum [V^2/Hz], same shape as spectra.f
+%                          (e.g. from mod_scan_get_spectra.m's
+%                          scan.spectra.(channel)_volt_f, selected by the
+%                          caller for this one channel)
+%                  w     - fall speed at this scan's center [m/s], scalar.
+%                          Sign does not matter (abs'd internally) - see
+%                          mod_scan_fpo7_transfer_function.m for why w=0
+%                          is not a meaningful input here.
+%                  ktemp - thermal diffusivity of the water at this scan
+%                          [m^2/s] (mod_scan_thermal_diffusivity.m, from
+%                          scan-center S/T/P)
+%   metadata   - metadata struct (from MODsetup_read_yaml.m). Passed
+%                straight through to mod_scan_fpo7_volts_to_Tg_spectrum.m
+%                (metadata.AFE.(channel).volts_to_C, .electronics_filter,
+%                metadata.PROCESS.CHI.time_constant_s, .fall_speed_exponent)
+%                and mod_scan_fpo7_cutoff.m (metadata.PROCESS.CHI.
+%                noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/.n_skip -
+%                see those functions for exact fields and defaults). Also
+%                used directly here:
+%                  metadata.PROCESS.CHI.kmin_obs (optional, default 3 if
+%                    metadata.PROCESS.CHI or the field is missing) - the
+%                    low-wavenumber integration bound [cpm] (this
+%                    function's historical hardcoded kmin)
+%   channel    - channel name string (e.g. 't1'), selects which
+%                metadata.AFE.(channel) to read.
 %   noise_coefs - FP07 bench noise floor struct (n0..n3), passed straight
 %                through to mod_scan_fpo7_cutoff.m
-%   tau0       - (optional) FP07 time-constant coefficient [s], passed
-%                straight through to mod_scan_fpo7_volts_to_Tg_spectrum.m
-%                / mod_scan_fpo7_transfer_function.m (default there:
-%                0.005). Exposed here so a tau sensitivity comparison is
-%                just calling this function twice with different values,
-%                not editing code.
-%   exponent   - (optional) fall-speed exponent, passed straight through
-%                the same way (default there: -0.32).
-%   electronics_filter - (optional) AFE electronics/ADC transfer function,
-%                magnitude-squared, same shape as f - passed straight
-%                through to mod_scan_fpo7_volts_to_Tg_spectrum.m (default
-%                there: 1, no correction). Normally
-%                metadata.AFE.(ch).electronics_filter from
-%                MODsetup_define_filters.m - see that function's
-%                DESCRIPTION for why this matters as much as tau0 does.
-%   chi_params - (optional) struct of chi processing choices, normally
-%                metadata.PROCESS.CHI (MODsetup_read_yaml.m). Passed
-%                straight through to mod_scan_fpo7_cutoff.m
-%                (.noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/
-%                .n_skip). Also supplies .kmin_obs, the low-wavenumber
-%                integration bound [cpm] (default 3 if chi_params is
-%                omitted or the field is missing - this function's
-%                historical hardcoded kmin).
 %
 % OUTPUTS
-%   chi_obs - thermal variance dissipation rate [degC^2/s]. NaN if the
-%         noise-floor cutoff kc does not exceed kmin (no valid wavenumber
-%         range to integrate over - a genuinely unusable scan for this
-%         channel, not a computation error).
-%   kc  - the noise-floor cutoff wavenumber used [cpm], or NaN alongside
-%         a NaN chi_obs. Returned for diagnostics/QC, e.g. checking
-%         whether a suspiciously small kc is dragging chi_obs down for a
-%         batch of scans.
+%   scan - same struct, with added:
+%     chi_obs    - thermal variance dissipation rate [degC^2/s]. NaN if
+%                  the noise-floor cutoff kc does not exceed kmin (no
+%                  valid wavenumber range to integrate over - a genuinely
+%                  unusable scan for this channel, not a computation
+%                  error).
+%     chi_obs_kc - the noise-floor cutoff wavenumber used [cpm], or NaN
+%                  alongside a NaN chi_obs. Returned for diagnostics/QC,
+%                  e.g. checking whether a suspiciously small kc is
+%                  dragging chi_obs down for a batch of scans.
+%     spectra.k, spectra.Pt_Tg_k, spectra.fc_index - added by the
+%                  mod_scan_fpo7_volts_to_Tg_spectrum.m/mod_scan_fpo7_cutoff.m
+%                  calls below and left on the returned scan (not
+%                  discarded) - the caller (MODprocess_single_L1_to_L2.m)
+%                  persists these into L2data.spectra alongside chi_obs.
+%                  Present even when chi_obs comes out NaN, since the
+%                  deconvolution/cutoff search itself still ran fine.
 %
 % CALLED BY
 %   MODprocess_single_L1_to_L2.m
@@ -91,40 +92,31 @@ function [chi_obs, kc] = mod_scan_calc_chi_obs(f, Pxx, w, volts_to_C, ktemp, noi
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-if nargin < 7
-    tau0 = [];
-end
-if nargin < 8
-    exponent = [];
-end
-if nargin < 9
-    electronics_filter = [];
-end
-if nargin < 10
-    chi_params = [];
-end
-
 kmin = 3; % cpm - historical default, matches MOD_fish_lib's mod_efe_scan_chi.m
-if isfield(chi_params, 'kmin_obs')
-    kmin = chi_params.kmin_obs;
+if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI') ...
+        && isfield(metadata.PROCESS.CHI, 'kmin_obs')
+    kmin = metadata.PROCESS.CHI.kmin_obs;
 end
 
-f = f(:)';
-Pxx = Pxx(:)';
+scan.spectra.f = scan.spectra.f(:)';
+scan.spectra.Pt_volt_f = scan.spectra.Pt_volt_f(:)';
 
-[k, Pt_Tg_k] = mod_scan_fpo7_volts_to_Tg_spectrum(f, Pxx, w, volts_to_C, tau0, exponent, electronics_filter);
+scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel);
+scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs);
 
-fc_index = mod_scan_fpo7_cutoff(f, Pxx, noise_coefs, chi_params);
-kc = k(fc_index);
+k = scan.spectra.k;
+Pt_Tg_k = scan.spectra.Pt_Tg_k;
+kc = k(scan.spectra.fc_index);
 
 if kc <= kmin
-    chi_obs = NaN;
-    kc = NaN;
+    scan.chi_obs = NaN;
+    scan.chi_obs_kc = NaN;
     return
 end
 
 krange = k >= kmin & k <= kc;
 dk = mean(diff(k), 'omitnan');
-chi_obs = 6 * ktemp * dk * sum(Pt_Tg_k(krange), 'omitnan');
+scan.chi_obs = 6 * scan.ktemp * dk * sum(Pt_Tg_k(krange), 'omitnan');
+scan.chi_obs_kc = kc;
 
 end %end function
