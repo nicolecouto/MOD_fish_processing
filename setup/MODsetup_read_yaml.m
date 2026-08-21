@@ -38,12 +38,19 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % OUTPUTS
 %   metadata  - struct with fields:
-%     paths.data_root, .raw, .L0, .L1, .meta, .calibrations_root, .ctd
-%                                   - .ctd is only meaningful for vehicles
+%     paths.data_root, .raw, .L0, .L1, .meta, .calibrations_root, .ctd,
+%     .setup_yml                    - .ctd is only meaningful for vehicles
 %                                     with an independent CTD file (see
 %                                     vehicle_name below) - defined
 %                                     unconditionally like the other paths,
-%                                     whether or not data_root/ctd/ exists
+%                                     whether or not data_root/ctd/ exists.
+%                                     .setup_yml is this call's own input
+%                                     argument, carried along so
+%                                     MODsetup_validate_metadata.m (called
+%                                     from deep inside mod_scan_*.m) can
+%                                     find its way back to the yaml file
+%                                     without every function needing its
+%                                     own yaml_file argument.
 %     header.yaml_hash             - hash of setup_yml's contents
 %     header.history               - struct array (.timestamp, .computer,
 %                                     .event, .filepath) appended to by
@@ -75,70 +82,72 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     from yaml field order)
 %     PROCESS.Fs_epsi               - Hz, nominal EFE board sample rate,
 %                                     from setup.yml's afe.sample_rate.
-%                                     Default 320 (the standard EFE board
-%                                     rate) if the key is absent - so older
-%                                     setup.yml files don't need an edit.
+%                                     NOT set at all if the key is absent -
+%                                     see NOTES below on why this function
+%                                     never silently defaults anything.
 %     PROCESS.nfft, .dof            - spectral processing parameters for
 %                                     mod_scan_get_spectra.m, from
-%                                     setup.yml's spectral.nfft/.dof.
-%                                     Defaults 1024/3 (same defaults as the
-%                                     old MOD_fish_lib Acquisition/setup.yml
-%                                     templates) if the spectral: block is
-%                                     absent.
+%                                     setup.yml's spectral.nfft/.dof. NOT
+%                                     set if the spectral: block or the
+%                                     specific key is absent.
 %     PROFILES.lowpass_factor,
 %              .gap_factor,
 %              .buffer_bins          - profiling-direction detection
 %                                     parameters for
 %                                     mod_L1_detect_profiling_direction.m,
 %                                     from setup.yml's profile_detection:
-%                                     block. Defaults 3/5/1 if the block is
-%                                     absent - see that function's header
-%                                     for what each one controls.
+%                                     block. NOT set if the block or the
+%                                     specific key is absent - see that
+%                                     function's header for what each one
+%                                     controls.
 %     PROCESS.CHI.time_constant_s  - FP07 time-constant coefficient tau0
 %                                     [s] (mod_scan_fpo7_transfer_function.m:
 %                                     tau = tau0*abs(w)^exponent), from
-%                                     setup.yml's chi.time_constant_s.
-%                                     Default 0.005 (the historical
-%                                     MOD_fish_lib value) if absent.
+%                                     setup.yml's chi.time_constant_s. NOT
+%                                     set if absent.
+%     PROCESS.CHI.fall_speed_exponent
+%                                   - fall-speed exponent in the same tau
+%                                     formula (mod_scan_fpo7_transfer_function.m),
+%                                     from setup.yml's chi.fall_speed_exponent.
+%                                     NOT set if absent.
 %     PROCESS.CHI.noise_adjusted_to_f
 %                                   - fraction of f(end) (Nyquist) above
 %                                     which mod_scan_fpo7_cutoff.m
 %                                     normalizes the observed spectrum onto
 %                                     the bench noise floor's scale, from
 %                                     setup.yml's chi.noise_adjusted_to_f.
-%                                     Default 0.7 if absent.
+%                                     NOT set if absent.
 %     PROCESS.CHI.n_smooth_f_spectrum
 %                                   - movmean smoothing window [bins] applied
 %                                     to the observed spectrum before the
 %                                     noise-floor search
 %                                     (mod_scan_fpo7_cutoff.m), from
 %                                     setup.yml's chi.n_smooth_f_spectrum.
-%                                     Default 15 if absent.
+%                                     NOT set if absent.
 %     PROCESS.CHI.sn_min           - signal-to-noise multiplier
 %                                     (mod_scan_fpo7_cutoff.m: cutoff is
 %                                     where the smoothed spectrum drops
 %                                     below sn_min x the bench noise
 %                                     floor), from setup.yml's chi.sn_min.
-%                                     Default 3 if absent.
+%                                     NOT set if absent.
 %     PROCESS.CHI.n_skip           - number of lowest-frequency bins
 %                                     excluded from the noise-floor search
 %                                     (mod_scan_fpo7_cutoff.m), from
-%                                     setup.yml's chi.n_skip. Default 2 if
+%                                     setup.yml's chi.n_skip. NOT set if
 %                                     absent.
 %     PROCESS.CHI.hamming_window_length_nfft
 %                                   - pwelch Hamming window length, as a
 %                                     fraction of nfft (mod_scan_get_spectra.m:
 %                                     window_length = hamming_window_length_nfft
 %                                     * nfft), from setup.yml's
-%                                     chi.hamming_window_length_nfft.
-%                                     Default 1 (window length = nfft) if
-%                                     absent.
+%                                     chi.hamming_window_length_nfft. NOT
+%                                     set if absent.
 %     PROCESS.CHI.kmin_obs         - low-wavenumber integration bound [cpm]
 %                                     for chi_obs/chi_mle
 %                                     (mod_scan_calc_chi_obs.m,
 %                                     mod_scan_calc_chi_mle.m), from
-%                                     setup.yml's chi.kmin_obs. Default 3
-%                                     if absent.
+%                                     setup.yml's chi.kmin_obs. NOT set if
+%                                     absent.
 %     PROCESS.CHI.chi_mle_start_search,
 %                 .chi_mle_end_search
 %                                   - chi_mle's grid-search range, as
@@ -147,14 +156,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     search_lo = chi_seed*chi_mle_start_search,
 %                                     search_hi = chi_seed*chi_mle_end_search),
 %                                     from setup.yml's chi.chi_mle_start_search/
-%                                     .chi_mle_end_search. Defaults 1e-3/1e3
-%                                     if absent (the historical wide search
-%                                     range this function has always used -
-%                                     narrower than the 0.1/10 range
-%                                     documented in the chi processing
-%                                     notebook, kept as the default so
-%                                     existing behavior doesn't change for
-%                                     deployments that don't opt in).
+%                                     .chi_mle_end_search. NOT set if absent.
 %     AFE.(channel).full_range     - volts, for counts->volts conversion,
 %                                     from setup.yml's afe.channels.(channel)
 %     AFE.(channel).ADCconf        - 'Bipolar' or 'Unipolar', from
@@ -219,6 +221,19 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   vendors the same third-party YAMLMatlab_0.4.3 toolbox the old
 %   MOD_fish_lib codebase used (MODsetup_make_metadata_from_yaml.m).
 %
+%   This function never silently fills a default for any field it doesn't
+%   find in setup.yml - not every deployment needs every value (a FastCTD
+%   deployment needs zero chi variables), so unconditionally populating
+%   e.g. metadata.PROCESS.CHI.* for every deployment would be wrong, not
+%   just undocumented. Filling a genuinely-needed missing value is
+%   MODsetup_validate_metadata.m's job instead: called by a consuming
+%   function (mod_scan_calc_chi_obs.m, etc.) with the exact list of values
+%   it needs, it prompts the operator once, offers to save the answer into
+%   this setup.yml (MODsetup_write_yaml_value.m), and signals the caller
+%   to reload metadata via this function again. See
+%   MODsetup_metadata_field_registry.m for the full list of yaml-drivable
+%   values and where each lives in metadata.
+%
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 toolbox_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', 'YAMLMatlab_0.4.3');
@@ -238,6 +253,12 @@ metadata.paths.calibrations_root = yml.calibrations_root;
 % unconditionally like the other path fields, whether or not it exists on
 % disk for this deployment.
 metadata.paths.ctd               = fullfile(yml.data_root, 'ctd');
+% Full path to setup_yml itself - how MODsetup_validate_metadata.m (called
+% from deep inside mod_scan_*.m) finds its way back to the yaml file to
+% write a newly-prompted value into, without every function needing its
+% own yaml_file argument. Same "derived fresh every call, stripped before
+% saving metadata.mat" convention as the rest of paths.*.
+metadata.paths.setup_yml         = setup_yml;
 
 %% Deployment info
 metadata.fish_flag = yml.fish_flag;
@@ -249,17 +270,16 @@ if isfield(yml, 'vehicle_name')
     metadata.vehicle_name = yml.vehicle_name;
 end
 
-%% EFE sample rate - optional, defaults to the standard EFE board rate so
-% existing setup.yml files don't need an edit to keep working.
-metadata.PROCESS.Fs_epsi = 320;
+%% EFE sample rate - only set if setup.yml declares it. See
+% MODsetup_metadata_field_registry.m/MODsetup_validate_metadata.m for how
+% a consuming function asks for (and, if missing, prompts for and
+% persists) this and every other field below - never silently defaulted
+% here, since not every deployment needs every value.
 if isfield(yml, 'afe') && isfield(yml.afe, 'sample_rate')
     metadata.PROCESS.Fs_epsi = yml.afe.sample_rate;
 end
 
-%% Spectral processing parameters (mod_scan_get_spectra.m) -
-% optional, same defaults MOD_fish_lib's Acquisition/setup.yml templates used.
-metadata.PROCESS.nfft = 1024;
-metadata.PROCESS.dof = 3;
+%% Spectral processing parameters (mod_scan_get_spectra.m)
 if isfield(yml, 'spectral')
     if isfield(yml.spectral, 'nfft')
         metadata.PROCESS.nfft = yml.spectral.nfft;
@@ -270,17 +290,10 @@ if isfield(yml, 'spectral')
 end
 
 %% Profiling-direction detection parameters
-% (mod_L1_detect_profiling_direction.m) - optional. Defaults sized
-% for sparse, irregularly-sampled pressure records (e.g. DeepSolo's
-% fallrise data, ~60-120 s between samples) - see that function's header
-% for the reasoning behind lowpass_factor=2/gap_factor=5/buffer_bins=1.
-% Namespaced under PROFILES (not PROCESS) to match the old
-% Meta_Data.PROFILES.* convention from
+% (mod_L1_detect_profiling_direction.m). Namespaced under PROFILES (not
+% PROCESS) to match the old Meta_Data.PROFILES.* convention from
 % epsiProcess_get_profiles_from_PressureTimeseries.m, so a future full
 % profile-picker port can extend this same setup.yml section.
-metadata.PROFILES.lowpass_factor = 3;
-metadata.PROFILES.gap_factor = 5;
-metadata.PROFILES.buffer_bins = 1;
 if isfield(yml, 'profile_detection')
     if isfield(yml.profile_detection, 'lowpass_factor')
         metadata.PROFILES.lowpass_factor = yml.profile_detection.lowpass_factor;
@@ -294,23 +307,11 @@ if isfield(yml, 'profile_detection')
 end
 
 %% Chi processing parameters (mod_scan_fpo7_cutoff.m, mod_scan_get_spectra.m,
-% mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m) - optional. Defaults
-% match the historical hardcoded values each function used before this
-% block existed, so deployments that don't declare a chi: block keep
-% today's exact behavior.
-metadata.PROCESS.CHI.time_constant_s = 0.005;
-metadata.PROCESS.CHI.noise_adjusted_to_f = 0.7;
-metadata.PROCESS.CHI.n_smooth_f_spectrum = 15;
-metadata.PROCESS.CHI.sn_min = 3;
-metadata.PROCESS.CHI.n_skip = 2;
-metadata.PROCESS.CHI.hamming_window_length_nfft = 1;
-metadata.PROCESS.CHI.kmin_obs = 3;
-metadata.PROCESS.CHI.chi_mle_start_search = 1e-3;
-metadata.PROCESS.CHI.chi_mle_end_search = 1e3;
+% mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m)
 if isfield(yml, 'chi')
-    chi_fields = {'time_constant_s', 'noise_adjusted_to_f', 'n_smooth_f_spectrum', ...
-        'sn_min', 'n_skip', 'hamming_window_length_nfft', 'kmin_obs', ...
-        'chi_mle_start_search', 'chi_mle_end_search'};
+    chi_fields = {'time_constant_s', 'fall_speed_exponent', 'noise_adjusted_to_f', ...
+        'n_smooth_f_spectrum', 'sn_min', 'n_skip', 'hamming_window_length_nfft', ...
+        'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search'};
     for iF = 1:numel(chi_fields)
         field = chi_fields{iF};
         if isfield(yml.chi, field)

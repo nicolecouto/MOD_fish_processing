@@ -48,18 +48,24 @@ function scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)
 %                  ktemp - thermal diffusivity of the water at this scan
 %                          [m^2/s] (mod_scan_thermal_diffusivity.m, from
 %                          scan-center S/T/P)
-%   metadata   - metadata struct (from MODsetup_read_yaml.m). Passed
-%                straight through to mod_scan_fpo7_volts_to_Tg_spectrum.m
+%   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated up
+%                front, via MODsetup_validate_metadata.m, against the full
+%                set of PROCESS.CHI values this function AND both
+%                sub-calls it makes need - resolving everything the whole
+%                chain needs in one prompt-and-reload cycle rather than
+%                letting each sub-call discover its own subset piecemeal.
+%                Passed straight through to
+%                mod_scan_fpo7_volts_to_Tg_spectrum.m
 %                (metadata.AFE.(channel).volts_to_C, .electronics_filter,
 %                metadata.PROCESS.CHI.time_constant_s, .fall_speed_exponent)
 %                and mod_scan_fpo7_cutoff.m (metadata.PROCESS.CHI.
 %                noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/.n_skip -
-%                see those functions for exact fields and defaults). Also
-%                used directly here:
-%                  metadata.PROCESS.CHI.kmin_obs (optional, default 3 if
-%                    metadata.PROCESS.CHI or the field is missing) - the
-%                    low-wavenumber integration bound [cpm] (this
-%                    function's historical hardcoded kmin)
+%                see those functions for exact fields). Also used directly
+%                here:
+%                  metadata.PROCESS.CHI.kmin_obs - the low-wavenumber
+%                    integration bound [cpm]
+%                See MODsetup_metadata_field_registry.m for each field's
+%                historical default (shown as the prompt's starting value).
 %   channel    - channel name string (e.g. 't1'), selects which
 %                metadata.AFE.(channel) to read.
 %   noise_coefs - FP07 bench noise floor struct (n0..n3), passed straight
@@ -88,15 +94,20 @@ function scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)
 %   MODprocess_single_L1_to_L2.m
 %
 % CALLS
-%   mod_scan_fpo7_volts_to_Tg_spectrum.m, mod_scan_fpo7_cutoff.m
+%   MODsetup_validate_metadata.m, mod_scan_fpo7_volts_to_Tg_spectrum.m,
+%   mod_scan_fpo7_cutoff.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-kmin = 3; % cpm - historical default, matches MOD_fish_lib's mod_efe_scan_chi.m
-if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI') ...
-        && isfield(metadata.PROCESS.CHI, 'kmin_obs')
-    kmin = metadata.PROCESS.CHI.kmin_obs;
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
 end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
+    {'kmin_obs', 'time_constant_s', 'fall_speed_exponent', ...
+     'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip'});
+
+kmin = metadata.PROCESS.CHI.kmin_obs; % cpm
 
 scan.spectra.f = scan.spectra.f(:)';
 scan.spectra.Pt_volt_f = scan.spectra.Pt_volt_f(:)';

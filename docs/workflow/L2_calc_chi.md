@@ -98,7 +98,7 @@ scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel)   % scan.spec
 The first three steps both chi estimators need, split into its own function once `chi_mle` needed the identical conversion `chi_obs` already did (originally these lived inline in one monolithic `MODprocess_L2_calc_chi.m`):
 
 1. `Pt_T_f = Pxx * volts_to_C(1)^2` (slope-squared - equivalent to a second `pwelch` of the calibrated-to-degC signal, since `pwelch` detrends and `detrend(a*x+b) = a*detrend(x)`, so no second FFT is needed).
-2. Deconvolve both the FP07 thermal rolloff AND the AFE electronics/ADC response: `H_total = electronics_filter .* mod_scan_fpo7_transfer_function(f, w, tau0, exponent); Pt_T_f = Pt_T_f ./ H_total` - the thermal half is **the step that was missing from `MOD_fish_lib`**; the electronics half (`electronics_filter`, normally `metadata.AFE.(ch).electronics_filter` from Module 2b) is optional (default 1, no correction) so existing callers built before this parameter existed keep working.
+2. Deconvolve both the FP07 thermal rolloff AND the AFE electronics/ADC response: `H_total = electronics_filter .* mod_scan_fpo7_transfer_function(f, w, tau0, exponent); Pt_T_f = Pt_T_f ./ H_total` - the thermal half is **the step that was missing from `MOD_fish_lib`**; `tau0`/`exponent` come from `metadata.PROCESS.CHI.time_constant_s`/`.fall_speed_exponent` (validated at the top of `mod_scan_fpo7_volts_to_Tg_spectrum.m` - see "Where these values live" below); the electronics half (`electronics_filter`, normally `metadata.AFE.(ch).electronics_filter` from Module 2b) is still optional (default 1, no correction) so existing callers built before that parameter existed keep working - it's a resolved calibration, not a yaml-configurable choice, so it isn't part of the validated set.
 3. `k = f / abs(w)`; `Pt_Tg_k = (2*pi*k).^2 .* Pt_T_f * abs(w)` (temperature-gradient wavenumber spectrum).
 
 Keeping this in one place means a tau sensitivity comparison (`tau0`/`exponent` overrides) applies identically to `chi_obs` and `chi_mle`, rather than risking the two drifting out of sync - same reasoning now extends to the electronics correction.
@@ -111,11 +111,11 @@ scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)   % scan.spec
 
 Renamed from `MODprocess_L2_calc_chi.m` once a second estimator (`chi_mle`, Module 8) existed and the ambiguous plain "chi" needed disambiguating everywhere - the function, its output variable, and every field/variable that held its result (`MODprocess_single_L1_to_L2.m`'s `L2data.chi`/`chi_kc` → `L2data.chi_obs`/`chi_obs_kc`) were all renamed together.
 
-Calls Module 5, then integrates from `kmin = 3` cpm (fixed, unchanged from `mod_efe_scan_chi.m`) to `kc` (the noise-floor cutoff, Module 7 below): `chi_obs = 6 * ktemp * dk * sum(Pt_Tg_k(kmin <= k <= kc))`.
+Calls Module 5, then integrates from `kmin = metadata.PROCESS.CHI.kmin_obs` (historically 3 cpm, unchanged from `mod_efe_scan_chi.m`, but now a real yaml-configurable value - see "Where these values live" below) to `kc` (the noise-floor cutoff, Module 7 below): `chi_obs = 6 * ktemp * dk * sum(Pt_Tg_k(kmin <= k <= kc))`.
 
 `chi_obs` is `NaN` (not an error) if `kc <= kmin` - a scan where the FP07 signal never rises above the noise floor within the integrable wavenumber range at all.
 
-`tau0`/`exponent` are now real optional arguments here too (passed straight through to Module 5) - previously a tau sensitivity comparison meant editing `mod_scan_fpo7_transfer_function.m`'s call inside this function directly; now it's just calling this function twice.
+`tau0`/`exponent` are resolved the same way as Module 5 (metadata, not function arguments) - a tau sensitivity comparison is a `metadata.PROCESS.CHI.time_constant_s` edit (see "Running a tau sensitivity comparison" below), not a code edit or a second function argument.
 
 **No figure-of-merit QC flag** - `mod_efe_scan_chi.m` computes one (`compute_fom.m`) alongside its own chi/chi_mle. Left as a clearly-scoped-out follow-up, same as before.
 
@@ -147,6 +147,31 @@ Fits the Batchelor spectrum to the same observed temperature-gradient spectrum `
 
 **No figure-of-merit QC flag either** - same scoping as `chi_obs`.
 
+## Where these values live: `metadata.PROCESS.CHI.*` is never silently defaulted
+
+`kmin_obs`, `time_constant_s`, `fall_speed_exponent`, `noise_adjusted_to_f`, `n_smooth_f_spectrum`,
+`sn_min`, `n_skip`, `hamming_window_length_nfft`, `chi_mle_start_search`, `chi_mle_end_search` - the
+ten operator-tunable parameters this chain reads - are **not** filled with a historical default by
+`MODsetup_read_yaml.m` when a deployment's `setup.yml` doesn't declare a `chi:` block (a FastCTD
+deployment needs none of them, so silently populating all ten for every deployment would be wrong,
+not just undocumented). Instead, each of the five functions above validates exactly the values it
+(and anything it calls in turn) needs, as literally the first thing it does:
+
+```matlab
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'kmin_obs', 'time_constant_s', ...});
+```
+
+If everything requested is already in `metadata`, this is a no-op. If something is missing,
+`MODsetup_prompt_value.m` asks for it (a dialog if there's a display, a text prompt if not, a hard
+error under `-batch` - never a silently-fabricated value) and offers to save the answer into
+`setup.yml` via `MODsetup_write_yaml_value.m`. If saved, `MODsetup_validate_metadata.m` raises
+`MODsetup_validate_metadata:yamlUpdated` instead of returning - the caller's enclosing loop (see
+`MODprocess_all_L1_to_L2.m`'s per-file retry wrapper) is expected to catch that identifier, reload
+metadata fresh via `MODsetup_read_yaml.m`, and retry from the start, rather than resuming mid-way
+with two different metadata structs in play. See `setup/MODsetup_metadata_field_registry.m` for
+every value's `setup.yml` location, `metadata` location, description, and historical default (shown
+as the prompt's starting point only, never applied on its own).
+
 ## Calibration file: `MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat`
 
 Copied from `MOD_fish_lib/EPSILOMETER/CALIBRATION/FPO7/FPO7_notdiffnoise.mat`, renamed for clarity (see `MOD_fish_calibrations/FPO7/README.md` for full provenance) - contents (`n0`, `n1`, `n2`, `n3`) unchanged. "notdiffnoise" ("not differentiated") describes that this is the noise floor for raw FP07 voltage, as opposed to an analog-differentiated dT/dt signal (`FPO7_noise.mat`, the "Tdiff" variant - not copied, not relevant here, see Module 2 above). Not per-probe - one shared bench constant, resolved via `metadata.paths.calibrations_root` the same way SBE/shear cal files are, just without a per-SN subfolder.
@@ -159,7 +184,7 @@ Copied from `MOD_fish_lib/EPSILOMETER/EPSILON/FILTER/cap1nFres200Meg_5KohmInput.
 
 ## Running a tau/chi_obs-vs-chi_mle comparison
 
-`analysis/chi_tau_mle_comparison.m` (a one-off comparison script, not a `MODprocess_` pipeline function - added in commit `6dfe18a`, removed again in `d1ebd5d` once its results below were recorded; not present in the working tree) was the actual point of this whole branch: call `mod_scan_calc_chi_obs.m` and `mod_scan_calc_chi_mle.m` each twice, once at the historical (wrong) `tau0=0.005` and once at a candidate `tau0=0.0086` (the middle of `astral_chi.md`'s documented 0.0083-0.0089 s range), and compare all four results. The numbers below are exactly as that script (and the scalar-arg `mod_scan_calc_chi_obs`/`mod_scan_calc_chi_mle` signatures that existed at the time) produced them. Reproducing the comparison today, against the current `(scan, metadata, channel, noise_coefs)` signature (PLAN.md's "mod_scan_* functions" guiding principle - `tau0` is now a metadata override, not a function argument) would look like:
+`analysis/chi_tau_mle_comparison.m` (a one-off comparison script, not a `MODprocess_` pipeline function - added in commit `6dfe18a`, removed again in `d1ebd5d` once its results below were recorded; not present in the working tree) was the actual point of this whole branch: call `mod_scan_calc_chi_obs.m` and `mod_scan_calc_chi_mle.m` each twice, once at the historical (wrong) `tau0=0.005` and once at a candidate `tau0=0.0086` (the middle of `astral_chi.md`'s documented 0.0083-0.0089 s range), and compare all four results. The numbers below are exactly as that script (and the scalar-arg `mod_scan_calc_chi_obs`/`mod_scan_calc_chi_mle` signatures that existed at the time) produced them. Reproducing the comparison today, against the current `(scan, metadata, channel, noise_coefs)` signature (PLAN.md's "mod_scan_* functions" guiding principle - `tau0` is now a metadata override, not a function argument) would look like (`metadata` here already has every other `PROCESS.CHI.*` value set - "Where these values live" above - only `time_constant_s` is being overridden for the comparison):
 
 ```matlab
 metadata_default = metadata;

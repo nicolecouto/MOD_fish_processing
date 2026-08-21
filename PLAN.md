@@ -221,20 +221,54 @@ A hardcoded constant is an untested claim that one value is right for every depl
 
 Rule: if a different deployment, vehicle, or probe could plausibly need a different value, it is a `metadata` field — sourced from `setup.yml`, with a documented default in `defaults.yml` (below) — not a literal in the function body. If a value truly is universal (a physical constant, a unit conversion, a coefficient from a cited equation), it may stay in code, but the line must carry a one-line citation or explicit reasoning for why it holds 100% of the time — a source, a paper, a physical law. "It worked for the deployments I tested" is not that reasoning.
 
-### Centralized defaults (`defaults.yml`) + missing-value validation
+### Centralized field registry + validate-at-point-of-use (never silently default)
 
-**Not started.** Today, functions that fall back to a default when a `metadata`/yaml field is absent do so silently and independently — the default lives wherever that function happens to check for the field, which means it can drift, duplicate (see `kmin` above), or go unnoticed for months if one deployment's `setup.yml` is just missing a key. Fix:
+**Superseded design decision (2026-08-18):** the "Phase 1/Phase 2" plan originally sketched here — a
+`setup/defaults.yml` file, `MODsetup_read_yaml.m` silently filling any missing key from it with a
+warning, and (later) a multi-tab review GUI — was replaced before Phase 1 was built. The warn-and-
+silently-substitute approach still means every deployment ends up with values for parameters it may
+never use (a FastCTD deployment needs zero chi variables), and a warning printed to the console during
+an unattended batch run is easy to never see. What actually shipped instead:
 
-**Phase 1 — `defaults.yml` + explicit warning (build first):**
-- One file, `setup/defaults.yml`, is the single source of truth for every configurable field's default value — well-commented, one entry per field: default, units, why that default was chosen, which function(s) consume it.
-- Every real `setup.yml` gets a header comment: `# Defaults and detailed explanations for every variable: setup/defaults.yml`.
-- `MODsetup_read_yaml.m` diffs the incoming yaml's keys against `defaults.yml`'s key set. For each key present in `defaults.yml` but absent from the deployment's yaml: uses the default, prints an explicit warning naming the yaml key, the default value substituted, and the resulting `metadata` field (e.g. `PROCESS.nfft missing from setup.yml -> using default 1024 -> metadata.PROCESS.nfft = 1024`), and appends a `used_default` event to `metadata.header.history` (Section 2, "Metadata provenance and archiving") so any `metadata.mat` on disk carries a permanent record of which values were never actually specified by the operator.
-- Non-blocking, so it doesn't stall unattended/at-sea batch runs (Section 2 notes `MODsetup_read_yaml` gets called "often many times an hour" during a cruise). This mirrors the dialog/prompt/batch-skip fallback chain already shipped for `pad_raw_filenames` (2026-07-23, Section 12) — reuse that pattern rather than inventing a new one.
-
-**Phase 2 — interactive review/edit GUI (later, builds on Section 3's existing long-term-goal line):**
-- A multi-tab `uifigure`/`uitabgroup` popup (one tab per config domain — manifest, AFE/electronics, CTD, PROCESS parameters, ...), shown only in interactive sessions, triggered when `MODsetup_read_yaml` finds missing keys — same interactive-vs-batch fallback as Phase 1/`pad_raw_filenames`.
-- Lists every default value about to be used, editable in place, plus the ability to review/change any other value while the operator is already in there. On accept, writes the chosen values back into the deployment's own `setup.yml`, so the next read has no missing keys and creating `metadata` from that yaml can no longer proceed without the operator having explicitly seen and confirmed the value.
-- Build after Phase 1 ships and once there are a couple of real `setup.yml` files in daily use, so the tab layout is validated against real fields instead of guessed.
+- **One central lookup table, not a separate yaml file:** `setup/MODsetup_metadata_field_registry.m`
+  returns a struct array — one entry per configurable value, with its `setup.yml` section/key, its
+  `metadata` field path, a description, and a historical default (shown only as a prompt's starting
+  value, never applied silently). Currently covers the 10 `PROCESS.CHI.*` chi parameters plus
+  `Fs_epsi`/`nfft`/`dof`/`PROFILES.lowpass_factor`/`.gap_factor`/`.buffer_bins` (data only for the
+  latter 6 — see "Deferred" below).
+- **`MODsetup_read_yaml.m` never silently defaults anything**, for any field, full stop — a metadata
+  field simply doesn't exist if `setup.yml` doesn't declare it. No warning-and-substitute step.
+- **Validation moved to point of use.** Each function that reads specific metadata fields — already
+  documented in its own header — validates exactly that list as literally its first executable lines:
+  `metadata = MODsetup_validate_metadata(metadata, yaml_file, {'kmin_obs', ...})`. A no-op if
+  everything's already present (the common case, every run after the first). If something's missing,
+  `MODsetup_prompt_value.m` asks for it — dialog with a display, text fallback without one, hard error
+  under `-batch` (never fabricates a value; same dialog/prompt/batch-skip fallback chain
+  `pad_raw_filenames`, 2026-07-23, Section 12, established) — and offers to save the answer into
+  `setup.yml` via `MODsetup_write_yaml_value.m` (a targeted text-level insert/update, not a full
+  `WriteYaml.m` round-trip, so hand-written comments survive). If saved,
+  `MODsetup_validate_metadata.m` raises `MODsetup_validate_metadata:yamlUpdated` instead of returning;
+  the caller's enclosing loop (`MODprocess_all_L1_to_L2.m`'s per-file retry wrapper is the reference
+  implementation) catches that identifier, reloads metadata fresh, and retries from the start — never
+  resumes mid-run with two different metadata structs in play.
+- **Done (2026-08-18)** for the chi group: `MODsetup_metadata_field_registry.m`,
+  `MODsetup_prompt_value.m`, `MODsetup_write_yaml_value.m`, `MODsetup_validate_metadata.m` (all new,
+  `setup/`), wired into the 5 chi-consuming functions
+  (`mod_scan_get_spectra.m`/`mod_scan_fpo7_cutoff.m`/`mod_scan_fpo7_volts_to_Tg_spectrum.m`/
+  `mod_scan_calc_chi_obs.m`/`mod_scan_calc_chi_mle.m` — every local hardcoded-default fallback in
+  those files deleted, they now read `metadata.PROCESS.CHI.*` directly, trusting the validate call
+  above), with the retry wrapper in `MODprocess_all_L1_to_L2.m`. See
+  `docs/workflow/L2_calc_chi.md`'s "Where these values live" section.
+- **Deferred, not silently left half-fixed:** `mod_scan_get_spectra.m`'s own unconditional
+  `metadata.PROCESS.nfft`/`.Fs_epsi` reads and `mod_L1_detect_profiling_direction.m`'s
+  `metadata.PROFILES.*` reads are not yet wired to `MODsetup_validate_metadata.m` — a deployment
+  whose `setup.yml` omits `spectral:`/`afe.sample_rate`/`profile_detection:` now hits a plain
+  unhelpful "field not found" MATLAB error there instead of a prompt. The registry entries for those
+  6 fields already exist; wiring their two consumers is the same small pattern as the 5 chi functions.
+- **Long-term goal, still open:** a multi-tab review GUI listing every value about to be used across
+  every domain at once (Section 3's existing long-term-goal line) remains a plausible later UX
+  improvement once `MODsetup_validate_metadata.m` is wired into more consumers, but per-field prompting
+  at point of use has turned out sufficient so far — no immediate need to build it.
 
 ---
 

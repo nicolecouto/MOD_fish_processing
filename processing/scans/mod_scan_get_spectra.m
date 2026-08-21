@@ -23,11 +23,17 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %                (to know each channel's field suffix - '_volt' for
 %                shear/fpo7, '_g' for acc, same branch
 %                MODprocess_single_L0_to_L1.m's convert_efe_channels uses),
-%                metadata.PROCESS.CHI.hamming_window_length_nfft (optional -
-%                pwelch's Hamming window length, as a fraction of nfft;
-%                default 1, i.e. window length = nfft, if
-%                metadata.PROCESS.CHI is absent or the field is missing -
-%                this function's historical hardcoded window length)
+%                metadata.PROCESS.CHI.hamming_window_length_nfft - pwelch's
+%                Hamming window length, as a fraction of nfft. Validated
+%                via MODsetup_validate_metadata.m below - prompted for (and
+%                offered to be saved into setup.yml) if not already in
+%                metadata; see MODsetup_metadata_field_registry.m for its
+%                historical default (1, i.e. window length = nfft).
+%                nfft/Fs_epsi/channels are NOT yet validated the same way
+%                (deferred follow-up - see PLAN.md) - still read
+%                unconditionally, so a deployment whose setup.yml omits
+%                spectral:/afe.sample_rate will hit a plain "field not
+%                found" error here instead of a helpful prompt.
 %
 % OUTPUTS
 %   scan - same struct, with added:
@@ -46,7 +52,8 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   MODprocess_single_L1_to_L2.m
 %
 % CALLS
-%   (none - uses MATLAB's Signal Processing Toolbox pwelch, detrend)
+%   MODsetup_validate_metadata.m
+%   (MATLAB's Signal Processing Toolbox pwelch, detrend)
 %
 % NOTES
 %   pwelch call shape (`pwelch(detrend(x), window_length, [], nfft, Fs_epsi, 'psd')`,
@@ -59,14 +66,15 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
+end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'hamming_window_length_nfft'});
+
 nfft = metadata.PROCESS.nfft;
 Fs_epsi = metadata.PROCESS.Fs_epsi;
-
-hamming_window_length_nfft = 1;
-if isfield(metadata.PROCESS, 'CHI') && isfield(metadata.PROCESS.CHI, 'hamming_window_length_nfft')
-    hamming_window_length_nfft = metadata.PROCESS.CHI.hamming_window_length_nfft;
-end
-window_length = round(hamming_window_length_nfft * nfft);
+window_length = round(metadata.PROCESS.CHI.hamming_window_length_nfft * nfft);
 
 scan.spectra = struct();
 f = [];

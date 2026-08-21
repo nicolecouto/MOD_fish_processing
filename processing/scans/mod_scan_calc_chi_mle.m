@@ -106,26 +106,30 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                            MOD_fish_lib Profile####.mat already carries
 %                            a per-scan epsilon_final field that works
 %                            directly - see docs/workflow/L2_calc_chi.md.
-%   metadata   - metadata struct (from MODsetup_read_yaml.m). Passed
+%   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated up
+%                front, via MODsetup_validate_metadata.m, against the full
+%                set of PROCESS values this function AND both sub-calls it
+%                makes need - resolving everything the whole chain needs
+%                in one prompt-and-reload cycle rather than letting each
+%                sub-call discover its own subset piecemeal. Passed
 %                straight through to mod_scan_fpo7_volts_to_Tg_spectrum.m
 %                (metadata.AFE.(channel).volts_to_C, .electronics_filter,
 %                metadata.PROCESS.CHI.time_constant_s, .fall_speed_exponent)
 %                and mod_scan_fpo7_cutoff.m (metadata.PROCESS.CHI.
 %                noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/.n_skip -
-%                see those functions for exact fields and defaults). Also
-%                used directly here:
-%                  metadata.PROCESS.dof (required) - degrees of freedom of
-%                    the power spectrum estimate, sets how tightly the MLE
-%                    trusts each spectral bin against the model
-%                  metadata.PROCESS.CHI.kmin_obs (optional, default 3) -
-%                    low-wavenumber integration bound [cpm], matches
-%                    mod_scan_calc_chi_obs.m
+%                see those functions for exact fields). Also used directly
+%                here:
+%                  metadata.PROCESS.dof - degrees of freedom of the power
+%                    spectrum estimate, sets how tightly the MLE trusts
+%                    each spectral bin against the model
+%                  metadata.PROCESS.CHI.kmin_obs - low-wavenumber
+%                    integration bound [cpm], matches mod_scan_calc_chi_obs.m
 %                  metadata.PROCESS.CHI.chi_mle_start_search,
-%                    .chi_mle_end_search (optional, default 1e-3/1e3 -
-%                    this function's historical search range) -
-%                    multipliers on the chi_obs-seeded starting value
-%                    bounding mle_search_chi's grid search (see
-%                    DESCRIPTION)
+%                    .chi_mle_end_search - multipliers on the
+%                    chi_obs-seeded starting value bounding
+%                    mle_search_chi's grid search (see DESCRIPTION)
+%                See MODsetup_metadata_field_registry.m for each field's
+%                historical default (shown as the prompt's starting value).
 %   channel    - channel name string (e.g. 't1'), selects which
 %                metadata.AFE.(channel) to read.
 %   noise_coefs - FP07 bench noise floor struct (n0..n3), passed straight
@@ -163,28 +167,24 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %   docs/workflow/L2_calc_chi.md's chi_obs-vs-chi_mle comparison.)
 %
 % CALLS
-%   mod_scan_fpo7_volts_to_Tg_spectrum.m, mod_scan_fpo7_cutoff.m,
-%   mod_scan_batchelor_spectrum.m
+%   MODsetup_validate_metadata.m, mod_scan_fpo7_volts_to_Tg_spectrum.m,
+%   mod_scan_fpo7_cutoff.m, mod_scan_batchelor_spectrum.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-dof = metadata.PROCESS.dof;
-
-kmin = 3; % cpm - historical default, matches mod_scan_calc_chi_obs.m
-chi_mle_start_search = 1e-3; % historical default multiplier on chi_seed
-chi_mle_end_search = 1e3;
-if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI')
-    chi_params = metadata.PROCESS.CHI;
-    if isfield(chi_params, 'kmin_obs')
-        kmin = chi_params.kmin_obs;
-    end
-    if isfield(chi_params, 'chi_mle_start_search')
-        chi_mle_start_search = chi_params.chi_mle_start_search;
-    end
-    if isfield(chi_params, 'chi_mle_end_search')
-        chi_mle_end_search = chi_params.chi_mle_end_search;
-    end
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
 end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
+    {'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search', 'dof', ...
+     'time_constant_s', 'fall_speed_exponent', ...
+     'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip'});
+
+dof = metadata.PROCESS.dof;
+kmin = metadata.PROCESS.CHI.kmin_obs; % cpm
+chi_mle_start_search = metadata.PROCESS.CHI.chi_mle_start_search; % multiplier on chi_seed
+chi_mle_end_search = metadata.PROCESS.CHI.chi_mle_end_search;
 
 scan.spectra.f = scan.spectra.f(:)';
 scan.spectra.Pt_volt_f = scan.spectra.Pt_volt_f(:)';

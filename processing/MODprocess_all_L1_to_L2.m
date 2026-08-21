@@ -18,6 +18,19 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   function while the file-I/O cost is paid once per batch run rather than
 %   once per file.
 %
+%   Each file's MODprocess_single_L1_to_L2.m call is wrapped in a
+%   retry-on-metadata-update loop: since metadata is constant across every
+%   scan/channel in a file, a chi field missing from metadata
+%   (MODsetup_validate_metadata.m, called from deep inside the chi
+%   functions) fails deterministically on the very first chi call, never
+%   partway through a file with some scans already processed on stale
+%   metadata. If the operator resolves it and saves to setup.yml, this
+%   loop catches the specific 'MODsetup_validate_metadata:yamlUpdated'
+%   identifier, reloads metadata fresh (MODsetup_read_yaml.m), and retries
+%   just that one file - not the whole batch, and not by resuming mid-file
+%   with two different metadata structs in play. Any other error
+%   propagates normally.
+%
 % INPUTS
 %   L1_dir        - full path to a folder of L1 .mat files
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
@@ -38,6 +51,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %
 % CALLS
 %   MODprocess_single_L1_to_L2.m
+%   MODsetup_read_yaml.m (only on the retry path - see NOTES/DESCRIPTION)
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -99,7 +113,18 @@ for i = 1:nfiles
     fprintf(1, '%s | L1/%s --> L2/%s | ', datestr(now, 'YYYY.mm.dd HH:MM:SS'), filename, filename);
 
     data = load(fullfile(list_L1file(i).folder, filename));
-    L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
+    while true
+        try
+            L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
+            break
+        catch ME
+            if strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
+                metadata = MODsetup_read_yaml(metadata.paths.setup_yml);
+                continue % retry this same file with fresh, complete metadata
+            end
+            rethrow(ME)
+        end
+    end
 
     save(L2_file, '-struct', 'L2data')
     fprintf(1, '%d scans\n', numel(L2data.dnum));

@@ -43,21 +43,22 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %                        exclusion differs from the old FPO7_cutoff.m
 %                  spectra.Pt_volt_f - FP07 channel's raw volts^2/Hz power
 %                        spectrum, same size/order as spectra.f
-%   metadata   - metadata struct (from MODsetup_read_yaml.m). Uses (each
-%                optional, defaulting to this function's historical
-%                hardcoded value if metadata.PROCESS.CHI or the field is
-%                missing):
-%                  metadata.PROCESS.CHI.noise_adjusted_to_f (default 0.7) -
-%                    fraction of f(end) above which the observed
-%                    spectrum's noise floor is normalized onto the bench
-%                    measurement's scale
-%                  metadata.PROCESS.CHI.n_smooth_f_spectrum (default 15) -
-%                    movmean smoothing window [bins]
-%                  metadata.PROCESS.CHI.sn_min (default 3) - signal-to-
-%                    noise multiplier (SN_min in DESCRIPTION/NOTES above)
-%                  metadata.PROCESS.CHI.n_skip (default 2) - lowest-
-%                    frequency bins excluded (n_skip in DESCRIPTION/NOTES
-%                    above)
+%   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated at
+%                the top of this function via MODsetup_validate_metadata.m
+%                - prompted for (and offered to be saved into setup.yml)
+%                if not already present. Uses:
+%                  metadata.PROCESS.CHI.noise_adjusted_to_f - fraction of
+%                    f(end) above which the observed spectrum's noise
+%                    floor is normalized onto the bench measurement's
+%                    scale
+%                  metadata.PROCESS.CHI.n_smooth_f_spectrum - movmean
+%                    smoothing window [bins]
+%                  metadata.PROCESS.CHI.sn_min - signal-to-noise
+%                    multiplier (SN_min in DESCRIPTION/NOTES above)
+%                  metadata.PROCESS.CHI.n_skip - lowest-frequency bins
+%                    excluded (n_skip in DESCRIPTION/NOTES above)
+%                See MODsetup_metadata_field_registry.m for each one's
+%                historical default (shown as the prompt's starting value).
 %   noise_coefs - struct with fields n0, n1, n2, n3 (bench noise floor
 %                polynomial coefficients, e.g. loaded from
 %                MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat). Not yet
@@ -78,7 +79,7 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
 %
 % CALLS
-%   (none)
+%   MODsetup_validate_metadata.m
 %
 % NOTES
 %   Ports the old MOD_fish_lib FPO7_cutoff.m's approach (bench noise
@@ -112,25 +113,17 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-noise_adjusted_to_f = 0.7;
-n_smooth_f_spectrum = 15;
-SN_min = 3;
-n_skip = 2; % don't trust the first 2 (lowest-frequency) Fourier coefficients
-if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI')
-    chi_params = metadata.PROCESS.CHI;
-    if isfield(chi_params, 'noise_adjusted_to_f')
-        noise_adjusted_to_f = chi_params.noise_adjusted_to_f;
-    end
-    if isfield(chi_params, 'n_smooth_f_spectrum')
-        n_smooth_f_spectrum = chi_params.n_smooth_f_spectrum;
-    end
-    if isfield(chi_params, 'sn_min')
-        SN_min = chi_params.sn_min;
-    end
-    if isfield(chi_params, 'n_skip')
-        n_skip = chi_params.n_skip;
-    end
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
 end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
+    {'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip'});
+
+noise_adjusted_to_f = metadata.PROCESS.CHI.noise_adjusted_to_f;
+n_smooth_f_spectrum = metadata.PROCESS.CHI.n_smooth_f_spectrum;
+SN_min = metadata.PROCESS.CHI.sn_min;
+n_skip = metadata.PROCESS.CHI.n_skip; % don't trust the first n_skip (lowest-frequency) Fourier coefficients
 
 f = scan.spectra.f(:);
 Pxx = scan.spectra.Pt_volt_f(:);

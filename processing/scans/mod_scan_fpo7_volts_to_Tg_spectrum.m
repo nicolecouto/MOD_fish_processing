@@ -58,17 +58,20 @@ function scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel)
 %                    correction) if metadata.AFE.(channel) has no such
 %                    field - so deployments processed before that step
 %                    existed keep working unchanged.
-%                  metadata.PROCESS.CHI.time_constant_s (optional) - FP07
-%                    time-constant coefficient [s] (tau0), passed straight
-%                    through to mod_scan_fpo7_transfer_function.m (default
-%                    there: 0.005 if metadata.PROCESS.CHI or the field is
-%                    missing). Exposed as a metadata field, not hardcoded,
-%                    so a tau sensitivity comparison is a metadata edit,
-%                    not a code edit.
-%                  metadata.PROCESS.CHI.fall_speed_exponent (optional) -
-%                    fall-speed exponent, passed straight through to
-%                    mod_scan_fpo7_transfer_function.m (default there:
-%                    -0.32).
+%                  metadata.PROCESS.CHI.time_constant_s - FP07 time-
+%                    constant coefficient [s] (tau0), passed straight
+%                    through to mod_scan_fpo7_transfer_function.m. Exposed
+%                    as a metadata field, not hardcoded, so a tau
+%                    sensitivity comparison is a metadata edit, not a code
+%                    edit.
+%                  metadata.PROCESS.CHI.fall_speed_exponent - fall-speed
+%                    exponent, passed straight through to
+%                    mod_scan_fpo7_transfer_function.m.
+%                Both PROCESS.CHI.* fields above are validated at the top
+%                of this function via MODsetup_validate_metadata.m -
+%                prompted for (and offered to be saved into setup.yml) if
+%                not already present; see MODsetup_metadata_field_registry.m
+%                for their historical defaults.
 %   channel    - channel name string (e.g. 't1'), selects which
 %                metadata.AFE.(channel) to read.
 %
@@ -83,9 +86,15 @@ function scan = mod_scan_fpo7_volts_to_Tg_spectrum(scan, metadata, channel)
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
 %
 % CALLS
-%   mod_scan_fpo7_transfer_function.m
+%   MODsetup_validate_metadata.m, mod_scan_fpo7_transfer_function.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
+
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
+end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'time_constant_s', 'fall_speed_exponent'});
 
 volts_to_C = metadata.AFE.(channel).volts_to_C;
 
@@ -94,17 +103,8 @@ if isfield(metadata.AFE.(channel), 'electronics_filter')
     electronics_filter = metadata.AFE.(channel).electronics_filter;
 end
 
-tau0 = [];
-exponent = [];
-if isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'CHI')
-    chi_params = metadata.PROCESS.CHI;
-    if isfield(chi_params, 'time_constant_s')
-        tau0 = chi_params.time_constant_s;
-    end
-    if isfield(chi_params, 'fall_speed_exponent')
-        exponent = chi_params.fall_speed_exponent;
-    end
-end
+tau0 = metadata.PROCESS.CHI.time_constant_s;
+exponent = metadata.PROCESS.CHI.fall_speed_exponent;
 
 f = scan.spectra.f(:)';
 Pt_volt_f = scan.spectra.Pt_volt_f(:)';
