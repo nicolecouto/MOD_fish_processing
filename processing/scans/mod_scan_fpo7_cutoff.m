@@ -16,7 +16,11 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   The noise floor itself is a cubic fit in log10(f) vs. log10(noise
 %   power), pre-measured on a bench with no probe attached
 %   (noise_coefs.n0..n3 - see MOD_fish_calibrations/FPO7/README.md for
-%   where this file comes from). The observed spectrum is smoothed
+%   where this file comes from; evaluated via mod_scan_fpo7_bench_noise_f.m).
+%   This is a deliberate choice, not just the only option available - a
+%   from-scratch theoretical alternative (mod_scan_fpo7_noise_f.m /
+%   mod_scan_fpo7_modeled_noise_f.m) exists but isn't adopted here for now
+%   (see mod_scan_fpo7_bench_noise_f.m's docstring). The observed spectrum is smoothed
 %   (movmean, n_smooth_f_spectrum-point window, default 15) and compared,
 %   bin by bin, against SN_min (default 3) times the noise floor - skipping
 %   the lowest n_skip (default 2) remaining (f > 0) bins entirely, since
@@ -79,9 +83,14 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
 %
 % CALLS
-%   MODsetup_validate_metadata.m
+%   MODsetup_validate_metadata.m, mod_scan_fpo7_bench_noise_f.m
 %
 % NOTES
+%   Noise floor evaluation (the log10(f) cubic polynomial) used to be
+%   inline here; pulled out into mod_scan_fpo7_bench_noise_f.m so there's
+%   one copy of that formula in the repo, not two - same coefficients,
+%   same math, no behavior change.
+%
 %   Ports the old MOD_fish_lib FPO7_cutoff.m's approach (bench noise
 %   floor, movmean smoothing, SN_min=3 threshold, skip the first 2
 %   Fourier coefficients), but fixes two indexing issues found while
@@ -134,8 +143,7 @@ if numel(valid) <= n_skip
         'Need more than %d frequency bins with f > 0 to find a noise-floor cutoff.', n_skip);
 end
 
-logf = log10(f(valid));
-noise = noise_coefs.n0 + noise_coefs.n1.*logf + noise_coefs.n2.*logf.^2 + noise_coefs.n3.*logf.^3;
+noise_f = mod_scan_fpo7_bench_noise_f(f(valid), noise_coefs);
 medspec = smoothdata(Pxx(valid), 'movmean', n_smooth_f_spectrum);
 
 % Normalize the observed spectrum's noise floor onto the bench
@@ -144,7 +152,7 @@ medspec = smoothdata(Pxx(valid), 'movmean', n_smooth_f_spectrum);
 % turbulent signal has long since rolled off and what remains should be
 % almost pure instrument noise on both sides of the comparison.
 high_freq = f(valid) > noise_adjusted_to_f * f(valid(end));
-adjust_spec = median(medspec(high_freq) ./ 10.^noise(high_freq), 'omitmissing');
+adjust_spec = median(medspec(high_freq) ./ noise_f(high_freq), 'omitmissing');
 if adjust_spec > 10
     warning('mod_scan_fpo7_cutoff:highNoiseFloor', ...
         ['Observed noise floor is >10x the bench measurement - either a ' ...
@@ -152,7 +160,7 @@ if adjust_spec > 10
 end
 
 search_idx = (n_skip + 1):numel(valid); % positions within `valid`/`medspec`, skipping the first n_skip
-below_floor = medspec(search_idx) ./ adjust_spec < SN_min * 10.^noise(search_idx);
+below_floor = medspec(search_idx) ./ adjust_spec < SN_min * noise_f(search_idx);
 first_noisy = find(below_floor, 1, 'first');
 
 if isempty(first_noisy)

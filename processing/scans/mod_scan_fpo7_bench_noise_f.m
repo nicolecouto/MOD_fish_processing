@@ -40,19 +40,21 @@ function noise_f = mod_scan_fpo7_bench_noise_f(f, noise_coefs)
 %   noise_f - FP07 bench-measured noise floor [V^2/Hz], same size as f.
 %
 % CALLED BY
-%   Not yet called by anything - mod_scan_fpo7_cutoff.m still has its own
-%   inline copy of this formula (see NOTES).
+%   mod_scan_fpo7_cutoff.m - the production noise-floor cutoff. This is
+%   the confirmed, currently-used path: bench-measured noise floor +
+%   adjust_spec normalization, not the theoretical/modeled alternative
+%   (mod_scan_fpo7_noise_f.m / mod_scan_fpo7_modeled_noise_f.m) - see this
+%   function's DESCRIPTION.
 %
 % CALLS
 %   (none)
 %
 % NOTES
-%   mod_scan_fpo7_cutoff.m (as of this writing) has its own inline copy of
-%   this exact formula, predating this function. Not refactored to call
-%   this one here, to keep this change scoped to adding the theoretical/
-%   measured pair the way it was asked for (alongside
-%   mod_scan_fpo7_modeled_noise_f.m) - worth doing as a follow-up so
-%   there's only one copy of this formula in the repo.
+%   mod_scan_fpo7_cutoff.m used to have its own inline copy of this exact
+%   formula, predating this function - refactored to call this one
+%   instead once bench noise was confirmed as the production path, so
+%   there's only one copy of this formula in the repo. Same coefficients,
+%   same math, no behavior change from that refactor.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
