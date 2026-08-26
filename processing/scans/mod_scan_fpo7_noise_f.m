@@ -92,12 +92,17 @@ function noise_f = mod_scan_fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs)
 %             generic curve - re-evaluate per scan/segment as T changes).
 %
 % CALLED BY
-%   Not yet called by anything. mod_scan_fpo7_cutoff.m currently expects
-%   a `noise_coefs` struct with fields n0..n3 (a cubic-in-log10(f)
-%   polynomial fit, e.g. from MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat)
-%   rather than a directly-evaluated noise_f array - wiring this function
-%   in as an alternative/replacement noise source is a follow-up step, not
-%   done here.
+%   mod_scan_fpo7_modeled_noise_f.m (converts this function's amplifier-
+%   input-referred output into the same domain as a real recorded Pt_volt_f
+%   by applying the AFE electronics/ADC filter - see that function's NOTES
+%   for why only that filter applies, not the FP07 thermal-rolloff one).
+%   Not yet called directly by mod_scan_fpo7_cutoff.m itself, which still
+%   expects a `noise_coefs` struct with fields n0..n3 (a cubic-in-log10(f)
+%   polynomial fit, e.g. from MOD_fish_calibrations/FPO7/FPO7_benchnoise.mat,
+%   evaluated via the separate mod_scan_fpo7_bench_noise_f.m) rather than a
+%   directly-evaluated noise_f array - wiring mod_scan_fpo7_modeled_noise_f.m
+%   in as an alternative/replacement noise source there is a follow-up step,
+%   not done here.
 %
 % CALLS
 %   (none)
