@@ -147,7 +147,6 @@ for iC = 1:numel(channel_names)
     end
 
     counts = epsi.(slot_field);
-    epsi.([ch '_count']) = counts;
     epsi = rmfield(epsi, slot_field);
 
     FR = metadata.AFE.(ch).full_range;
