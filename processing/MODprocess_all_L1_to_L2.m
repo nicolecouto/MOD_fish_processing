@@ -60,6 +60,17 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   MODprocess_all_L0_to_L1.m, so that must have run (with CTD data
 %   present) before this function can do anything useful.
 %
+%   Skips entirely (no L2 files written or expected) when
+%   metadata.manifest.has_epsi is false - this whole path exists to
+%   produce per-scan spectra, which a CTD-only deployment (no AFE/epsi
+%   board - MODsetup_read_yaml.m) has no raw data for. Without this check,
+%   every L1 file would still get "converted" to an L2 .mat with every
+%   field empty (mod_L2_tile_scans.m's own empty-input behavior) - a
+%   real, if mostly harmless, waste of a write per file rather than a
+%   clean no-op. CTD-only deployments still get profile-level output with
+%   real CTD data from MODprocess_all_L1_to_L2_profiles.m, which is not
+%   gated the same way - see that function's DESCRIPTION.
+%
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 if nargin < 3 || isempty(L2_dir)
@@ -68,6 +79,14 @@ end
 if nargin < 4 || isempty(reprocess_all)
     reprocess_all = false;
 end
+
+if ~metadata.manifest.has_epsi
+    disp(['MODprocess_all_L1_to_L2: this deployment has no AFE/epsi board ' ...
+        '(instrument_manifest.afe absent from setup.yml) - nothing to do.'])
+    L2_files = {};
+    return
+end
+
 if ~exist(L2_dir, 'dir')
     mkdir(L2_dir);
 end

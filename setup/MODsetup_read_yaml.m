@@ -38,14 +38,21 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % OUTPUTS
 %   metadata  - struct with fields:
-%     paths.data_root, .raw, .L0, .L1, .L2, .meta, .calibrations_root, .ctd,
-%     .setup_yml                    - .ctd is only meaningful for vehicles
+%     paths.data_root, .raw, .L0, .L1, .L2, .profiles, .meta,
+%     .calibrations_root, .ctd, .setup_yml
+%                                   - .ctd is only meaningful for vehicles
 %                                     with an independent CTD file (see
 %                                     vehicle_name below) - defined
 %                                     unconditionally like the other paths,
 %                                     whether or not data_root/ctd/ exists.
-%                                     .setup_yml is this call's own input
-%                                     argument, carried along so
+%                                     .profiles is where
+%                                     MODprocess_all_L1_to_L2_profiles.m
+%                                     saves Profile####.mat, deliberately a
+%                                     sibling of .L2 (not inside it) so the
+%                                     per-file realtime output and the
+%                                     per-cast final output never share a
+%                                     directory. .setup_yml is this call's
+%                                     own input argument, carried along so
 %                                     MODsetup_validate_metadata.m (called
 %                                     from deep inside mod_scan_*.m) can
 %                                     find its way back to the yaml file
@@ -73,13 +80,30 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     just pass through unchanged) - a
 %                                     record of what's on the vehicle for
 %                                     later steps.
+%     manifest.has_epsi             - true only when setup.yml's
+%                                     instrument_manifest.afe block is
+%                                     present and declares at least one
+%                                     channel. A CTD-only vehicle (no AFE
+%                                     board at all - e.g. a bare FastCTD or
+%                                     Wirewalker cast) has no afe: block,
+%                                     so this comes back false rather than
+%                                     erroring - see PROCESS.channels/AFE.*
+%                                     below. Consumed by
+%                                     MODprocess_all_L1_to_L2.m (skips
+%                                     spectra processing entirely when
+%                                     false) and
+%                                     MODprocess_single_L1_to_L2_profile.m
+%                                     (still builds a profile - CTD data is
+%                                     saved regardless - but never computes
+%                                     spectra when false).
 %     PROCESS.latitude             - for ctd.z when no GPS fix
 %     PROCESS.channels             - AFE sensor names in ADC slot order,
 %                                     e.g. {'t1','t2','s1','s2','a1','a2','a3'}
 %                                     - order comes from setup.yml's
 %                                     instrument_manifest.afe.channel_N
 %                                     keys, sorted numerically by N (not
-%                                     from yaml field order)
+%                                     from yaml field order). {} (empty)
+%                                     when manifest.has_epsi is false.
 %     PROCESS.Fs_epsi               - Hz, nominal EFE board sample rate,
 %                                     from setup.yml's afe.sample_rate.
 %                                     NOT set at all if the key is absent -
@@ -263,6 +287,7 @@ metadata.paths.raw               = fullfile(yml.data_root, 'raw');
 metadata.paths.L0                = fullfile(yml.data_root, 'L0');
 metadata.paths.L1                = fullfile(yml.data_root, 'L1');
 metadata.paths.L2                = fullfile(yml.data_root, 'L2');
+metadata.paths.profiles          = fullfile(yml.data_root, 'profiles');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file
@@ -366,62 +391,79 @@ for iF = 1:numel(manifest_flags)
     metadata.manifest.(['has_' flag]) = present;
 end
 
+% has_epsi: true only when instrument_manifest.afe is present and declares
+% at least one channel slot. Unlike the presence-only flags above, afe is
+% not a boolean key - it's a whole sub-struct of channel_N slots - so this
+% is computed separately rather than folded into manifest_flags. A
+% CTD-only vehicle (no AFE board) simply omits instrument_manifest.afe
+% entirely, same "absent key means not on the vehicle" rule as vnav/isap/
+% alt/gps/fluor.
+has_epsi = has_manifest && isfield(yml.instrument_manifest, 'afe') ...
+    && ~isempty(fieldnames(yml.instrument_manifest.afe));
+metadata.manifest.has_epsi = has_epsi;
+
 %% AFE channel manifest - slot order comes explicitly from
 % instrument_manifest.afe.channel_N keys, sorted numerically by N, rather
 % than from yaml field order (which the old schema relied on and which
-% YAML does not guarantee to preserve past single digits).
-afe_manifest = yml.instrument_manifest.afe;
-slot_fields = fieldnames(afe_manifest);
-slot_numbers = cellfun(@(f) sscanf(f, 'channel_%d'), slot_fields);
-[~, slot_order] = sort(slot_numbers);
-slot_fields = slot_fields(slot_order);
+% YAML does not guarantee to preserve past single digits). Skipped
+% entirely when has_epsi is false (no afe: block to read) - channels stays
+% {} and metadata.AFE is never populated, rather than erroring on a
+% missing instrument_manifest.afe.
+channel_names = {};
+if has_epsi
+    afe_manifest = yml.instrument_manifest.afe;
+    slot_fields = fieldnames(afe_manifest);
+    slot_numbers = cellfun(@(f) sscanf(f, 'channel_%d'), slot_fields);
+    [~, slot_order] = sort(slot_numbers);
+    slot_fields = slot_fields(slot_order);
 
-channel_names = cell(numel(slot_fields), 1);
-for iC = 1:numel(slot_fields)
-    slot = afe_manifest.(slot_fields{iC});
-    ch = slot.name;
-    channel_names{iC} = ch;
+    channel_names = cell(numel(slot_fields), 1);
+    for iC = 1:numel(slot_fields)
+        slot = afe_manifest.(slot_fields{iC});
+        ch = slot.name;
+        channel_names{iC} = ch;
 
-    % Electrical details (full_range, ADCconf) live in the separate
-    % afe.channels detail section, keyed by sensor name.
-    metadata.AFE.(ch).full_range = yml.afe.channels.(ch).full_range;
-    metadata.AFE.(ch).ADCconf    = yml.afe.channels.(ch).ADCconf;
-    metadata.AFE.(ch).type       = slot.type;
+        % Electrical details (full_range, ADCconf) live in the separate
+        % afe.channels detail section, keyed by sensor name.
+        metadata.AFE.(ch).full_range = yml.afe.channels.(ch).full_range;
+        metadata.AFE.(ch).ADCconf    = yml.afe.channels.(ch).ADCconf;
+        metadata.AFE.(ch).type       = slot.type;
 
-    % ADC anti-alias filter type - optional, defaults to 'sinc4' (every
-    % deployment's EFE board uses a sinc^4 decimation filter today, same
-    % as the legacy MOD_fish_lib metadata this was ported from - see
-    % MODsetup_define_filters.m, the only consumer). Exposed as a real
-    % yaml field rather than hardcoded downstream in case a future board
-    % ever differs.
-    metadata.AFE.(ch).ADCfilter = 'sinc4';
-    if isfield(yml.afe.channels.(ch), 'ADCfilter')
-        metadata.AFE.(ch).ADCfilter = yml.afe.channels.(ch).ADCfilter;
-    end
-
-    % Probe serial number - identifies which physical probe is on this
-    % channel, whether or not its calibration comes from a lookup file.
-    % Optional: channels with no probe (e.g. acc) or no sn field in this
-    % manifest entry are left without an SN field.
-    if isfield(slot, 'sn') && ~isempty(slot.sn)
-        SN = slot.sn;
-        if isnumeric(SN)
-            SN = num2str(SN);
+        % ADC anti-alias filter type - optional, defaults to 'sinc4' (every
+        % deployment's EFE board uses a sinc^4 decimation filter today, same
+        % as the legacy MOD_fish_lib metadata this was ported from - see
+        % MODsetup_define_filters.m, the only consumer). Exposed as a real
+        % yaml field rather than hardcoded downstream in case a future board
+        % ever differs.
+        metadata.AFE.(ch).ADCfilter = 'sinc4';
+        if isfield(yml.afe.channels.(ch), 'ADCfilter')
+            metadata.AFE.(ch).ADCfilter = yml.afe.channels.(ch).ADCfilter;
         end
-        metadata.AFE.(ch).SN = SN;
 
-        % Shear probes: Sv is a fixed property of the probe, measured on
-        % a calibration rig and logged to a per-SN file - a real lookup.
-        % FPO7 probes: dTdV is NOT a fixed, lookupable property - it's
-        % fit in-situ per deployment (sometimes per profile) against real
-        % CTD temperature data (mod_epsi_linear_calibration_FP07.m:
-        % polyfit(volts, T, 1)), so there is no calibration file to read
-        % here. That fit needs time-aligned ctd.T and is a later L1 step's
-        % job, not something a static per-SN file can answer.
-        cal_subdir = probe_cal_subdir(metadata.AFE.(ch).type);
-        if ~isempty(cal_subdir)
-            cal_file = fullfile(yml.calibrations_root, cal_subdir, SN, sprintf('Calibration_%s.txt', SN));
-            metadata.AFE.(ch).cal = read_probe_cal(cal_file);
+        % Probe serial number - identifies which physical probe is on this
+        % channel, whether or not its calibration comes from a lookup file.
+        % Optional: channels with no probe (e.g. acc) or no sn field in this
+        % manifest entry are left without an SN field.
+        if isfield(slot, 'sn') && ~isempty(slot.sn)
+            SN = slot.sn;
+            if isnumeric(SN)
+                SN = num2str(SN);
+            end
+            metadata.AFE.(ch).SN = SN;
+
+            % Shear probes: Sv is a fixed property of the probe, measured on
+            % a calibration rig and logged to a per-SN file - a real lookup.
+            % FPO7 probes: dTdV is NOT a fixed, lookupable property - it's
+            % fit in-situ per deployment (sometimes per profile) against real
+            % CTD temperature data (mod_epsi_linear_calibration_FP07.m:
+            % polyfit(volts, T, 1)), so there is no calibration file to read
+            % here. That fit needs time-aligned ctd.T and is a later L1 step's
+            % job, not something a static per-SN file can answer.
+            cal_subdir = probe_cal_subdir(metadata.AFE.(ch).type);
+            if ~isempty(cal_subdir)
+                cal_file = fullfile(yml.calibrations_root, cal_subdir, SN, sprintf('Calibration_%s.txt', SN));
+                metadata.AFE.(ch).cal = read_probe_cal(cal_file);
+            end
         end
     end
 end
