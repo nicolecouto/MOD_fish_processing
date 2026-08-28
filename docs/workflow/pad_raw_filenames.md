@@ -18,7 +18,7 @@ zero-padded width (`modsom_000.modraw`, `modsom_001.modraw`, ...,
   directory entry changes (`movefile`).
 - **Verified** - after each rename, the new file's byte count is checked
   against the original; a mismatch aborts with an error.
-- **Logged** - every rename is appended to `meta/FilenamePadLog.csv`, a
+- **Logged** - every rename is appended to `meta/filename_pad_log.csv`, a
   sibling of `raw_dir`.
 - **Safe to call repeatedly** - a no-op on names that are already padded or
   aren't number-based (e.g. datetime-named files).
@@ -101,7 +101,7 @@ MODsetup_pad_raw_filenames: 100 of 193 .modraw files in epsi_on_wirewalker/25_04
     modsom_1.modraw -> modsom_001.modraw
     modsom_10.modraw -> modsom_010.modraw
     ... and 97 more
-MODsetup_pad_raw_filenames: renamed 100 raw files - log: epsi_on_wirewalker/25_0408_tlc_ww1_navo2/meta/FilenamePadLog.csv
+MODsetup_pad_raw_filenames: renamed 100 raw files - log: epsi_on_wirewalker/25_0408_tlc_ww1_navo2/meta/filename_pad_log.csv
 
 n_renamed =
 
@@ -122,9 +122,9 @@ through as Name-Value pairs.
 
 **Calls:** `MODsetup_detect_raw_suffix.m`
 
-## `meta/FilenamePadLog.csv`
+## `meta/filename_pad_log.csv`
 
-Written next to `raw_dir` (i.e. `fileparts(raw_dir)/meta/FilenamePadLog.csv`),
+Written next to `raw_dir` (i.e. `fileparts(raw_dir)/meta/filename_pad_log.csv`),
 appended to across runs. One header comment line, one CSV header, then one
 row per rename:
 

@@ -10,7 +10,7 @@ function n_renamed = MODsetup_pad_raw_filenames(raw_dir, options)
 %   chronological order. Files are renamed in place with movefile - the
 %   contents are never read or written, only the directory entry changes -
 %   and every rename is verified (same byte count) and recorded in
-%   meta/FilenamePadLog.csv next to raw_dir.
+%   meta/filename_pad_log.csv next to raw_dir.
 %
 %   If a sibling L0 folder already holds converted .mat files under the
 %   old names, those are renamed to match and the raw_file_info.filename
@@ -230,7 +230,7 @@ if ~force
         plural_s = 's';
     end
     prompt_msg = sprintf(['Rename %d %s file%s in place?\n' ...
-        '(contents untouched, log written to meta/FilenamePadLog.csv)'], ...
+        '(contents untouched, log written to meta/filename_pad_log.csv)'], ...
         numel(changed), raw_file_suffix, plural_s);
     resp = input([prompt_msg, ' y/n: '], 's');
     if ~strcmpi(strtrim(resp), 'y')
@@ -244,7 +244,7 @@ meta_dir = fullfile(fileparts(raw_dir), 'meta');
 if ~exist(meta_dir, 'dir')
     mkdir(meta_dir);
 end
-log_path = fullfile(meta_dir, 'FilenamePadLog.csv');
+log_path = fullfile(meta_dir, 'filename_pad_log.csv');
 new_log = ~isfile(log_path);
 fid = fopen(log_path, 'a');
 if fid == -1
@@ -265,7 +265,7 @@ for k = changed'
     if isempty(d) || d.bytes ~= listing(k).bytes
         fclose(fid);
         error('MODsetup_pad_raw_filenames:verifyFailed', ...
-            'Byte count changed renaming %s -> %s (expected %d). Check meta/FilenamePadLog.csv.', ...
+            'Byte count changed renaming %s -> %s (expected %d). Check meta/filename_pad_log.csv.', ...
             old_path, new_path, listing(k).bytes);
     end
     fprintf(fid, '%s,raw,%s%s,%s%s\n', tstamp, old_base{k}, raw_file_suffix, new_base{k}, raw_file_suffix);

@@ -10,14 +10,17 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, met
 %   (it comes from a per-file cumsum) - this function offsets each file's
 %   counts by the running cumulative total from all prior files, sorted by
 %   file start time. Also applies spool-swap resets from
-%   meta/SpoolSwapLog.csv, if present.
+%   meta/spool_swap_log.csv (falling back to the legacy meta/SpoolSwapLog.csv
+%   name if the new one isn't found - this file is operator-edited by hand
+%   during a cruise, not pipeline-regenerated, so an in-progress deployment's
+%   hand-created file must not be silently ignored after this rename).
 %
 % INPUTS
 %   L1_dir   - directory containing L1 .mat files, each with top-level
 %              'vnav' and 'twist' variables (as saved by
 %              MODprocess_all_L0_to_L1.m's save(L1_file, '-struct', 'data'))
-%   meta_dir - directory to read SpoolSwapLog.csv from and save
-%              TwistTimeseries.mat into (deployment's meta/ folder)
+%   meta_dir - directory to read spool_swap_log.csv from and save
+%              twist_time_series.mat into (deployment's meta/ folder)
 %
 % OUTPUTS
 %   TwistTimeseries - struct with fields:
@@ -35,7 +38,7 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, met
 %   (none)
 %
 % NOTES
-%   Also saves TwistTimeseries.mat into meta_dir. The twist field in each
+%   Also saves twist_time_series.mat into meta_dir. The twist field in each
 %   L1 file is self-contained (count starts from ~0 for each file), so
 %   reprocessing one file never corrupts the accumulated timeseries - this
 %   function just re-chains whatever's currently in L1_dir.
@@ -143,8 +146,21 @@ TwistTimeseries.count_gyro    = vertcat(count_gyro_all{:});
 TwistTimeseries.count_compass = vertcat(count_compass_all{:});
 
 
-% checking for spoolswap
-spoolLogPath = fullfile(meta_dir, 'SpoolSwapLog.csv');
+% checking for spoolswap. spool_swap_log.csv is operator-edited by hand
+% during a cruise, not pipeline-regenerated, so an in-progress deployment
+% may still only have the legacy SpoolSwapLog.csv name on disk - fall back
+% to it (with a warning) rather than silently ignore a real, hand-created
+% file just because this rename landed mid-cruise.
+spoolLogPath = fullfile(meta_dir, 'spool_swap_log.csv');
+if ~isfile(spoolLogPath)
+    legacy_spoolLogPath = fullfile(meta_dir, 'SpoolSwapLog.csv');
+    if isfile(legacy_spoolLogPath)
+        warning('MODprocess_L1_accumulate_twist_timeseries:legacySpoolSwapLogName', ...
+            ['%s not found - falling back to the legacy name %s. Rename it to ' ...
+             'spool_swap_log.csv to clear this warning.'], spoolLogPath, legacy_spoolLogPath);
+        spoolLogPath = legacy_spoolLogPath;
+    end
+end
 swap_dnum = [];
 
 if isfile(spoolLogPath)
@@ -175,8 +191,8 @@ if isfile(spoolLogPath)
         dt = dt(~isnat(dt));      % drop any rows that failed to parse
         swap_dnum = sort(datenum(dt));
     elseif ~isempty(T)
-        warning('SpoolSwapLog.csv has no datetime_utc column. Detected columns: %s', ...
-        strjoin(T.Properties.VariableNames, ', '));
+        warning('%s has no datetime_utc column. Detected columns: %s', ...
+        spoolLogPath, strjoin(T.Properties.VariableNames, ', '));
     end
 end
 
@@ -197,6 +213,6 @@ end
 
 TwistTimeseries.spool_swap_dnum = swap_dnum;
 
-save(fullfile(meta_dir, 'TwistTimeseries.mat'), 'TwistTimeseries');
+save(fullfile(meta_dir, 'twist_time_series.mat'), 'TwistTimeseries');
 
 end

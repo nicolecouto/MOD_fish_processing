@@ -19,7 +19,7 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   offers to rename them in place with zero-padded numbers (modsom_000,
 %   ...) via MODsetup_pad_raw_filenames.m, so raw and L0 listings sort
 %   chronologically. Contents are untouched; renames are logged to
-%   meta/FilenamePadLog.csv.
+%   meta/filename_pad_log.csv.
 %
 % INPUTS
 %   raw_dir         - full path to a folder of raw data files

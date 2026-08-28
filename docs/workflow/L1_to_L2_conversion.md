@@ -16,9 +16,9 @@ This first cut computes **raw, uncorrected power spectra only** - no epsilon, no
 
 ## Profiling-direction detection is an L1 concern, not L2
 
-`ctd.P`/`dPdt` are computed in L1 already (`process_ctd_fields`, see [L0 → L1](L0_to_L1_conversion.md)). Classifying up/down from that pressure record is naturally an L1-level derived product too - not something L2 computes for itself. This mirrors the cable-twist-counting pattern (`mod_L1_add_twist.m` computes a per-file field; `MODprocess_L1_accumulate_twist_timeseries.m` chains all files into a deployment-level `meta/TwistTimeseries.mat`): two functions, called once per deployment from the end of `MODprocess_all_L0_to_L1.m`, build `meta/PressureTimeseries.mat`.
+`ctd.P`/`dPdt` are computed in L1 already (`process_ctd_fields`, see [L0 → L1](L0_to_L1_conversion.md)). Classifying up/down from that pressure record is naturally an L1-level derived product too - not something L2 computes for itself. This mirrors the cable-twist-counting pattern (`mod_L1_add_twist.m` computes a per-file field; `MODprocess_L1_accumulate_twist_timeseries.m` chains all files into a deployment-level `meta/twist_time_series.mat`): two functions, called once per deployment from the end of `MODprocess_all_L0_to_L1.m`, build `meta/pressure_time_series.mat`.
 
-This also directly answers "can I process a single L1 file to L2 on its own?" - **yes**, because all the direction information a single L1 file needs already lives in a small, cheap `meta/PressureTimeseries.mat`, rather than something L2 has to compute from the whole deployment on the fly.
+This also directly answers "can I process a single L1 file to L2 on its own?" - **yes**, because all the direction information a single L1 file needs already lives in a small, cheap `meta/pressure_time_series.mat`, rather than something L2 has to compute from the whole deployment on the fly.
 
 ### `MODprocess_L1_make_pressure_timeseries.m`
 
@@ -36,7 +36,7 @@ PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metad
 
 Adds `dPdt_smoothed` and a logical `is_down` (descending) to every sample. Four steps, in order:
 
-1. **Gap detection first, before any smoothing.** A gap between consecutive samples wider than `metadata.PROFILES.gap_factor × (whole-record median sample interval)` (default `gap_factor = 5`) splits the record into independent segments - real DeepSolo data has at least one ~9982 s (2.77 h) gap against a ~60-120 s median, and diffing or filtering straight across it would produce a "dPdt" that isn't a real velocity. The two samples flanking any such gap are always excluded (`is_down = false`), since there's no reliable local rate at the gap edge.
+1. **Gap detection first, before any smoothing.** A gap between consecutive samples wider than `metadata.PROFILES.ctd_gap_factor × (whole-record median sample interval)` (default `ctd_gap_factor = 5`) splits the record into independent segments - real DeepSolo data has at least one ~9982 s (2.77 h) gap against a ~60-120 s median, and diffing or filtering straight across it would produce a "dPdt" that isn't a real velocity. The two samples flanking any such gap are always excluded (`is_down = false`), since there's no reliable local rate at the gap edge.
 
 2. **Cheby2 lowpass + `filtfilt`**, per gap-free segment - same shape as the old `MOD_fish_lib` profile-picker (`epsiProcess_get_profiles_from_PressureTimeseries.m`), but **re-derived for how sparse this data actually is**. That function's cutoff was a fixed 4 s, which assumed ~Hz-rate pressure sampling (a fast CTD stream) where 4 s covers many samples - on DeepSolo's 60-120 s/sample data, a fixed 4 s window would be sub-sample and not a real filter at all.
 
@@ -50,7 +50,7 @@ Adds `dPdt_smoothed` and a logical `is_down` (descending) to every sample. Four 
 
 ### Diagnostic: does the classification look right?
 
-Real output, `epsi_deepsolo/26_0520_ljc` (sandbox test run, 2026-07-26): pressure sawtooths between the surface and ~250-420 dbar, with `is_down` landing cleanly on each steep descending leg and `dPdt_smoothed` crossing zero right at each turnaround - `P`, `dPdt_smoothed`, and `is_down` all visually consistent across the whole 757-sample deployment record (30.1% classified `is_down`). Worth re-plotting (`plot(PressureTimeseries.dnum, PressureTimeseries.P)`, overlay `is_down` as a scatter) any time `lowpass_factor`/`gap_factor`/`buffer_bins` change or a new deployment's fallrise data looks different in character.
+Real output, `epsi_deepsolo/26_0520_ljc` (sandbox test run, 2026-07-26): pressure sawtooths between the surface and ~250-420 dbar, with `is_down` landing cleanly on each steep descending leg and `dPdt_smoothed` crossing zero right at each turnaround - `P`, `dPdt_smoothed`, and `is_down` all visually consistent across the whole 757-sample deployment record (30.1% classified `is_down`). Worth re-plotting (`plot(PressureTimeseries.dnum, PressureTimeseries.P)`, overlay `is_down` as a scatter) any time `lowpass_factor`/`ctd_gap_factor`/`buffer_bins` change or a new deployment's fallrise data looks different in character.
 
 ## L2 spectra
 
@@ -68,10 +68,10 @@ Pure function - `scan.epsi` is `data.epsi` already sliced to one scan's `N_epsi 
 L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 ```
 
-Pure transformation function - `PressureTimeseries` (from `meta/PressureTimeseries.mat`) is a **required** argument, not self-loaded, matching `MODprocess_single_L0_to_L1.m`'s `external_ctd`-as-argument precedent. To process one L1 file by hand:
+Pure transformation function - `PressureTimeseries` (from `meta/pressure_time_series.mat`) is a **required** argument, not self-loaded, matching `MODprocess_single_L0_to_L1.m`'s `external_ctd`-as-argument precedent. To process one L1 file by hand:
 
 ```matlab
-PressureTimeseries = load(fullfile(metadata.paths.meta, 'PressureTimeseries.mat'));
+PressureTimeseries = load(fullfile(metadata.paths.meta, 'pressure_time_series.mat'));
 data = load('L1/modsom_20.mat');
 L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
 ```
@@ -89,7 +89,7 @@ Returns an all-empty `L2data` (consistent field shapes, `nbscan = 0`) if this fi
 L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_all)
 ```
 
-Orchestrator, mirrors `MODprocess_all_L0_to_L1.m`'s shape exactly: skips a file if its L2 `.mat` already exists and is newer than the source L1 file, except the most recently modified L1 file (always redone), with a `reprocess_all` override. Loads `meta/PressureTimeseries.mat` **once** at the start, then passes it into every `MODprocess_single_L1_to_L2` call - so the per-file work stays a pure function while the file-I/O cost is paid once per batch run. Errors clearly if `meta/PressureTimeseries.mat` doesn't exist yet (it's built by `MODprocess_all_L0_to_L1.m` - that must run first).
+Orchestrator, mirrors `MODprocess_all_L0_to_L1.m`'s shape exactly: skips a file if its L2 `.mat` already exists and is newer than the source L1 file, except the most recently modified L1 file (always redone), with a `reprocess_all` override. Loads `meta/pressure_time_series.mat` **once** at the start, then passes it into every `MODprocess_single_L1_to_L2` call - so the per-file work stays a pure function while the file-I/O cost is paid once per batch run. Errors clearly if `meta/pressure_time_series.mat` doesn't exist yet (it's built by `MODprocess_all_L0_to_L1.m` - that must run first).
 
 ## `setup.yml` additions
 
@@ -101,7 +101,7 @@ afe:
 
 profile_detection:        # -> metadata.PROFILES.*
   lowpass_factor: 3        # cutoff period = lowpass_factor * median(dt); must be > 2
-  gap_factor: 5             # gaps > gap_factor * median(dt) split the record, not interpolated across
+  ctd_gap_factor: 5         # gaps > ctd_gap_factor * median(dt) split the record, not interpolated across
   buffer_bins: 1             # pad each descending run by this many raw pressure samples on each side
 
 spectral:                  # -> metadata.PROCESS.nfft / .dof
@@ -120,7 +120,7 @@ addpath('/path/to/MOD_fish_processing/util');
 
 metadata = MODsetup_read_yaml('/path/to/deployment/meta/setup.yml');
 
-% L0->L1 must already have run - builds meta/PressureTimeseries.mat as a side effect
+% L0->L1 must already have run - builds meta/pressure_time_series.mat as a side effect
 L1_files = MODprocess_all_L0_to_L1(metadata.paths.L0, metadata, metadata.paths.L1);
 
 L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L2);
@@ -130,8 +130,8 @@ L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L
 
 - **File-boundary coverage gaps** - a partial window at the end of an L1 file that doesn't reach a full `N_epsi` samples is dropped, not padded from the next file. Accepted cost of "realtime" per-file mode - see "What this step does" above.
 - **No epsilon or SOM transfer-function correction yet** - `mod_scan_get_spectra.m`'s spectra are still raw and uncorrected. See PLAN.md Section 6.2/6.4 for what's still open. `chi_obs`/`chi_mle` are now implemented downstream for deployments with a real onboard CTD - see [FP07 calibration and chi](L2_calc_chi.md); DeepSolo itself still can't get chi (no CTD T).
-- **Direction classification quality depends entirely on how sparse/gappy the pressure record is for a given deployment** - `lowpass_factor`/`gap_factor`/`buffer_bins` are tunable per deployment in `setup.yml`'s `profile_detection:` block precisely because a different DeepSolo deployment (or a different vehicle's fallrise-style sparse pressure product) may need different values. Always worth a diagnostic plot (see "Diagnostic" above) after a new deployment's first run.
+- **Direction classification quality depends entirely on how sparse/gappy the pressure record is for a given deployment** - `lowpass_factor`/`ctd_gap_factor`/`buffer_bins` are tunable per deployment in `setup.yml`'s `profile_detection:` block precisely because a different DeepSolo deployment (or a different vehicle's fallrise-style sparse pressure product) may need different values. Always worth a diagnostic plot (see "Diagnostic" above) after a new deployment's first run.
 
 ## History
 
-Built on branch `l1_to_l2_conversion` (2026-07-26), following [L0 → L1](L0_to_L1_conversion.md). Prerequisite fixes to L0→L1 code (DeepSolo external CTD reader, `calibrate_ctd` → `process_ctd_fields` rename/guard, `PressureTimeseries.mat`) are logged in that doc's History section, not duplicated here. Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` (45 L1 files, `reprocess_all=true`) - see PLAN.md Session Log (2026-07-26) for full numbers, including the file-boundary NaN-extrapolation bug caught and fixed during this test run (see `MODprocess_single_L1_to_L2.m`'s notes above).
+Built on branch `l1_to_l2_conversion` (2026-07-26), following [L0 → L1](L0_to_L1_conversion.md). Prerequisite fixes to L0→L1 code (DeepSolo external CTD reader, `calibrate_ctd` → `process_ctd_fields` rename/guard, `pressure_time_series.mat`) are logged in that doc's History section, not duplicated here. Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` (45 L1 files, `reprocess_all=true`) - see PLAN.md Session Log (2026-07-26) for full numbers, including the file-boundary NaN-extrapolation bug caught and fixed during this test run (see `MODprocess_single_L1_to_L2.m`'s notes above).

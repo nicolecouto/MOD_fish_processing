@@ -23,7 +23,7 @@ For each FP07 channel (`metadata.AFE.(ch).type == 'fpo7'`), concatenates that ch
 
 This is **not** a lookup like shear's `Sv` - an FP07 bead's sensitivity isn't a fixed, bench-measured probe property, it has to be fit in-situ per deployment against a real temperature reference. No CTD temperature (DeepSolo) → `volts_to_C` simply never gets set, same "missing calibration is not an error" convention as shear's `.cal`.
 
-Wired into `MODprocess_all_L0_to_L1.m`, gated on `~isempty(metadata.CTD.cal)` (real onboard CTD, not DeepSolo's P-only external CTD), right after `meta/PressureTimeseries.mat` is built - persisted back to `meta/metadata.mat` via the existing `MODsetup_save_metadata.m` "derived value" convention.
+Wired into `MODprocess_all_L0_to_L1.m`, gated on `~isempty(metadata.CTD.cal)` (real onboard CTD, not DeepSolo's P-only external CTD), right after `meta/pressure_time_series.mat` is built - persisted back to `meta/metadata.mat` via the existing `MODsetup_save_metadata.m` "derived value" convention.
 
 **Real result** (`blt2021_0715` sandbox, whole deployment, descending samples only): `t1.volts_to_C = [-32.86, 51.70]` (n=725,673), `t2.volts_to_C = [-30.62, 45.53]` (same n). Both slopes negative (volts decrease as T increases, expected for this AFE's divider circuit), both intercepts land the predicted T in a physically sane 3-20°C range matching a July DY132/BLT water column. t1's (volts, T) scatter is tight; t2's is visibly noisier (see "Known limitation" below).
 

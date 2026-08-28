@@ -24,19 +24,23 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   reprocess_all = true to force every file to be redone regardless.
 %
 %   If metadata.manifest.has_vnav is true, also re-chains every L1 file's
-%   per-file twist count into a deployment-level meta/TwistTimeseries.mat
+%   per-file twist count into a deployment-level meta/twist_time_series.mat
 %   (via MODprocess_L1_accumulate_twist_timeseries.m) at the end of every
 %   call - cheap, since it only concatenates fields already computed
 %   per-file, and keeps the deployment-level twist count always current.
 %
 %   If this deployment has any CTD data (metadata.CTD.cal set, or an
 %   external-CTD vehicle with data), also builds/updates
-%   meta/PressureTimeseries.mat - the deployment-length pressure record,
+%   meta/pressure_time_series.mat - the deployment-length pressure record,
 %   with a smoothed dPdt and an is_down (descending) classification per
 %   sample (MODprocess_L1_make_pressure_timeseries.m +
 %   mod_L1_detect_profiling_direction.m). This is what
 %   MODprocess_single_L1_to_L2.m gates spectra-computation scans against -
-%   see PLAN.md Section 4.
+%   see PLAN.md Section 4. Also builds meta/time_index.mat (per-L1-file
+%   dnum start/end, via MODprocess_L1_make_time_index.m), so
+%   modProcess_extract_profile.m can find which L1 file(s) overlap a given
+%   profile's time range without loading every file's full contents - see
+%   PLAN.md Section 6.3.
 %
 %   If this deployment has a real onboard CTD specifically (metadata.CTD.cal
 %   non-empty - not just any has_ctd source, since an external-CTD vehicle
@@ -71,6 +75,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
 %   MODprocess_L1_make_pressure_timeseries.m, mod_L1_detect_profiling_direction.m
 %   (only when this deployment has CTD data)
+%   MODprocess_L1_make_time_index.m (unconditional - see below)
 %   MODprocess_L1_apply_fpo7_calibration.m, MODsetup_save_metadata.m
 %   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
 %   MODutil_short_path.m (console messages only)
@@ -78,7 +83,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 % NOTES
 %   The in-memory metadata passed in as an argument is NOT updated with a
 %   newly-fit volts_to_C - only the on-disk meta/metadata.mat is (via
-%   MODsetup_save_metadata.m), same as PressureTimeseries.mat above. A
+%   MODsetup_save_metadata.m), same as pressure_time_series.mat above. A
 %   caller that needs volts_to_C in the same session (e.g. immediately
 %   running L1->L2 afterward) should reload metadata.mat after this call.
 %   metadata is loaded once by the caller (MODsetup_read_yaml.m) and
@@ -171,8 +176,17 @@ end %end loop through files
 L1_listing = dir(fullfile(L1_dir, '*.mat'));
 L1_files = fullfile({L1_listing.folder}, {L1_listing.name})';
 
+% Deployment-level file time index: per-L1-file epsi.dnum start/end, so
+% modProcess_extract_profile.m (PLAN.md Section 6.3) can find which L1
+% file(s) overlap a profile's time range without loading every file's full
+% contents. Unconditional (unlike the pressure-record/twist blocks below) -
+% it only needs epsi.dnum, not CTD or vnav, so every deployment with any L1
+% files gets one, even before profile-cutting is wired up to consume it.
+TimeIndex = MODprocess_L1_make_time_index(L1_dir);
+save(fullfile(metadata.paths.meta, 'time_index.mat'), '-struct', 'TimeIndex');
+
 % Deployment-level twist count: re-chain every L1 file's per-file twist
-% field (added inside MODprocess_single_L0_to_L1) into meta/TwistTimeseries.mat.
+% field (added inside MODprocess_single_L0_to_L1) into meta/twist_time_series.mat.
 % Only meaningful when this deployment actually has a vnav - skip
 % otherwise rather than let it churn through every L1 file logging
 % "missing vnav" for nothing.
@@ -193,7 +207,7 @@ if has_ctd
     PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
     if ~isempty(PressureTimeseries.dnum)
         PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
-        save(fullfile(metadata.paths.meta, 'PressureTimeseries.mat'), '-struct', 'PressureTimeseries');
+        save(fullfile(metadata.paths.meta, 'pressure_time_series.mat'), '-struct', 'PressureTimeseries');
 
         % FP07 in-situ volts->degC calibration: needs real CTD temperature,
         % which only a real onboard CTD provides (metadata.CTD.cal) - an

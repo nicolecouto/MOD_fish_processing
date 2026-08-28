@@ -226,9 +226,9 @@ Algorithm (ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`):
 TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, meta_dir)
 ```
 
-Called automatically at the end of `MODprocess_all_L0_to_L1.m`, gated on `metadata.manifest.has_vnav` - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/TwistTimeseries.mat`.
+Called automatically at the end of `MODprocess_all_L0_to_L1.m`, gated on `metadata.manifest.has_vnav` - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/twist_time_series.mat`.
 
-Also applies spool-swap resets from an operator-edited `meta/SpoolSwapLog.csv` (`#`-comment lines supported, columns `datetime_utc, spool_id, spool_length_m, notes`), if that file exists: at each swap timestamp, the cumulative count is reset to 0 from that point forward. `TwistTimeseries.spool_swap_dnum` records the swap times actually applied, for the plot to mark. Cruise-level tracking of spool swaps and fin-angle adjustments *across* deployments/instruments (same winch cable, different vehicles) is not built yet - `SpoolSwapLog.csv` today only resets within a single deployment's `TwistTimeseries.mat`.
+Also applies spool-swap resets from an operator-edited `meta/spool_swap_log.csv` (`#`-comment lines supported, columns `datetime_utc, spool_id, spool_length_m, notes`), if that file exists: at each swap timestamp, the cumulative count is reset to 0 from that point forward. Falls back to the legacy `meta/SpoolSwapLog.csv` name (with a warning) if the new name isn't found - this file is hand-edited during a cruise, not pipeline-regenerated, so an in-progress deployment's file must not be silently ignored after this rename. `TwistTimeseries.spool_swap_dnum` records the swap times actually applied, for the plot to mark. Cruise-level tracking of spool swaps and fin-angle adjustments *across* deployments/instruments (same winch cable, different vehicles) is not built yet - `spool_swap_log.csv` today only resets within a single deployment's `twist_time_series.mat`.
 
 L1 `.mat` files are saved as `save(L1_file, '-struct', 'data')` (flattened - `vnav`/`twist`/etc. are top-level variables, not nested under a `data` struct), so this function loads `vnav`/`twist` directly rather than `data.vnav`/`data.twist`.
 
@@ -238,7 +238,7 @@ L1 `.mat` files are saved as `save(L1_file, '-struct', 'data')` (flattened - `vn
 ax = MODvis_twist_timeseries(TwistTimeseries, ax)
 ```
 
-Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`) and marking any spool swap events as vertical lines. "Neutral is Negative" - setting the fin to neutral makes the count go down. Not called automatically - run manually against `meta/TwistTimeseries.mat` when you want to look at the deployment picture (e.g. during a cruise, to decide when to adjust the fin).
+Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`) and marking any spool swap events as vertical lines. "Neutral is Negative" - setting the fin to neutral makes the count go down. Not called automatically - run manually against `meta/twist_time_series.mat` when you want to look at the deployment picture (e.g. during a cruise, to decide when to adjust the fin).
 
 ### `MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`
 
@@ -247,7 +247,7 @@ PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
 PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
 ```
 
-Called automatically at the end of `MODprocess_all_L0_to_L1.m` (right after the twist accumulation step), whenever this deployment has any CTD data - builds `meta/PressureTimeseries.mat`, the deployment-length pressure record with a smoothed `dPdt` and an `is_down` (descending) classification per sample. This is deliberately an L1-level product, not an L2 one - see [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md) for the full writeup of the classification algorithm and why it lives here rather than in L2.
+Called automatically at the end of `MODprocess_all_L0_to_L1.m` (right after the twist accumulation step), whenever this deployment has any CTD data - builds `meta/pressure_time_series.mat`, the deployment-length pressure record with a smoothed `dPdt` and an `is_down` (descending) classification per sample. This is deliberately an L1-level product, not an L2 one - see [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md) for the full writeup of the classification algorithm and why it lives here rather than in L2.
 
 ### `MODprocess_all_L0_to_L1.m`
 
@@ -261,9 +261,9 @@ Skips a file if its L1 `.mat` already exists and is newer than the L0 file it ca
 
 Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_external_ctd`, a local subfunction) - see "External CTD (DeepSolo, Wirewalker)" above.
 
-At the end of every call, if `metadata.manifest.has_vnav` is true, also calls `MODprocess_L1_accumulate_twist_timeseries` once to re-chain every L1 file's twist field into `meta/TwistTimeseries.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
+At the end of every call, if `metadata.manifest.has_vnav` is true, also calls `MODprocess_L1_accumulate_twist_timeseries` once to re-chain every L1 file's twist field into `meta/twist_time_series.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
 
-Also, if this deployment has any CTD data, calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/PressureTimeseries.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
+Also, if this deployment has any CTD data, calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/pressure_time_series.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
 
 **Update (branch `chi_processing`):** if this deployment specifically has a *real onboard* CTD (`metadata.CTD.cal` non-empty - stricter than the "any CTD data" check above, since that also covers DeepSolo's P-only external CTD), also calls `MODprocess_L1_apply_fpo7_calibration.m` right after `PressureTimeseries` is built, and persists the result (`metadata.AFE.(channel).volts_to_C`) to `meta/metadata.mat` via `MODsetup_save_metadata.m` - see [FP07 calibration and chi](L2_calc_chi.md).
 

@@ -11,7 +11,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   (always redone, in case it was still being written), with a
 %   reprocess_all override.
 %
-%   Loads meta/PressureTimeseries.mat once (built by
+%   Loads meta/pressure_time_series.mat once (built by
 %   MODprocess_all_L0_to_L1.m via MODprocess_L1_make_pressure_timeseries.m
 %   + mod_L1_detect_profiling_direction.m) and passes it into every
 %   MODprocess_single_L1_to_L2.m call, so the per-file work stays a pure
@@ -35,7 +35,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   L1_dir        - full path to a folder of L1 .mat files
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
 %                    per session and passed through - see PLAN.md Section 2.
-%                    Uses metadata.paths.meta to find PressureTimeseries.mat.
+%                    Uses metadata.paths.meta to find pressure_time_series.mat.
 %   L2_dir        - (optional) full path to save .mat files to. Default:
 %                    a sibling 'L2' folder next to L1_dir
 %                    (fullfile(fileparts(L1_dir),'L2')), created if missing.
@@ -56,7 +56,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %
 % NOTES
 %   Errors clearly (rather than silently producing empty L2 files) if
-%   meta/PressureTimeseries.mat doesn't exist yet - it's built by
+%   meta/pressure_time_series.mat doesn't exist yet - it's built by
 %   MODprocess_all_L0_to_L1.m, so that must have run (with CTD data
 %   present) before this function can do anything useful.
 %
@@ -72,7 +72,7 @@ if ~exist(L2_dir, 'dir')
     mkdir(L2_dir);
 end
 
-pressure_timeseries_file = fullfile(metadata.paths.meta, 'PressureTimeseries.mat');
+pressure_timeseries_file = fullfile(metadata.paths.meta, 'pressure_time_series.mat');
 if ~exist(pressure_timeseries_file, 'file')
     error('MODprocess_all_L1_to_L2:noPressureTimeseries', ...
         ['%s does not exist yet. It is built by MODprocess_all_L0_to_L1.m ' ...

@@ -46,7 +46,7 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %              which channels are 'fpo7')
 %   PressureTimeseries - struct with dnum, is_down (from
 %              mod_L1_detect_profiling_direction.m via
-%              meta/PressureTimeseries.mat) - the whole-deployment record.
+%              meta/pressure_time_series.mat) - the whole-deployment record.
 %              Required argument, not self-loaded - same pure-function,
 %              caller-supplies-it precedent as
 %              MODprocess_single_L1_to_L2.m's PressureTimeseries argument.

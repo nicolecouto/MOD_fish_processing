@@ -38,7 +38,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % OUTPUTS
 %   metadata  - struct with fields:
-%     paths.data_root, .raw, .L0, .L1, .meta, .calibrations_root, .ctd,
+%     paths.data_root, .raw, .L0, .L1, .L2, .meta, .calibrations_root, .ctd,
 %     .setup_yml                    - .ctd is only meaningful for vehicles
 %                                     with an independent CTD file (see
 %                                     vehicle_name below) - defined
@@ -90,8 +90,13 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     setup.yml's spectral.nfft/.dof. NOT
 %                                     set if the spectral: block or the
 %                                     specific key is absent.
+%     PROCESS.epsi_gap_factor       - scan-window gap threshold for the
+%                                     epsi record (modProcess_extract_profile.m,
+%                                     mod_L2_tile_scans.m), from setup.yml's
+%                                     spectral.epsi_gap_factor. NOT set if
+%                                     absent.
 %     PROFILES.lowpass_factor,
-%              .gap_factor,
+%              .ctd_gap_factor,
 %              .buffer_bins          - profiling-direction detection
 %                                     parameters for
 %                                     mod_L1_detect_profiling_direction.m,
@@ -99,7 +104,18 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     block. NOT set if the block or the
 %                                     specific key is absent - see that
 %                                     function's header for what each one
-%                                     controls.
+%                                     controls. ctd_gap_factor was named
+%                                     gap_factor before branch
+%                                     chi_processing - renamed to pair with
+%                                     PROCESS.epsi_gap_factor above.
+%     PROFILES.speedLim_down_start_m_s, .speedLim_down_end_m_s,
+%              .speedLim_up_start_m_s, .speedLim_up_end_m_s,
+%              .minLength_m, .profile_dir
+%                                   - full profile-picker parameters for
+%                                     modProcess_detect_profiles.m, from
+%                                     setup.yml's profile_detection: block.
+%                                     NOT set if the block or the specific
+%                                     key is absent.
 %     PROCESS.CHI.time_constant_s  - FP07 time-constant coefficient tau0
 %                                     [s] (mod_scan_fpo7_transfer_function.m:
 %                                     tau = tau0*abs(w)^exponent), from
@@ -246,6 +262,7 @@ metadata.paths.data_root         = yml.data_root;
 metadata.paths.raw               = fullfile(yml.data_root, 'raw');
 metadata.paths.L0                = fullfile(yml.data_root, 'L0');
 metadata.paths.L1                = fullfile(yml.data_root, 'L1');
+metadata.paths.L2                = fullfile(yml.data_root, 'L2');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file
@@ -287,6 +304,9 @@ if isfield(yml, 'spectral')
     if isfield(yml.spectral, 'dof')
         metadata.PROCESS.dof = yml.spectral.dof;
     end
+    if isfield(yml.spectral, 'epsi_gap_factor')
+        metadata.PROCESS.epsi_gap_factor = yml.spectral.epsi_gap_factor;
+    end
 end
 
 %% Profiling-direction detection parameters
@@ -298,11 +318,24 @@ if isfield(yml, 'profile_detection')
     if isfield(yml.profile_detection, 'lowpass_factor')
         metadata.PROFILES.lowpass_factor = yml.profile_detection.lowpass_factor;
     end
-    if isfield(yml.profile_detection, 'gap_factor')
-        metadata.PROFILES.gap_factor = yml.profile_detection.gap_factor;
+    if isfield(yml.profile_detection, 'ctd_gap_factor')
+        metadata.PROFILES.ctd_gap_factor = yml.profile_detection.ctd_gap_factor;
     end
     if isfield(yml.profile_detection, 'buffer_bins')
         metadata.PROFILES.buffer_bins = yml.profile_detection.buffer_bins;
+    end
+    % Full profile-picker parameters (modProcess_detect_profiles.m) - not
+    % every deployment needs these yet (only picking discrete profiles
+    % does, not the realtime per-file L1->L2 path), so - same rule as
+    % everything else in this function - only set when setup.yml actually
+    % declares them.
+    profile_picker_fields = {'speedLim_down_start_m_s', 'speedLim_down_end_m_s', ...
+        'speedLim_up_start_m_s', 'speedLim_up_end_m_s', 'minLength_m', 'profile_dir'};
+    for iF = 1:numel(profile_picker_fields)
+        field = profile_picker_fields{iF};
+        if isfield(yml.profile_detection, field)
+            metadata.PROFILES.(field) = yml.profile_detection.(field);
+        end
     end
 end
 

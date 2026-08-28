@@ -11,7 +11,7 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 %   only trustworthy on the way down for vehicles like DeepSolo - see
 %   PLAN.md Section 4). This is deliberately an L1-level function, not L2 -
 %   it operates purely on the pressure record, the same data level as
-%   ctd.dPdt itself, and its output (meta/PressureTimeseries.mat) is small
+%   ctd.dPdt itself, and its output (meta/pressure_time_series.mat) is small
 %   enough that any single-L1-file L2 call can just load it, rather than L2
 %   needing to recompute direction from the whole deployment itself.
 %
@@ -29,10 +29,15 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 %     metadata.PROFILES.lowpass_factor - default 3. Sets the lowpass
 %         cutoff period as lowpass_factor * (local median sample interval).
 %         Must be > 2 - see STEP 2 below for why. Smaller = less smoothing.
-%     metadata.PROFILES.gap_factor - default 5. A gap between consecutive
-%         samples wider than gap_factor * (whole-record median sample
-%         interval) splits the record into independent segments - see
-%         STEP 1.
+%     metadata.PROFILES.ctd_gap_factor - default 5. A gap between
+%         consecutive samples wider than ctd_gap_factor * (whole-record
+%         median sample interval) splits the record into independent
+%         segments - see STEP 1. Named ctd_gap_factor (not gap_factor) to
+%         pair with metadata.PROCESS.epsi_gap_factor
+%         (modProcess_extract_profile.m) - the two operate on different
+%         timebases (sparse/irregular ctd vs. uniformly clocked epsi) with
+%         different consequences, so they are deliberately separate,
+%         symmetrically-named fields rather than one shared threshold.
 %     metadata.PROFILES.buffer_bins - default 1. Number of raw pressure
 %         *samples* (not epsi scans) to pad onto each end of every
 %         detected descending run, so real descent time isn't clipped by
@@ -74,11 +79,11 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 lowpass_factor = 3;
-gap_factor = 5;
+ctd_gap_factor = 5;
 buffer_bins = 1;
 if isfield(metadata, 'PROFILES')
     if isfield(metadata.PROFILES, 'lowpass_factor'), lowpass_factor = metadata.PROFILES.lowpass_factor; end
-    if isfield(metadata.PROFILES, 'gap_factor'), gap_factor = metadata.PROFILES.gap_factor; end
+    if isfield(metadata.PROFILES, 'ctd_gap_factor'), ctd_gap_factor = metadata.PROFILES.ctd_gap_factor; end
     if isfield(metadata.PROFILES, 'buffer_bins'), buffer_bins = metadata.PROFILES.buffer_bins; end
 end
 if lowpass_factor <= 2
@@ -104,7 +109,7 @@ end
 
 %% STEP 1 - Split into gap-free segments first, before any smoothing.
 % dt(i) is the time from sample i to sample i+1. A gap wider than
-% gap_factor * (whole-record median dt) - e.g. the ~9982 s (2.77 h) gap
+% ctd_gap_factor * (whole-record median dt) - e.g. the ~9982 s (2.77 h) gap
 % seen in real DeepSolo fallrise data against a ~60-120 s median - almost
 % certainly spans an unrelated stretch of the deployment (comms dropout,
 % instrument surfaced and stopped logging, etc.). Diffing or filtering
@@ -115,7 +120,7 @@ end
 % edge itself.
 dt = diff(dnum) * 86400; % seconds
 whole_record_median_dt = median(dt);
-gap_after = dt > gap_factor * whole_record_median_dt;
+gap_after = dt > ctd_gap_factor * whole_record_median_dt;
 
 seg_starts = [1; find(gap_after) + 1];
 seg_ends   = [find(gap_after); n];

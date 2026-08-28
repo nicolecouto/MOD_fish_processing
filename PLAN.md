@@ -286,10 +286,10 @@ deployment_root/
     setup.yml                  ← REQUIRED: deployment config (edit data_root: for each machine)
     metadata.mat               ← created by modSetup_read_yaml — portable, no paths, current state
     archive/                   ← prior metadata.mat versions, archived on every resave (see Section 2)
-    TimeIndex.mat              ← created during L0 processing
-    PressureTimeseries.mat     ← created during L1/profile processing
-    TwistTimeseries.mat        ← created by modProcess_L1_accumulate_twist_timeseries
-    SpoolSwapLog.csv           ← operator-edited any time during a cruise
+    time_index.mat             ← created during L0→L1 processing (MODprocess_L1_make_time_index.m)
+    pressure_time_series.mat   ← created during L1/profile processing
+    twist_time_series.mat      ← created by MODprocess_L1_accumulate_twist_timeseries
+    spool_swap_log.csv         ← operator-edited any time during a cruise
   L0/                          ← created by pipeline
   L1/                          ← created by pipeline
   L2/                          ← created by pipeline
@@ -297,7 +297,7 @@ deployment_root/
   figures/                     ← created by pipeline
 ```
 
-`SpoolSwapLog.csv` and `TwistTimeseries.mat` are created/updated during the cruise. All other files in `meta/` are regenerated deterministically from `setup.yml` and the data.
+`spool_swap_log.csv` and `twist_time_series.mat` are created/updated during the cruise. All other files in `meta/` are regenerated deterministically from `setup.yml` and the data. (`meta/` filenames were renamed to snake_case on branch `chi_processing`, alongside adding `time_index.mat` - see Section 6.3.)
 
 **Long-term goal:** A GUI for creating `setup.yml` with dropdowns (vehicle type, CTD SN pulled from `MOD_fish_calibrations`, per-channel sensor type + SN lookup, optional sensor toggles) and sensible defaults, so operators don't hand-edit YAML at sea.
 
@@ -316,7 +316,7 @@ deployment_root/
 
 **In progress on branch `l0_to_l1_conversion`:** L0 → L1 (counts/hex → physical units: epsi volts/g, CTD P/T/C/S, altimeter hab, cable twist count). First cut ships `MODsetup_read_yaml.m` + `MODprocess_single_L0_to_L1.m` / `MODprocess_all_L0_to_L1.m`, tested end-to-end against `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (96/96 files, physically plausible T/P/S/C). Twist counting (`mod_L1_add_twist.m`/`MODprocess_L1_accumulate_twist_timeseries.m`) added 2026-07-24 and wired into both orchestrators - see Section 7. Despike, filters, and shear/FPO7 calibration are still not in this step - see Section 6.2. Documented in `MOD_fish_processing/docs/workflow/L0_to_L1_conversion.md`. See Section 12 session log entries 2026-07-09 and 2026-07-24 for what changed.
 
-**In progress on branch `l1_to_l2_conversion`:** L1 → L2 for `epsi_deepsolo` - per-scan spectra (shear/fpo7/accel, raw uncorrected pwelch), gated by profiling direction (downcast only, `dPdt > 0`) rather than split into `Profile####.mat` casts - a deliberate divergence from the old `mod_fish_lib` approach (see Section 4 note below and `docs/workflow/L1_to_L2_conversion.md`). No epsilon/chi yet. Prerequisite L0→L1 fixes shipped alongside: real DeepSolo external-CTD reader (`ctd/DeepSoloFallrise.mat`, P-only), `calibrate_ctd` renamed `process_ctd_fields` and made T/C-optional, and a new deployment-level `meta/PressureTimeseries.mat` (profiling-direction classification - an L1-level product, consumed by L2). Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` - see Section 12 session log entry 2026-07-26.
+**In progress on branch `l1_to_l2_conversion`:** L1 → L2 for `epsi_deepsolo` - per-scan spectra (shear/fpo7/accel, raw uncorrected pwelch), gated by profiling direction (downcast only, `dPdt > 0`) rather than split into `Profile####.mat` casts - a deliberate divergence from the old `mod_fish_lib` approach (see Section 4 note below and `docs/workflow/L1_to_L2_conversion.md`). No epsilon/chi yet. Prerequisite L0→L1 fixes shipped alongside: real DeepSolo external-CTD reader (`ctd/DeepSoloFallrise.mat`, P-only), `calibrate_ctd` renamed `process_ctd_fields` and made T/C-optional, and a new deployment-level `meta/pressure_time_series.mat` (profiling-direction classification - an L1-level product, consumed by L2). Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` - see Section 12 session log entry 2026-07-26.
 
 **In progress on branch `chi_processing`** (off `l1_to_l2_conversion`): FP07 in-situ `volts_to_C` calibration, the tau-based FP07 time-constant deconvolution, the noise-floor cutoff, a direct-integration `chi_obs`, and a Batchelor-spectrum MLE `chi_mle` - prompted by finding that `MOD_fish_lib`'s live chi calculation computes this deconvolution's transfer function but has silently stopped applying it since 2025-10-06 (relevant to a 2025 BLT paper correction Nicole/Arnaud need to describe precisely). Built and tested one module at a time against real `epsi_mako/blt2021_0715` data (the only deployment here with a real onboard CTD). `chi_mle` needs an `epsilon` estimate this repo doesn't compute yet (`modProcess_L2_calc_epsilon.m` not started) - usable standalone wherever epsilon already exists (e.g. an old-format `Profile####.mat`'s `epsilon_final`), not yet wired into `MODprocess_single_L1_to_L2.m`. See `docs/workflow/L2_calc_chi.md` and Section 12 session log entries 2026-07-27 and 2026-07-28.
 
@@ -419,7 +419,7 @@ Shipped as `MODprocess_single_L0_to_L1.m` (per-file, pure transformation) / `MOD
 | `modProcess_L1_despike.m` | filloutliers movmedian per channel | `mod_epsilometer_calc_turbulence_v2.m` lines ~131–147 | Not started |
 | `modProcess_L1_apply_filters.m` | Apply SOM instrument transfer function - design below | `get_filters_SOM.m` | Partially done (branch `chi_processing`, 2026-07-28): `MODsetup_define_filters.m` resolves `metadata.AFE.(ch).electronics_filter` for fpo7/shear/acc, once per deployment. Applied directly inside `mod_scan_fpo7_volts_to_Tg_spectrum.m`/`mod_scan_calc_chi_obs.m`/`mod_scan_calc_chi_mle.m` (new optional `electronics_filter` param) for fpo7/chi - the one real consumer today. No generic `modProcess_L1_apply_filters.m` wrapper built - shear/acc have no consumer yet (no epsilon module), so it would have one indirect caller and no direct one; see design note below for the reasoning. Split a generic apply-function out once shear/accel needs one too. |
 | `mod_L1_add_twist.m` | Takes data struct, returns same struct with `twist` field added — see Section 7 | `GV_PlotUpAccumulation.m` | Done (Ana's project, branch `l0_to_l1_conversion`) |
-| `MODprocess_L1_make_pressure_timeseries.m` | Concatenates `ctd.dnum`/`.P` from all L1 files → deployment-length pressure record (no metadata needed) | NEW — see Section 6.3, this is `modProcess_make_pressure_timeseries.m` implemented under the `MODprocess_L1_*` naming | Done (branch `l1_to_l2_conversion`) |
+| `MODprocess_L1_make_pressure_timeseries.m` | Concatenates `ctd.dnum`/`.P` from all L1 files → deployment-length pressure record (no metadata needed); saved as `meta/pressure_time_series.mat` | NEW — see Section 6.3, this is `modProcess_make_pressure_timeseries.m` implemented under the `MODprocess_L1_*` naming | Done (branch `l1_to_l2_conversion`) |
 | `mod_L1_detect_profiling_direction.m` | Classifies each pressure sample as descending (`dPdt_smoothed > 0`) or not — gap detection, cheby2 lowpass sized to the record's own sample spacing, buffered edges. Direction-only, not a full start/end profile-picker (see Section 6.3) | `epsiProcess_get_profiles_from_PressureTimeseries.m` (re-derived, not ported as-is — see `docs/workflow/L1_to_L2_conversion.md`) | Done (branch `l1_to_l2_conversion`) |
 
 #### Design note: instrument filters (`MODsetup_define_filters.m` + `modProcess_L1_apply_filters.m`)
@@ -443,10 +443,13 @@ Proposed split, following the pattern `MODsetup_read_yaml.m`/`MODprocess_L1_appl
 
 | Function | Description | Source | Status |
 |----------|-------------|--------|--------|
-| `MODprocess_L1_make_pressure_timeseries.m` | Concatenate pressure from all L1 files → `meta/PressureTimeseries.mat` | `epsiProcess_make_PressureTimeseries.m` | Done (branch `l1_to_l2_conversion`) — see Section 6.2 |
+| `MODprocess_L1_make_pressure_timeseries.m` | Concatenate pressure from all L1 files → `meta/pressure_time_series.mat` | `epsiProcess_make_PressureTimeseries.m` | Done (branch `l1_to_l2_conversion`) — see Section 6.2 |
 | `mod_L1_detect_profiling_direction.m` | Classify each pressure sample as descending or not (direction only — not full profile start/end indices) | `epsiProcess_get_profiles_from_PressureTimeseries.m` (re-derived for sparse data) | Done (branch `l1_to_l2_conversion`) — see Section 6.2. Full profile-picker (start/end indices, merging, min-length filtering) below is still not started |
-| `modProcess_detect_profiles.m` | Find downcast/upcast start/end indices from pressure timeseries (full profile-picker, speed-limit hysteresis) | `epsiProcess_get_profiles_from_PressureTimeseries.m` | Not started |
-| `modProcess_extract_profile.m` | Cut L1 data to a single profile | `epsiProcess_crop_timeseries.m` | Not started |
+| `MODprocess_L1_make_time_index.m` | Per-L1-file `epsi.dnum` start/end → `meta/time_index.mat`, so a profile's overlapping L1 file(s) can be found without loading full file contents | NEW — no legacy equivalent (`TimeIndex.mat` was aspirational in this repo until now; the old `MOD_fish_lib` `TimeIndex.mat` carried more than this needs) | Done (branch `chi_processing`) |
+| `modProcess_detect_profiles.m` | Find downcast/upcast start/end indices from pressure timeseries (full profile-picker, speed-limit hysteresis) | `epsiProcess_get_profiles_from_PressureTimeseries.m` | Done (branch `chi_processing`) |
+| `modProcess_extract_profile.m` | Cut L1 data to a single profile, stitching across an L1 file boundary when a profile spans more than one file, with real gap detection (never lets an FFT window span a genuine timestamp gap) | `epsiProcess_crop_timeseries.m` + `epsiProcess_merge_mat_files.m` (re-derived, not ported — legacy merge has no gap detection at all) | Done (branch `chi_processing`) |
+| `mod_L2_tile_scans.m` | Shared scan-tiling/spectra core, factored out of `MODprocess_single_L1_to_L2.m`, called by both the per-file "realtime" path and the new per-profile path | NEW — extracted from `MODprocess_single_L1_to_L2.m` | Done (branch `chi_processing`) |
+| `MODprocess_single_L1_to_L2_profile.m` / `MODprocess_all_L1_to_L2_profiles.m` | Per-profile L1→L2 orchestration (final science-quality product), parallel to the existing per-file realtime pair | NEW | Done (branch `chi_processing`) |
 
 ### 6.4 L1 → L2
 
@@ -480,7 +483,7 @@ Proposed split, following the pattern `MODsetup_read_yaml.m`/`MODprocess_L1_appl
 **Status: Done, tested, and wired into the pipeline (2026-07-24, branch `l0_to_l1_conversion`)** - see Session Log entry below for what shipped and what changed from Ana's original draft. The step-by-step tasklist and function signatures below are Ana's original scoping and are left as-is as a record of the assignment; the actual 2026-07-24 shipped filenames followed the repo's `MODprocess_`/`MODvis_` capital-MOD convention (Section 6.1's naming note) rather than the `modProcess_`/`modPlot_` names used below - `MODprocess_L1_add_twist.m`, `MODprocess_L1_accumulate_twist_timeseries.m`, `MODvis_twist_timeseries.m` (plotting functions live in `visualization/matlab/`, matching `MODvis_timeseries.m`). The first of those was renamed again, to `mod_L1_add_twist.m` in `processing/L1/`, on 2026-07-28 - see Section 6.2's current table for today's actual name.
 
 ### Physical context
-The instrument cable twists as it profiles. On the FastCTD, a fin can be adjusted to counteract this. The operator needs the current twist count **during** a deployment to know when and how much to adjust the fin. The twist count is included in the L1 data, computed as each file is processed and accumulated into a whole-deployment timeseries called TwistTimeseries.mat in `meta/`.
+The instrument cable twists as it profiles. On the FastCTD, a fin can be adjusted to counteract this. The operator needs the current twist count **during** a deployment to know when and how much to adjust the fin. The twist count is included in the L1 data, computed as each file is processed and accumulated into a whole-deployment timeseries called twist_time_series.mat in `meta/`.
 
 ### How the algorithm works (from `GV_PlotUpAccumulation.m`)
 1. Load `vnav` from L1 `.mat`: `compass` [N×3], `gyro` [N×3], `acceleration` [N×3], `dnum`, `time_s`
@@ -504,13 +507,13 @@ When you want the full deployment picture:
   modProcess_L1_accumulate_twist_timeseries(L1_dir, metadata)
     reads twist field from all L1 files
     chains files with offset correction at boundaries
-    applies spool swap resets from meta/SpoolSwapLog.csv
-    saves meta/TwistTimeseries.mat
+    applies spool swap resets from meta/spool_swap_log.csv
+    saves meta/twist_time_series.mat
 ```
 
 The `twist` field in each L1 file is self-contained (count starts from ~0 for each file). Reprocessing one file never corrupts the accumulated timeseries.
 
-### SpoolSwapLog.csv
+### spool_swap_log.csv
 Human-readable, operator-edited, lives in `meta/`. Supports `#` comment lines — operators are encouraged to add notes.
 
 ```csv
@@ -679,6 +682,27 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-08-28 — Profile detection, cross-file profile extraction, shared L2 windowing; `meta/` filenames renamed to snake_case (branch `chi_processing`)
+
+Prompted by a design question about what happens when a profile spans two raw files - does spectral windowing see an artificial edge effect at the seam? Investigated both reference implementations first: `MOD_fish_lib`'s `epsiProcess_crop_timeseries.m`/`epsiProcess_merge_mat_files.m` solves this by concatenating raw epsi/ctd arrays across the file boundary *before* windowing, with **no gap detection at all** - it just trusts the raw sample clock is continuous across a file split. Rockland's ODAS library (`~/Library/CloudStorage/Dropbox/SIO/_instrument_software/rockland/odas/`) sidesteps the problem entirely - the stock library assumes one profile always lives inside one raw `.p` file, ships no cross-file concatenation. Neither was directly reusable; built a third approach with explicit gap detection.
+
+**Section 6.3 built out, PLAN.md Section 6.3 table updated to match:**
+- `MODprocess_L1_make_time_index.m` (new, `processing/`) - per-L1-file `epsi.dnum` start/end, saved `meta/time_index.mat`, wired into `MODprocess_all_L0_to_L1.m` next to the existing pressure-timeseries build.
+- `modProcess_detect_profiles.m` (new, `processing/L1/`) - full profile-picker (speed-limit hysteresis, min-length filter, up-to-10-pass same-direction merge), re-derived from `epsiProcess_get_profiles_from_PressureTimeseries.m` but built on `mod_L1_detect_profiling_direction.m`'s already-computed `dPdt_smoothed`, with a new gap-boundary safety pass (re-derives the same 3-line gap split that function's STEP 1 computes, so neither a run nor a merge can cross a real timestamp gap - legacy has no gaps to worry about, so this is genuinely new logic, not a port).
+- `modProcess_extract_profile.m` (new, `processing/L1/`) - given one profile, finds and stitches its raw epsi/ctd record across however many L1 files it spans, with **real gap detection**: any `dt > epsi_gap_factor * (1/Fs_epsi)` across the *whole* stitched record (not just at file seams - also catches a real mid-file discontinuity, e.g. Section 9's known block-drop artifact) increments a running `segment_id`. A profile is never split or dropped over an internal gap - `mod_L2_tile_scans.m` is what actually acts on `segment_id`, skipping only the FFT window(s) that would straddle it.
+- `mod_L2_tile_scans.m` (new, `processing/L2/`) - the `N_epsi`/`scan_step`/pwelch tiling loop factored out of `MODprocess_single_L1_to_L2.m` so both the realtime per-file path and the new profile-cut path share one windowing implementation (not one *result* - each still computes its own spectra independently, a deliberate simplicity-over-storage-optimization call, see below). `PressureTimeseries` direction-gating is now optional (profile-cut mode omits it, since a detected profile is already direction-pure); `epsi.segment_id`, when present, gates window validity the same way. `MODprocess_single_L1_to_L2.m` is now a thin wrapper around it.
+- `MODprocess_single_L1_to_L2_profile.m` / `MODprocess_all_L1_to_L2_profiles.m` (new, `processing/`) - per-profile orchestration, parallel to the existing per-file realtime pair, saving `Profile####.mat` into `metadata.paths.L2` (new field, added to `MODsetup_read_yaml.m`).
+
+**Design decisions, confirmed with Nicole before implementation:**
+- Keep both modes side by side ("hybrid") rather than replacing realtime mode - it stays cheap/streaming-friendly for a future per-file spectra QC viewer (a `MODvis_spectra`-style tool, not built yet), while profile-cut mode is the final science-quality path.
+- Accept full duplication of computed spectra between the two modes for now - no scan-reuse/dedup optimization (e.g. an absolute-time-anchored window grid was considered and rejected as unnecessary complexity for now).
+- Two new, deliberately separate `setup.yml` gap-threshold fields rather than one shared value: `metadata.PROFILES.ctd_gap_factor` (renamed from `gap_factor`, for the sparse/irregular pressure record) and `metadata.PROCESS.epsi_gap_factor` (new, for the uniformly-clocked epsi record) - different timebases, different consequences (a misclassified direction sample vs. a dropped FFT window), so one number isn't right for both. `epsi_gap_factor`'s suggested default (3) is unverified against real data - flagged in `docs/workflow/profile_detection.md`.
+- `meta/` filenames renamed to snake_case while touching these files anyway: `PressureTimeseries.mat`→`pressure_time_series.mat`, `TwistTimeseries.mat`→`twist_time_series.mat`, `FilenamePadLog.csv`→`filename_pad_log.csv`, `SpoolSwapLog.csv`→`spool_swap_log.csv` (new `time_index.mat` named this from creation). Every code/doc/PLAN.md reference updated except dated Session Log entries below this one, kept as an accurate record of what was true at the time. `spool_swap_log.csv` (the one operator-edited, not pipeline-regenerated, file in the list) falls back to the legacy name with a warning if the new one isn't found, so an in-progress cruise's hand-created file isn't silently ignored.
+
+**Tested end-to-end** against a sandbox copy of `epsi_mako/blt2021_0715` (`meta/`, `calibrations/`, `L1/` - 151 files, ~932 MB - never touched in place, per standing practice): `modProcess_detect_profiles.m` found 31 real profiles; profile #31 happened to span **8 L1 files** (970,950 stitched epsi samples, `n_segments=1` - correctly found no real gap at any of the 7 file-rotation boundaries inside it, max real `dt` 0.004003 s vs. nominal 0.003125 s at `Fs_epsi=320`, well under the `epsi_gap_factor=3` threshold). Manually reconstructed the scan window nearest that profile's seam by hand-slicing `modProcess_extract_profile.m`'s stitched output and calling `mod_scan_get_spectra.m` directly - matched `mod_L2_tile_scans.m`'s own output for that scan exactly, confirming the original design question: no edge effect at an ordinary file boundary once windowing happens on the stitched record. Regression-tested the `mod_L2_tile_scans.m` refactor by running both the pre-refactor `MODprocess_single_L1_to_L2.m` (from `git show HEAD:...`) and the new thin-wrapper version on the same real L1 file (109 scans) - `isequaln`-identical. A separate synthetic test (in-memory, no real deployment needed) verified the gap mechanism itself, since this real deployment happened not to contain one: a 5 s synthetic gap correctly split `segment_id`, and every scan window that would have straddled it was excluded while unaffected windows on both sides were kept (exact count match against an independently-derived expected count). `checkcode` clean on every new file; pre-existing `datestr`/`now`/`datenum` deprecation notices in touched orchestrator files are pre-existing codebase style, not new.
+
+**Not yet done**: no diagnostic plot run against this profile set (the "Diagnostic" pattern `docs/workflow/L1_to_L2_conversion.md` uses); `docs/workflow/profile_detection.md` written but its "Known limitations" section should be revisited now that real-data testing has actually happened.
 
 ### 2026-08-25/26 — FP07 electronic noise floor: probe identification, bench/modeled split, production stays on bench noise (branch `chi_processing`)
 

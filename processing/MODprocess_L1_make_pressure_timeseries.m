@@ -15,7 +15,7 @@ function PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir)
 %
 %   Pure - reads files, does no calibration or file writing itself. The
 %   caller (MODprocess_all_L0_to_L1.m) saves the result to
-%   meta/PressureTimeseries.mat.
+%   meta/pressure_time_series.mat.
 %
 % INPUTS
 %   L1_dir - directory containing L1 .mat files, each with a top-level
