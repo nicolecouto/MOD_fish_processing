@@ -5,7 +5,19 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %
 % DESCRIPTION
 %   Computes a raw (uncorrected) power spectrum vs. frequency for every
-%   shear/fpo7/accelerometer channel in one scan's worth of epsi data.
+%   channel in one scan's worth of epsi data - accelerometer channels get
+%   their gravity-unit spectrum, every other channel type (shear, fpo7,
+%   or anything else - e.g. a microconductivity or fluorometer probe
+%   physically wired into a slot that's usually shear/fpo7, see
+%   MODsetup_read_yaml.m's instrument_manifest.afe) gets its raw-volts
+%   spectrum, matching MODprocess_single_L0_to_L1.m's convert_efe_channels,
+%   which already applies that same acc-vs-everything-else split when
+%   converting counts to physical units. Only 'acc' gets special handling
+%   here; this function does not otherwise care what physical sensor a
+%   channel is - channel-specific processing (calibration, chi, etc.) is
+%   a separate, later step (see chi's own precedent:
+%   MODprocess_L1_apply_fpo7_calibration.m, mod_scan_calc_chi_obs.m -
+%   both filter to type 'fpo7' themselves, downstream of this function).
 %   "Raw" because the SOM instrument transfer function isn't applied here -
 %   MODprocess_L1_apply_filters.m (PLAN.md Section 6.2) isn't implemented
 %   yet, so these spectra are uncorrected, and that's documented rather
@@ -20,10 +32,10 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %                metadata.PROCESS.channels, metadata.PROCESS.nfft,
 %                metadata.PROCESS.Fs_epsi, metadata.AFE.(channel).type
-%                (to know each channel's field suffix - '_volt' for
-%                shear/fpo7, '_g' for acc, same branch
-%                MODprocess_single_L0_to_L1.m's convert_efe_channels uses),
-%                metadata.PROCESS.CHI.hamming_window_length_nfft - pwelch's
+%                (to know each channel's field suffix - '_g' for acc,
+%                '_volt' for everything else - same acc-vs-everything-else
+%                split MODprocess_single_L0_to_L1.m's convert_efe_channels
+%                uses), metadata.PROCESS.CHI.hamming_window_length_nfft - pwelch's
 %                Hamming window length, as a fraction of nfft. Validated
 %                via MODsetup_validate_metadata.m below - prompted for (and
 %                offered to be saved into setup.yml) if not already in
@@ -40,12 +52,14 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %     spectra.f    - frequency vector [Hz], 1 x nfreq, shared across every
 %                    channel below
 %     spectra.(field)_f - power spectrum for channel ch, 1 x nfreq, one
-%                    field per channel in metadata.PROCESS.channels whose
-%                    type is shear/fpo7/acc - key is the channel's
-%                    raw-timeseries field name (field = [ch '_volt'] or
-%                    [ch '_g']) with '_f' appended to mark it
-%                    frequency-domain (e.g. 's1_volt_f', 't1_volt_f',
-%                    'a2_g_f'), matching MOD_fish_lib's
+%                    field per channel in metadata.PROCESS.channels (every
+%                    channel gets one, regardless of type - see
+%                    DESCRIPTION) - key is the channel's raw-timeseries
+%                    field name (field = [ch '_g'] for type 'acc',
+%                    [ch '_volt'] for every other type) with '_f' appended
+%                    to mark it frequency-domain (e.g. 's1_volt_f',
+%                    't1_volt_f', 'a2_g_f', or a future 'c1_volt_f' for a
+%                    microconductivity channel), matching MOD_fish_lib's
 %                    Ps_volt_f/Pt_volt_f/Pa_g_f convention
 %
 % CALLED BY
@@ -83,10 +97,20 @@ for iC = 1:numel(metadata.PROCESS.channels)
     switch lower(metadata.AFE.(ch).type)
         case 'acc'
             field = [ch '_g'];
-        case {'shear', 'fpo7'}
-            field = [ch '_volt'];
         otherwise
-            continue
+            % Every non-acc channel defaults to the raw-volts field name -
+            % matches MODprocess_single_L0_to_L1.m's convert_efe_channels,
+            % which already converts any non-acc channel to volts
+            % regardless of type. This makes a channel type this repo
+            % doesn't have dedicated processing for yet (e.g.
+            % microconductivity, fluorometer - a probe physically wired
+            % into a slot that's usually shear/fpo7) still get a raw
+            % spectrum computed, rather than being silently dropped -
+            % channel-specific processing (calibration, chi, etc.) is
+            % added as its own dedicated step later, the same precedent
+            % set for fpo7 (MODprocess_L1_apply_fpo7_calibration.m,
+            % mod_scan_calc_chi_obs.m).
+            field = [ch '_volt'];
     end
 
     if ~isfield(scan.epsi, field)
