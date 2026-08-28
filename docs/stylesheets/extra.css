@@ -1,0 +1,262 @@
+/* MOD Fish Processing docs - visual reskin
+   Palette/type match the "Mako Pipeline Map" reference build (2026-08-28):
+   cool grey-green neutrals, deep teal primary, amber accent, IBM Plex
+   Sans/Mono (set via theme.font in mkdocs.yml). Overrides Material's CSS
+   custom properties only - see https://squidfunk.github.io/mkdocs-material/setup/changing-the-colors/#custom-colors -
+   markup/layout stay whatever Material generates. */
+
+/* ---------- Light palette ---------- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #0f6b5c;
+  --md-primary-fg-color--light: #16856f;
+  --md-primary-fg-color--dark: #0b4f44;
+  --md-primary-bg-color: #f4f8f4;
+  --md-primary-bg-color--light: rgba(244, 248, 244, 0.7);
+
+  --md-accent-fg-color: #a6721e;
+  --md-accent-fg-color--transparent: rgba(166, 114, 30, 0.1);
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: rgba(255, 255, 255, 0.6);
+
+  --md-default-fg-color: #16211d;
+  --md-default-fg-color--light: rgba(22, 33, 29, 0.68);
+  --md-default-fg-color--lighter: rgba(22, 33, 29, 0.42);
+  --md-default-fg-color--lightest: rgba(22, 33, 29, 0.09);
+  --md-default-bg-color: #f6f8f5;
+
+  --md-typeset-color: var(--md-default-fg-color);
+  --md-typeset-a-color: #0f6b5c;
+
+  --md-code-fg-color: #16211d;
+  --md-code-bg-color: #e9efe7;
+  --md-code-hl-color: rgba(166, 114, 30, 0.18);
+
+  --md-footer-bg-color: #0b4f44;
+  --md-footer-bg-color--dark: #093f36;
+  --md-footer-fg-color: #f4f8f4;
+  --md-footer-fg-color--light: rgba(244, 248, 244, 0.7);
+  --md-footer-fg-color--lighter: rgba(244, 248, 244, 0.45);
+
+  --mfp-line: #d7ded6;
+  --mfp-line-strong: #b9c4b8;
+  --mfp-surface: #ffffff;
+  --mfp-gap: #9b6b4a;
+  --mfp-gap-bg: #f3e8e0;
+  --mfp-shadow: 0 1px 2px rgba(20, 30, 25, 0.06), 0 8px 24px -12px rgba(20, 30, 25, 0.16);
+}
+
+/* ---------- Dark palette ---------- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #12594c;
+  --md-primary-fg-color--light: #17705f;
+  --md-primary-fg-color--dark: #0c3e35;
+  --md-primary-bg-color: #eef4f0;
+  --md-primary-bg-color--light: rgba(238, 244, 240, 0.7);
+
+  --md-accent-fg-color: #e0ab54;
+  --md-accent-fg-color--transparent: rgba(224, 171, 84, 0.16);
+  --md-accent-bg-color: #121915;
+  --md-accent-bg-color--light: rgba(18, 25, 21, 0.6);
+
+  --md-default-fg-color: #e8ede6;
+  --md-default-fg-color--light: rgba(232, 237, 230, 0.7);
+  --md-default-fg-color--lighter: rgba(232, 237, 230, 0.45);
+  --md-default-fg-color--lightest: rgba(232, 237, 230, 0.12);
+  --md-default-bg-color: #121915;
+
+  --md-typeset-color: var(--md-default-fg-color);
+  --md-typeset-a-color: #4fc7ac;
+
+  --md-code-fg-color: #e8ede6;
+  --md-code-bg-color: #1c2721;
+  --md-code-hl-color: rgba(224, 171, 84, 0.16);
+
+  --md-footer-bg-color: #0a1613;
+  --md-footer-bg-color--dark: #060d0b;
+  --md-footer-fg-color: #eef4f0;
+  --md-footer-fg-color--light: rgba(238, 244, 240, 0.7);
+  --md-footer-fg-color--lighter: rgba(238, 244, 240, 0.45);
+
+  --mfp-line: #2c3a33;
+  --mfp-line-strong: #3d4f45;
+  --mfp-surface: #1a2420;
+  --mfp-gap: #dc9271;
+  --mfp-gap-bg: #34241d;
+  --mfp-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------- Type ---------- */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+.md-typeset h1 { font-size: 2rem; margin-bottom: 0.9em; }
+.md-typeset h2 {
+  font-size: 1.4rem;
+  padding-top: 0.3em;
+  border-top: 1px solid var(--mfp-line);
+  margin-top: 2em;
+}
+.md-typeset h2:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+.md-typeset h3 { font-size: 1.12rem; }
+
+.md-typeset p, .md-typeset li { line-height: 1.6; }
+
+.md-typeset a { text-decoration: none; }
+.md-typeset a:hover { text-decoration: underline; }
+
+.md-header, .md-tabs { color: var(--md-primary-bg-color); }
+.md-header__title, .md-tabs__link { font-family: var(--md-text-font); }
+
+/* ---------- Code ---------- */
+.md-typeset code {
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.md-typeset pre > code {
+  padding: 0;
+}
+.md-typeset .highlight {
+  border: 1px solid var(--mfp-line);
+  border-radius: 8px;
+  box-shadow: var(--mfp-shadow);
+}
+.md-typeset .highlight pre {
+  padding: 0.9rem 1rem;
+}
+
+/* ---------- Tables ---------- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--mfp-line);
+  border-radius: 8px;
+  box-shadow: var(--mfp-shadow);
+  font-size: 0.86rem;
+}
+.md-typeset table:not([class]) th {
+  font-family: var(--md-code-font);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--md-default-fg-color--light);
+  background-color: var(--md-default-fg-color--lightest);
+  border-bottom: 1px solid var(--mfp-line-strong);
+}
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--mfp-line);
+}
+.md-typeset table:not([class]) tr:first-child td { border-top: none; }
+
+/* ---------- Admonitions (unused today, ready for later) ---------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 8px;
+  border-width: 1px;
+  box-shadow: var(--mfp-shadow);
+}
+.md-typeset .admonition-title,
+.md-typeset summary {
+  font-family: var(--md-code-font);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ---------- Images ---------- */
+.md-typeset img {
+  border-radius: 8px;
+  border: 1px solid var(--mfp-line);
+  box-shadow: var(--mfp-shadow);
+}
+.md-typeset .glightbox-wrapper img { box-shadow: none; }
+
+/* ================================================================
+   Mermaid diagrams: render container + click-to-expand pan/zoom
+   modal (svg-pan-zoom, loaded in mkdocs.yml extra_javascript).
+   ================================================================ */
+.md-typeset .mermaid-panel {
+  position: relative;
+  border: 1px solid var(--mfp-line);
+  border-radius: 10px;
+  background: var(--mfp-surface);
+  box-shadow: var(--mfp-shadow);
+  padding: 1.1rem;
+  margin: 1.2em 0;
+  overflow-x: auto;
+  cursor: zoom-in;
+}
+.md-typeset .mermaid-panel svg { display: block; margin: 0 auto; }
+
+.mfp-expand-btn {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--mfp-line-strong);
+  background: var(--mfp-surface);
+  color: var(--md-default-fg-color--light);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: zoom-in;
+  box-shadow: var(--mfp-shadow);
+}
+.mfp-expand-btn:hover { color: var(--md-default-fg-color); }
+
+.mfp-zoom-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 10, 0.75);
+  z-index: 10000;
+  padding: 2rem;
+  flex-direction: column;
+}
+.mfp-zoom-modal.mfp-open { display: flex; }
+.mfp-zoom-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+  color: #f2f5f1;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.mfp-zoom-title { font-weight: 600; font-size: 1.05rem; }
+.mfp-zoom-hint {
+  font-family: var(--md-code-font);
+  font-size: 0.76rem;
+  color: #c6d0c6;
+  flex: 1;
+}
+.mfp-zoom-close {
+  background: none;
+  border: 1px solid rgba(242, 245, 241, 0.35);
+  color: #f2f5f1;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.mfp-zoom-close:hover { background: rgba(242, 245, 241, 0.12); }
+.mfp-zoom-holder {
+  flex: 1;
+  background: var(--mfp-surface);
+  border-radius: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+.mfp-zoom-holder svg { width: 100%; height: 100%; display: block; }
+
+@media (max-width: 640px) {
+  .mfp-zoom-modal { padding: 0.75rem; }
+  .mfp-zoom-hint { display: none; }
+}

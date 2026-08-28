@@ -6,6 +6,9 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -21,29 +24,45 @@ theme:
     - navigation.instant
     - navigation.tracking
     - navigation.top
+    - navigation.sections
     - content.code.copy
     - content.action.edit
 
 nav:
   - Home: index.md
   - Workflow:
-      - "L0: converting .modraw to .mat": workflow/L0_modraw_conversion.md
+      - "modraw → L0: converting .modraw to .mat": workflow/modraw_to_L0_conversion.md
       - "Zero-padding numbered raw filenames": workflow/pad_raw_filenames.md
-      - "L0 to L1: converting raw counts to physical units": workflow/L0_to_L1_conversion.md
+      - "L0 → L1: converting raw counts to physical units": workflow/L0_to_L1_conversion.md
+      - "L1 → L2: downcast-gated spectra": workflow/L1_to_L2_conversion.md
+      - "FP07 calibration and chi": workflow/L2_calc_chi.md
+      - "Profile detection and extraction": workflow/profile_detection.md
   - Concepts:
       - Overview: concepts/index.md
+  - References: references.md
 
 markdown_extensions:
   - admonition
   - tables
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.arithmatex:
       generic: true
+
+extra_css:
+  - stylesheets/extra.css
 
 extra_javascript:
   - javascripts/mathjax.js
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js
+  - https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js
+  - javascripts/mermaid-zoom.js
 
 plugins:
   - search
+  - glightbox

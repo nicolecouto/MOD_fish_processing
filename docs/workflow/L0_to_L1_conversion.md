@@ -4,7 +4,7 @@
 
 ## What this step does
 
-Takes an L0 `.mat` file (raw counts/hex, no calibrations - see [L0: converting .modraw to .mat](L0_modraw_conversion.md)) and converts it to physical units:
+Takes an L0 `.mat` file (raw counts/hex, no calibrations - see [L0: converting .modraw to .mat](modraw_to_L0_conversion.md)) and converts it to physical units:
 
 - **epsi** - AFE channel counts → volts (thermistor/shear channels) or g (accelerometer channels)
 - **ctd** - raw hex → pressure [dbar], temperature [°C], conductivity [S/m], salinity [psu], plus derived potential temperature, potential density, `dP/dt`, depth, `dz/dt`
