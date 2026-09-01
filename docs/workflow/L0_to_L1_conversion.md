@@ -151,8 +151,8 @@ Notes on the CTD conversion specifically:
 
 Notes on the EFE channel conversion (`convert_efe_channels`) specifically:
 - Every AFE channel - thermistor (`fpo7`), shear, and accelerometer alike - arrives from L0 as the same thing: raw 24-bit ADC counts, in `epsi.channel1`..`channelN` (ADC slot order, not sensor identity - see `MODsetup_read_yaml.m`'s `PROCESS.channels` note above).
-- The first thing this does is rename each slot to its logical sensor name from `setup.yml` (`metadata.PROCESS.channels`), suffixed `_count`: `epsi.channel1` → `epsi.t1_count`, `epsi.channel3` → `epsi.s1_count`, etc. This is a pure rename - `t1_count` and the old `channel1` hold identical values, just keyed by the manifest name instead of the ADC slot number. The old `channelN` field is then discarded (`rmfield`).
-- From there, `t1_count` → `t1_volt` is a **linear (affine) conversion** - not spectral, not a lookup table - using each channel's `full_range` (`FR`) and `ADCconf` from `setup.yml`'s `afe.channels` block:
+- Each slot's counts convert directly to its logical sensor name's physical-unit field (`epsi.channel1` → `epsi.t1_volt`, `epsi.channel3` → `epsi.s1_volt`, etc.) - there is no intermediate `_count` field kept in L1. The old `channelN` field is discarded (`rmfield`) once its counts are read. Raw counts are never lost - they still live in L0 (`epsi.channel1`..`channelN`), which is kept regardless; L1 simply doesn't duplicate them under a renamed field anymore (until 2026-08, it briefly did - `epsi.t1_count` etc. - but that was a pure, unconsumed copy that just doubled L1's size for no downstream benefit, so it was dropped).
+- `count` → `volt` is a **linear (affine) conversion** - not spectral, not a lookup table - using each channel's `full_range` (`FR`) and `ADCconf` from `setup.yml`'s `afe.channels` block:
   - **Unipolar**: `volt = FR/gain * count / 2^24`
   - **Bipolar**: `volt = FR/gain * (count/2^23 - 1)`
 
