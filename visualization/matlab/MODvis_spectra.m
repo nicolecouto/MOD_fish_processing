@@ -1,13 +1,24 @@
 classdef MODvis_spectra < handle
     % MODvis_spectra        Part of MOD_fish_processing
-    % Browse a folder of L2 *.mat files (MODprocess_single/all_L1_to_L2.m
-    % output: dnum, pressure, f, P.(channel) [nbscan x nfreq], nfft, dof,
-    % Fs_epsi, N_epsi, scan_step). Pick a file, and:
-    %   - Row 1 always shows L2 pressure (per-scan) for context.
-    %   - Rows 2-3 each show up to 2 raw L1 channels (t1/t2/s1/s2/a1/a2/a3
+    % Browse a folder of *.mat files carrying per-scan spectra, in either
+    % of two formats:
+    %   - This repo's own L2/profile output (MODprocess_single/all_L1_to_L2.m,
+    %     MODprocess_single/all_L1_to_L2_profiles.m): dnum, pressure,
+    %     spectra.f, spectra.(channel)_f [nbscan x nfreq], nfft, dof,
+    %     Fs_epsi, N_epsi. Raw per-channel context (rows 2-3) is pulled
+    %     from the matching file in a sibling L1 folder.
+    %   - Legacy MOD_fish_lib/EPSILOMETER Profile*.mat (e.g.
+    %     data_for_reorg/epsi_mako/astral/profiles/*.mat): Profile.dnum/.pr/
+    %     .f, Profile.Pt_volt_f/.Ps_volt_f/.Pa_g_f (each a struct keyed by
+    %     channel name), Profile.Meta_Data.PROCESS/.AFE. Normalized into the
+    %     same internal shape as above on load (normalizeLegacyProfile) -
+    %     raw per-channel context (rows 2-3) comes straight from the same
+    %     file's own Profile.epsi, no sibling file needed.
+    % Pick a file, and:
+    %   - Row 1 always shows pressure (per-scan) for context.
+    %   - Rows 2-3 each show up to 2 raw channels (t1/t2/s1/s2/a1/a2/a3
     %     volt/g, restricted to whichever channels this file actually has
-    %     spectra for) on their own left/right y-axes (yyaxis), pulled
-    %     from the matching file in the sibling L1 folder. Y-limits are
+    %     spectra for) on their own left/right y-axes (yyaxis). Y-limits are
     %     settable/lockable per axis - same two-axis setup as
     %     MODvis_timeseries (branch modvis_timeseries): real yyaxis,
     %     native tick labels blanked and redrawn as colored text() in
@@ -121,7 +132,7 @@ classdef MODvis_spectra < handle
         end
 
         function buildUI(app)
-            app.Fig = uifigure('Name','L2 Spectra Explorer','Position',[100 100 1350 950]);
+            app.Fig = uifigure('Name','Spectra Explorer','Position',[100 100 1350 950]);
 
             app.GL = uigridlayout(app.Fig,[1 2]);
             app.GL.ColumnWidth = {240,'1x'};
@@ -158,7 +169,7 @@ classdef MODvis_spectra < handle
             mini = uilabel(topRow,'Text','');
             mini.Layout.Row = 2; mini.Layout.Column = 1;
 
-            lbl = uilabel(left,'Text','L2 files (*.mat):');
+            lbl = uilabel(left,'Text','Spectra files (*.mat):');
             lbl.Layout.Row = 2; lbl.Layout.Column = 1;
 
             app.RefreshBtn = uibutton(left,'push','Text','Refresh list', ...
@@ -437,7 +448,7 @@ classdef MODvis_spectra < handle
                 app.FileList.Items = {};
                 app.CurrentData = struct();
                 app.CurrentFile = "";
-                app.Fig.Name = "L2 Spectra Explorer (no files)";
+                app.Fig.Name = "Spectra Explorer (no files)";
                 app.clearAll();
                 return;
             end
@@ -471,32 +482,46 @@ classdef MODvis_spectra < handle
                 uialert(app.Fig, "Failed to load: " + fp + newline + ME.message, "Load error");
                 return;
             end
-            app.CurrentData = S;
             app.SelectedScanIdx = [];
-            app.Fig.Name = "L2 Spectra Explorer — " + app.CurrentFile;
-
-            % Matching L1 file (same filename, sibling L1 folder) - source
-            % of the raw per-channel timeseries for rows 2-3.
+            app.Fig.Name = "Spectra Explorer — " + app.CurrentFile;
             app.CurrentL1Data = struct();
-            if app.L1Dir ~= ""
-                L1_file = fullfile(app.L1Dir, app.CurrentFile);
-                if exist(L1_file, 'file')
-                    try
-                        app.CurrentL1Data = load(L1_file);
-                    catch
-                        app.CurrentL1Data = struct();
+
+            if isfield(S, 'Profile')
+                % Legacy MOD_fish_lib/EPSILOMETER Profile struct (e.g.
+                % data_for_reorg/epsi_mako/astral/profiles/*.mat) -
+                % normalize into the same shape used below, so nothing
+                % past this point needs to know which format was loaded.
+                % Profile.epsi already carries the raw per-channel
+                % timeseries at full resolution, self-contained - no
+                % sibling L1 file needed for rows 2-3.
+                app.CurrentData = app.normalizeLegacyProfile(S.Profile);
+                if isfield(S.Profile, 'epsi') && isstruct(S.Profile.epsi)
+                    app.CurrentL1Data = struct('epsi', S.Profile.epsi);
+                end
+            else
+                app.CurrentData = S;
+                % Matching L1 file (same filename, sibling L1 folder) -
+                % source of the raw per-channel timeseries for rows 2-3.
+                if app.L1Dir ~= ""
+                    L1_file = fullfile(app.L1Dir, app.CurrentFile);
+                    if exist(L1_file, 'file')
+                        try
+                            app.CurrentL1Data = load(L1_file);
+                        catch
+                            app.CurrentL1Data = struct();
+                        end
                     end
                 end
             end
 
-            if ~isfield(S,'dnum') || isempty(S.dnum)
+            if ~isfield(app.CurrentData,'dnum') || isempty(app.CurrentData.dnum)
                 app.GlobalDnum = [];
                 app.clearAll();
                 app.SpecTitle.Text = 'No scans in this file (no descending data, or file too short)';
                 return;
             end
 
-            app.GlobalDnum = S.dnum(:);
+            app.GlobalDnum = app.CurrentData.dnum(:);
             app.ProfileTmin = min(app.GlobalDnum);
             app.ProfileTmax = max(app.GlobalDnum);
 
@@ -573,6 +598,53 @@ classdef MODvis_spectra < handle
             ordered = app.ChannelOrder(ismember(app.ChannelOrder, present));
             rest = setdiff(present, ordered, 'stable');
             channels = string([ordered(:); rest(:)]);
+        end
+
+        function S2 = normalizeLegacyProfile(app, Profile)
+            % Normalizes a legacy MOD_fish_lib/EPSILOMETER Profile struct
+            % (Profile.pr/.f/.Pt_volt_f.(ch)/.Ps_volt_f.(ch)/.Pa_g_f.(ch),
+            % Profile.Meta_Data.PROCESS/.AFE) into this class's own
+            % CurrentData shape (dnum/pressure/spectra.f/spectra.(ch)_f/
+            % N_epsi/Fs_epsi/nfft/dof), so every other method (getChannelList,
+            % plotRow, plotSpectrum, scanWindow, ...) can stay format-agnostic.
+            S2 = struct();
+            S2.dnum = Profile.dnum(:);
+            S2.pressure = Profile.pr(:);
+
+            S2.spectra = struct('f', Profile.f(:)');
+            groups = {'Pt_volt_f', 'Ps_volt_f', 'Pa_g_f'};
+            suffixes = {'_volt_f', '_volt_f', '_g_f'};
+            for iG = 1:numel(groups)
+                if ~isfield(Profile, groups{iG}) || ~isstruct(Profile.(groups{iG}))
+                    continue
+                end
+                chans = fieldnames(Profile.(groups{iG}));
+                for iC = 1:numel(chans)
+                    ch = chans{iC};
+                    S2.spectra.([ch suffixes{iG}]) = Profile.(groups{iG}).(ch);
+                end
+            end
+
+            Meta_Data = struct();
+            if isfield(Profile, 'Meta_Data') && isstruct(Profile.Meta_Data)
+                Meta_Data = Profile.Meta_Data;
+            end
+            S2.nfft = app.getFieldOr(Profile, 'nfft', NaN);
+            dof = NaN;
+            Fs_epsi = NaN;
+            if isfield(Meta_Data, 'PROCESS') && isstruct(Meta_Data.PROCESS)
+                dof = app.getFieldOr(Meta_Data.PROCESS, 'dof', NaN);
+                Fs_epsi = app.getFieldOr(Meta_Data.PROCESS, 'Fs_epsi', NaN);
+            end
+            if isnan(Fs_epsi) && isfield(Meta_Data, 'AFE') && isstruct(Meta_Data.AFE)
+                % Real legacy files never carry Meta_Data.PROCESS.Fs_epsi -
+                % Meta_Data.AFE.FS is the confirmed fallback (same one
+                % SpectraExplorerApp.m already uses).
+                Fs_epsi = app.getFieldOr(Meta_Data.AFE, 'FS', NaN);
+            end
+            S2.dof = dof;
+            S2.Fs_epsi = Fs_epsi;
+            S2.N_epsi = (dof - 1) * S2.nfft;
         end
 
         %% ---------------- Top timeseries rows (yyaxis left/right) ----------------
