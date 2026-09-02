@@ -1,0 +1,1 @@
+Microconductivity probe has an ADC filter that is hardwired into the SBE7 analog board. The EFE digitizes the output of the SBE7. The microconductivity probe takes over the s2 channel of the EFE board.

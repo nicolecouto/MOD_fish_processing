@@ -98,6 +98,8 @@ A deconvolution-gain threshold (capping wherever `1/(H_thermal * H_electronics)`
 
 `contam_freq_hz` is therefore a fixed, per-deployment, `setup.yml`-configurable frequency [Hz]: after the noise-floor search above produces `fc_index`, it's additionally capped so `f(fc_index) < contam_freq_hz`. Defaults to `Inf` (no cap) - **this is deliberately not silently populated with 59 Hz for every deployment**. ASTRAL is the only deployment characterized so far; a different deployment's electronics/rigging could easily have a different (or no) contamination line, and using an unverified value would be worse than no cap at all. Setting a real value for a given deployment means repeating this same median-spectrum-across-scans check against that deployment's own data first.
 
+The crossing search itself (smoothing already applied by the caller, threshold comparison, `contam_freq_hz` cap) is factored out into `mod_scan_fpo7_cutoff_search.m` so a second caller can run the identical search against a different noise-floor curve - `MODvis_spectra.m`'s live "cutoff (modeled)" checkbox (see below) uses it to run this same search against the theoretical noise floor (`mod_scan_fpo7_modeled_noise_f.m`) instead of the bench-measured one, so the two noise-floor choices can be compared on an otherwise identical algorithm rather than mixing in unrelated algorithm differences.
+
 ### 4. `mod_scan_thermal_diffusivity.m` — ktemp
 
 ```matlab
@@ -172,7 +174,7 @@ Fits the Batchelor spectrum to the same observed temperature-gradient spectrum `
 `sn_min`, `n_skip`, `contam_freq_hz`, `hamming_window_length_nfft`, `chi_mle_start_search`,
 `chi_mle_end_search` - the eleven operator-tunable parameters this chain reads - are **not** filled with a historical default by
 `MODsetup_read_yaml.m` when a deployment's `setup.yml` doesn't declare a `chi:` block (a FastCTD
-deployment needs none of them, so silently populating all ten for every deployment would be wrong,
+deployment needs none of them, so silently populating all eleven for every deployment would be wrong,
 not just undocumented). Instead, each of the five functions above validates exactly the values it
 (and anything it calls in turn) needs, as literally the first thing it does:
 
