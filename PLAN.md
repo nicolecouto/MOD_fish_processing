@@ -694,6 +694,11 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+
+### 2026-09-01 - Nicole's notes
+
+One problem that keeps coming up over and over is aligning the time series between different sensors. The shear, FPO7, and microconductivity probes sit out ahead of the Seabird CTD. We really need our first step to be perfectly aligning the data - t1 and T is a good way to compare.
+
 ### 2026-08-28 — Profile detection, cross-file profile extraction, shared L2 windowing; `meta/` filenames renamed to snake_case (branch `chi_processing`)
 
 Prompted by a design question about what happens when a profile spans two raw files - does spectral windowing see an artificial edge effect at the seam? Investigated both reference implementations first: `MOD_fish_lib`'s `epsiProcess_crop_timeseries.m`/`epsiProcess_merge_mat_files.m` solves this by concatenating raw epsi/ctd arrays across the file boundary *before* windowing, with **no gap detection at all** - it just trusts the raw sample clock is continuous across a file split. Rockland's ODAS library (`~/Library/CloudStorage/Dropbox/SIO/_instrument_software/rockland/odas/`) sidesteps the problem entirely - the stock library assumes one profile always lives inside one raw `.p` file, ships no cross-file concatenation. Neither was directly reusable; built a third approach with explicit gap detection.
