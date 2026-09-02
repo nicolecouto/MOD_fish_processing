@@ -22,17 +22,14 @@ function noise_f = mod_scan_fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs)
 %   thermistor manufacturer's own published resistance-temperature curve
 %   (see NOTES), not a fixed constant.
 %
-%   Two independent noise sources are combined, following the same
-%   structure as the old model (preserved here on purpose - see NOTES on
-%   `amp_coefs.ff` for the one piece deliberately NOT changed by this
-%   port):
+%   Two independent noise sources are combined, both purely theoretical -
+%   no fudge factor (see NOTES - the old model's `amp_coefs.ff` scale
+%   factor was dropped here, not carried forward):
 %     1. Johnson (thermal) noise: vn^2 = 4*kB*T*R, treated as flat across
 %        frequency and referenced to the Nyquist bandwidth (fs/2).
 %     2. Amplifier noise: the first-stage amp's own input voltage noise,
 %        plus its input current noise converted to a voltage through the
-%        bridge resistance R/2, shaped as 1/f (unity at 20 Hz) and scaled
-%        by a fudge factor `amp_coefs.ff` (see NOTES - unchanged from the
-%        old model, a separate, still-open question from R(T)).
+%        bridge resistance R/2, shaped as 1/f (unity at 20 Hz).
 %
 % INPUTS
 %   f                - frequency vector [Hz], any shape, must not contain
@@ -78,13 +75,10 @@ function noise_f = mod_scan_fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs)
 %                          were fitted over (see NOTES).
 %   amp_coefs        - (optional) struct of amplifier-circuit parameters,
 %                      independent of the thermistor/temperature. Fields,
-%                      all defaulted to the historical model's values
-%                      (see NOTES):
+%                      all defaulted to the ADA4805 first-stage amp's
+%                      published input-referred noise specs (see NOTES):
 %                        .voltage_noise      - [V/sqrt(Hz)], default 100e-9
 %                        .current_noise_20hz - [A/sqrt(Hz)], default 3e-12
-%                        .ff                 - fudge factor, default 200
-%                                              (see NOTES - unresolved,
-%                                              deliberately unchanged)
 %
 % OUTPUTS
 %   noise_f - FP07 electronic noise power spectral density [V^2/Hz], same
@@ -158,21 +152,25 @@ function noise_f = mod_scan_fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs)
 %   wider slice of the same table (source PDF, page 29) if a deployment
 %   ever needs it.
 %
-%   amp_coefs.ff (default 200) is UNCHANGED from the old model and is a
-%   separate, still-open question from R(T), not something this function
-%   resolves. In the old code (make_FPO7_notdiffnoise.m, and the "Arnaud's
-%   paper" noise model it was derived from - see
+%   amp_coefs.ff removed (not carried forward, not defaulted to 1). The
+%   old code (make_FPO7_notdiffnoise.m, and the "Arnaud's paper" noise
+%   model it was derived from - see
 %   ~/Library/CloudStorage/Dropbox/SIO/projects/epsi/projects/21_06_redefine_fpo7_noise/,
-%   which names the actual op-amp, ADA4805), this fudge factor stood in
-%   for "the Tdiff filter" - a *frequency-dependent* differentiator/
-%   pre-emphasis response, not a temperature effect. But this repo's own
-%   mod_scan_fpo7_transfer_function.m NOTES (and the original notebook
-%   this branch is based on) confirm our FP07 electronics have no analog
-%   Tdiff/differentiator stage at all - only Rockland's and MMP's channels
-%   do. So amp_coefs.ff may not represent a real physical effect for our
-%   (non-differentiated) channel at all, separate from whether its value
-%   (200) is right. Preserved as-is here, flagged rather than silently
-%   carried forward or silently removed.
+%   which names the actual op-amp, ADA4805) multiplied the amplifier-noise
+%   term by a fudge factor (default 200) that stood in for "the Tdiff
+%   filter" - a *frequency-dependent* analog differentiator/pre-emphasis
+%   circuit, not a temperature effect and not a real noise source of its
+%   own. An earlier version of this function carried that factor forward
+%   unchanged, flagged as a still-open question. It's now resolved: this
+%   repo's own docs/workflow/L2_calc_chi.md and PLAN.md (Section 6.2/8,
+%   mod_scan_fpo7_transfer_function.m's NOTES) independently confirm - by
+%   checking MOD_fish_lib's actual blt2021_0715 process config - that
+%   Meta_Data.MAP.temperature was never 'Tdiff' for any deployment this
+%   repo processes; the bench noise calibration file itself is literally
+%   named FPO7_notdiffnoise.mat for the same reason. Tdiff isn't a term in
+%   our signal chain at all, so a Tdiff-derived correction factor was
+%   never modeling anything physically real here - both Johnson and
+%   amplifier noise are now purely theoretical, no fudge factor.
 %
 %   Why this matters beyond the noise curve's shape: this repo's own
 %   docs/workflow/L2_calc_chi.md "Known limitations" section already
@@ -219,9 +217,6 @@ end
 if ~isfield(amp_coefs, 'current_noise_20hz') || isempty(amp_coefs.current_noise_20hz)
     amp_coefs.current_noise_20hz = 3e-12; % A/sqrt(Hz) at 20 Hz, ADA4805 - see NOTES
 end
-if ~isfield(amp_coefs, 'ff') || isempty(amp_coefs.ff)
-    amp_coefs.ff = 200; % fudge factor, unresolved - see NOTES
-end
 
 if ~isfield(thermistor_coefs, 'R25') || isempty(thermistor_coefs.R25)
     thermistor_coefs.R25 = 200e3; % ohms - FP07DB204N datasheet spec, see NOTES
@@ -262,6 +257,6 @@ noise_amp = noise_current.^2 + amp_coefs.voltage_noise.^2;
 noise_amp = noise_amp .* (20 ./ f);
 
 %% Combine
-noise_f = noise_johnson + amp_coefs.ff .* noise_amp;
+noise_f = noise_johnson + noise_amp;
 
 end %end function
