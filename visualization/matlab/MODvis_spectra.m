@@ -79,6 +79,7 @@ classdef MODvis_spectra < handle
 
         SpecAxes
         SpecLines struct = struct()     % channel name -> line handle
+        SpecShade struct = struct()     % PhysChannelOrder name -> noise-floor-to-3x shade patch handle
         ChannelOn struct = struct()     % channel name -> logical, persists across files
         SpecCheckPanel   % 2-column checkbox panel next to SpecAxes (raw | physical+cutoffs)
         ChannelCheck struct = struct()  % channel name -> uicheckbox handle
@@ -104,6 +105,30 @@ classdef MODvis_spectra < handle
         % _k channels this file has.
         FreqCutoffOrder cell = {'t1_fc','t2_fc','s1_fc','s2_fc'}
         WavCutoffOrder cell = {'t1_kc','t2_kc','s1_kc','s2_kc'}
+
+        % Live-computed alternative to t1_fc/t2_fc above: same noise-floor-
+        % crossing search (mod_scan_fpo7_cutoff_search.m - the shared core
+        % behind mod_scan_fpo7_cutoff.m), run per scan against the
+        % theoretical/modeled noise floor (mod_scan_fpo7_modeled_noise_f.m)
+        % instead of the bench-measured one, so the two noise-floor choices
+        % can be compared line-for-line on an otherwise identical
+        % algorithm. Unlike t1_fc/t2_fc (a direct read of Profile.tg_fc,
+        % computed once by whatever produced the Profile file, using the
+        % legacy MOD_fish_lib algorithm), these are computed fresh here -
+        % see computeModeledFreqCutoff. Populated into CurrentData the same
+        % shape as t1_fc/t2_fc so plotCutoffLines needs no special-casing.
+        ModeledFreqCutoffOrder cell = {'t1_fc_modeled','t2_fc_modeled'}
+
+        % Wavenumber-domain companion to ModeledFreqCutoffOrder above -
+        % same cutoff, converted to wavenumber via this scan's own
+        % spectra.k (computeModeledFreqCutoff looks up spectra.k at the
+        % same frequency bin the crossing search landed on, rather than
+        % re-deriving a fall speed), so it can be drawn on WavAxes next to
+        % t1_kc/t2_kc the same way t1_fc_modeled/t2_fc_modeled are drawn on
+        % SpecAxes next to t1_fc/t2_fc. Only populated when this file
+        % carries a per-scan spectra.k matrix (legacy Profile files) - see
+        % computeModeledFreqCutoff.
+        ModeledWavCutoffOrder cell = {'t1_kc_modeled','t2_kc_modeled'}
 
         % Batchelor theory overlay checkboxes - t1/t2 only (Batchelor is a
         % temperature-gradient spectrum; shear channels keep their existing
@@ -176,6 +201,39 @@ classdef MODvis_spectra < handle
         NoiseAdjustedToF = 0.7
         NSmoothFSpectrum = 15
 
+        % Same "legacy Profile files carry no setup.yml" situation for
+        % ModeledFreqCutoffOrder's live noise-floor-crossing search
+        % (mod_scan_fpo7_cutoff_search.m) - SN_min/n_skip match the same
+        % MODsetup_metadata_field_registry.m historical defaults as above.
+        % contam_freq_hz is different: production defaults it to Inf (no
+        % deployment-specific value has been set), but this app has only
+        % ever been pointed at ASTRAL data, whose own contamination line
+        % was found (docs/workflow/L2_calc_chi.md, "Contamination-frequency
+        % cap") at ~59 Hz - 55 Hz here is a deliberately conservative round
+        % value below that line, not a re-derivation of it.
+        ModeledCutoffSNmin = 3
+        ModeledCutoffNskip = 2
+        ModeledCutoffContamFreqHz = 55
+
+        % A single channel's noise floor, noise-floor shading, and cutoff
+        % line used to all render in that channel's own color (t1 blue,
+        % t2 teal, ...) distinguished only by line style - hard to tell a
+        % noise floor from a cutoff at a glance. These two colors instead
+        % encode which noise floor a curve/cutoff is based on (bench-
+        % measured vs. theoretical/modeled); channel identity (t1 vs t2)
+        % is carried by line style instead (see plotCutoffLines) for the
+        % curves/cutoffs this applies to - see getSignalColor.
+        BenchNoiseColor = [0 0 0]        % black: fpo7_noise_f, t1/t2_noise_shifted_f, t1_fc, t2_fc
+        ModeledNoiseColor = [0.80 0.10 0.10]  % red: fpo7_noise_modeled_f, t1_fc_modeled, t2_fc_modeled
+
+        % SN_min multiplier for the noise-floor shading band (noise floor
+        % up to NoiseFloorShadeSNmin x noise floor) - matches the SN_min
+        % default (MODsetup_metadata_field_registry.m's sn_min, and this
+        % app's own ModeledCutoffSNmin) that mod_scan_fpo7_cutoff_search.m
+        % actually thresholds against, so the shaded band is the real
+        % "still trustworthy" zone, not an arbitrary illustration.
+        NoiseFloorShadeSNmin = 3
+
         % Default floor for the wavenumber (bottom) spectrum panel's
         % y-axis minimum, applied whenever it's not manually locked -
         % several theory curves (Batchelor/Panchev) decay toward zero at
@@ -203,8 +261,14 @@ classdef MODvis_spectra < handle
             for i = 1:numel(app.FreqCutoffOrder)
                 app.ChannelOn.(app.FreqCutoffOrder{i}) = true;
             end
+            for i = 1:numel(app.ModeledFreqCutoffOrder)
+                app.ChannelOn.(app.ModeledFreqCutoffOrder{i}) = true;
+            end
             for i = 1:numel(app.WavCutoffOrder)
                 app.ChannelOn.(app.WavCutoffOrder{i}) = true;
+            end
+            for i = 1:numel(app.ModeledWavCutoffOrder)
+                app.ChannelOn.(app.ModeledWavCutoffOrder{i}) = true;
             end
             for i = 1:numel(app.BatchelorObsOrder)
                 app.ChannelOn.(app.BatchelorObsOrder{i}) = true;
@@ -413,12 +477,20 @@ classdef MODvis_spectra < handle
 
             app.SpecAxes = uiaxes(combinedRow);
             app.SpecAxes.Layout.Row = 1; app.SpecAxes.Layout.Column = 1;
+            % uiaxes defaults to FontSize 20 (with tick/label/title all at
+            % that size, since Label/TitleFontSizeMultiplier both default
+            % to 1) - TopAxes above explicitly pins FontSize to
+            % AxesTickFontSize (10); match that here so the spectra panel's
+            % axis labels/title aren't visibly larger than the timeseries
+            % panel's.
+            app.SpecAxes.FontSize = app.AxesTickFontSize;
             grid(app.SpecAxes,'on');
             xlabel(app.SpecAxes,'Frequency [Hz]');
             ylabel(app.SpecAxes,'Power spectral density');
 
             app.WavAxes = uiaxes(combinedRow);
             app.WavAxes.Layout.Row = 2; app.WavAxes.Layout.Column = 1;
+            app.WavAxes.FontSize = app.AxesTickFontSize;
             grid(app.WavAxes,'on');
             xlabel(app.WavAxes,'Wavenumber [cpm]');
             ylabel(app.WavAxes,'Power spectral density');
@@ -428,7 +500,7 @@ classdef MODvis_spectra < handle
             % noise floors + freq cutoffs.
             nRawCb = numel(app.ChannelOrder);
             nPhysCb = numel(app.PhysChannelOrder);
-            nFreqCutoffCb = numel(app.FreqCutoffOrder);
+            nFreqCutoffCb = numel(app.FreqCutoffOrder) + numel(app.ModeledFreqCutoffOrder);
             col1Rows = 1 + nRawCb;                        % "Raw channels" + entries
             col2Rows = 1 + nPhysCb + 1 + nFreqCutoffCb;    % "Physical units" + entries + "Cutoffs" + entries
             specRows = max(col1Rows, col2Rows);
@@ -474,10 +546,16 @@ classdef MODvis_spectra < handle
             divLbl2 = uilabel(app.SpecCheckPanel, 'Text', 'Cutoffs (vertical lines)', 'FontWeight', 'bold');
             divLbl2.Layout.Row = row; divLbl2.Layout.Column = 2;
             divLbl2.FontSize = 10;
-            for i = 1:nFreqCutoffCb
+            for i = 1:numel(app.FreqCutoffOrder)
                 row = row + 1;
                 ch = app.FreqCutoffOrder{i};
                 app.addChannelCheckbox(ch, ch, app.SpecCheckPanel, row, 2);
+            end
+            for i = 1:numel(app.ModeledFreqCutoffOrder)
+                row = row + 1;
+                ch = app.ModeledFreqCutoffOrder{i};
+                lbl = strrep(ch, '_fc_modeled', ' cutoff (modeled)');
+                app.addChannelCheckbox(ch, lbl, app.SpecCheckPanel, row, 2);
             end
 
             % Wav checkbox panel: dynamic, torn down/rebuilt per file (row
@@ -731,19 +809,24 @@ classdef MODvis_spectra < handle
             end
             app.HasUserZoomed = false;
 
-            % Row 1: pressure (left) / CTD temperature (right), both
-            % selectable including "(none)" - always available directly
-            % from CurrentData, no L1/sibling-file lookup needed.
-            app.FieldADrop(1).Items = [{app.NoneItem}; {'pressure'}];
+            % Row 1: pressure/temperature plus every other per-scan
+            % Profile field this file happens to carry (row1FieldRegistry/
+            % availableRow1Extras) - both selectable including "(none)".
+            % Left and right offer the identical item list (same symmetric
+            % pattern rows 2-3 already use for raw epsi channels below), so
+            % any of these can go on either axis.
+            hasTemp = isfield(app.CurrentData, 'temperature') && ~isempty(app.CurrentData.temperature);
+            row1Items = {'pressure'};
+            if hasTemp
+                row1Items{end+1} = 'temperature';
+            end
+            row1Items = [row1Items, app.availableRow1Extras()];
+
+            app.FieldADrop(1).Items = [{app.NoneItem}; row1Items(:)];
             app.FieldADrop(1).Enable = 'on';
             app.LastFieldA(1) = app.restoreOrDefault(app.FieldADrop(1), app.LastFieldA(1));
 
-            hasTemp = isfield(app.CurrentData, 'temperature') && ~isempty(app.CurrentData.temperature);
-            if hasTemp
-                app.FieldBDrop(1).Items = [{app.NoneItem}; {'temperature'}];
-            else
-                app.FieldBDrop(1).Items = {app.NoneItem};
-            end
+            app.FieldBDrop(1).Items = [{app.NoneItem}; row1Items(:)];
             app.FieldBDrop(1).Enable = 'on';
             app.LastFieldB(1) = app.restoreOrDefault(app.FieldBDrop(1), app.LastFieldB(1));
 
@@ -802,6 +885,16 @@ classdef MODvis_spectra < handle
             % Frequency-domain cutoff checkboxes (vertical lines on SpecAxes).
             for i = 1:numel(app.FreqCutoffOrder)
                 ch = app.FreqCutoffOrder{i};
+                app.ChannelCheck.(ch).Visible = isfield(app.CurrentData,ch) && ~isempty(app.CurrentData.(ch));
+            end
+
+            % Live modeled-noise-floor cutoff (t1_fc_modeled/t2_fc_modeled)
+            % - computed fresh per file (needs pu.noise_coefs/hasTempFs,
+            % both just resolved above), same visibility-sync pattern as
+            % FreqCutoffOrder just above.
+            app.computeModeledFreqCutoff(pu, hasTempFs);
+            for i = 1:numel(app.ModeledFreqCutoffOrder)
+                ch = app.ModeledFreqCutoffOrder{i};
                 app.ChannelCheck.(ch).Visible = isfield(app.CurrentData,ch) && ~isempty(app.CurrentData.(ch));
             end
 
@@ -893,6 +986,13 @@ classdef MODvis_spectra < handle
                     availableWavCutoffs{end+1} = ch; %#ok<AGROW>
                 end
             end
+            availableModeledWavCutoffs = {};
+            for i = 1:numel(app.ModeledWavCutoffOrder)
+                ch = app.ModeledWavCutoffOrder{i};
+                if isfield(app.CurrentData, ch) && ~isempty(app.CurrentData.(ch))
+                    availableModeledWavCutoffs{end+1} = ch; %#ok<AGROW>
+                end
+            end
 
             chiObs = app.getFieldOr(app.CurrentData, 'chi', struct());
             chiMle = app.getFieldOr(app.CurrentData, 'chi_mle', struct());
@@ -914,8 +1014,9 @@ classdef MODvis_spectra < handle
             end
 
             col1Rows = 0;
-            if ~isempty(wavChannels) || ~isempty(availableWavCutoffs)
-                col1Rows = 1 + numel(wavChannels) + numel(availableWavCutoffs); % +1 for "Wavenumber (_k)"
+            if ~isempty(wavChannels) || ~isempty(availableWavCutoffs) || ~isempty(availableModeledWavCutoffs)
+                col1Rows = 1 + numel(wavChannels) + numel(availableWavCutoffs) ...
+                    + numel(availableModeledWavCutoffs); % +1 for "Wavenumber (_k)"
             end
             col2Rows = 0;
             if ~isempty(availableBatchelorObs)
@@ -948,6 +1049,13 @@ classdef MODvis_spectra < handle
                     row = row + 1;
                     ch = availableWavCutoffs{i};
                     app.addChannelCheckbox(ch, ch, app.WavCheckPanel, row, 1);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
+                for i = 1:numel(availableModeledWavCutoffs)
+                    row = row + 1;
+                    ch = availableModeledWavCutoffs{i};
+                    lbl = strrep(ch, '_kc_modeled', ' cutoff (modeled)');
+                    app.addChannelCheckbox(ch, lbl, app.WavCheckPanel, row, 1);
                     app.DynamicWavKeys{end+1} = ch;
                 end
             end
@@ -1120,9 +1228,29 @@ classdef MODvis_spectra < handle
             if ~isempty(chi_mle) && size(chi_mle,2) >= 2
                 S2.chi_mle = struct('t1', chi_mle(:,1), 't2', chi_mle(:,2));
             end
-            S2.epsilon_final = app.getFieldOr(Profile, 'epsilon_final', []);
             S2.kvis = app.getFieldOr(Profile, 'kvis', []);
             S2.ktemp = app.getFieldOr(Profile, 'ktemp', []);
+
+            % --- Extra per-scan Profile fields offered on row 1's
+            % timeseries dropdowns (see row1FieldRegistry/
+            % availableRow1Extras/getSeries) - copied straight from
+            % Profile under each entry's own field name (including
+            % epsilon_final, which plotWavenumberSpectrum also reads
+            % directly off CurrentData); simply left absent from
+            % CurrentData - and therefore off the dropdown - when this
+            % file doesn't carry a given one (most don't carry
+            % epsi_fom/chi_fom/epsi_fom_mle/chi_fom_mle/epsilon_mle/
+            % chi_mle/flag_tg_kc; only newer processing runs do). chi/
+            % chi_mle store their raw 2-column form under 'chi_raw'/
+            % 'chi_mle_raw' rather than 'chi'/'chi_mle', since those names
+            % are already used just above for the per-channel struct form
+            % (chi.t1/.t2) the Batchelor overlay needs.
+            reg = app.row1FieldRegistry();
+            for iR = 1:size(reg,1)
+                srcField = reg{iR,2};
+                dstField = reg{iR,3};
+                S2.(dstField) = app.getFieldOr(Profile, srcField, []);
+            end
 
             % --- Cutoff frequency/wavenumber, plotted as vertical lines
             % (FreqCutoffOrder on SpecAxes, WavCutoffOrder on WavAxes).
@@ -1325,6 +1453,27 @@ classdef MODvis_spectra < handle
         end
 
         function [dnum, y] = getSeries(app, key)
+            % Thin wrapper around resolveSeries: strips a "log10(...)"
+            % dropdown-value wrapper (see availableRow1Extras) before
+            % resolving, then log10-transforms the result - non-positive
+            % values go to NaN first so chi/epsilon values that happen to
+            % be <= 0 (a bad fit, not a real physical value) plot as a gap
+            % rather than a complex/-Inf point.
+            keyStr = string(key);
+            isLogKey = false;
+            tok = regexp(char(keyStr), '^log10\((.+)\)$', 'tokens', 'once');
+            if ~isempty(tok)
+                isLogKey = true;
+                keyStr = string(tok{1});
+            end
+            [dnum, y] = app.resolveSeries(keyStr);
+            if isLogKey && ~isempty(y)
+                y(y <= 0) = NaN;
+                y = log10(y);
+            end
+        end
+
+        function [dnum, y] = resolveSeries(app, key)
             dnum = []; y = [];
             if isempty(key) || key == "" || key == string(app.NoneItem)
                 return
@@ -1343,10 +1492,120 @@ classdef MODvis_spectra < handle
                 end
                 return
             end
+            % row1FieldRegistry entry (w/s/th/sgth/epsilon_final/pitch/
+            % roll/epsi_qc/.../epsilon_co(1)/epsilon_co(2)/chi(1)/chi(2)/
+            % .../flag_tg_kc - see availableRow1Extras for how these reach
+            % the dropdown). 2-column entries arrive here as "name(col)" -
+            % parseIndexedKey splits that back into a base name + column.
+            [baseKey, colIdx] = app.parseIndexedKey(key);
+            reg = app.row1FieldRegistry();
+            regRow = reg(strcmp(reg(:,1), baseKey), :);
+            if ~isempty(regRow) && isfield(app.CurrentData, 'dnum')
+                storageField = regRow{1,3};
+                nCols = regRow{1,4};
+                if isfield(app.CurrentData, storageField) && ~isempty(app.CurrentData.(storageField))
+                    v = app.CurrentData.(storageField);
+                    if nCols == 1
+                        dnum = app.CurrentData.dnum(:);
+                        y = v(:);
+                    elseif ~isempty(colIdx) && colIdx >= 1 && colIdx <= size(v,2)
+                        dnum = app.CurrentData.dnum(:);
+                        y = v(:,colIdx);
+                    end
+                end
+                return
+            end
             % L1 raw epsi channel
             if isfield(app.CurrentL1Data,'epsi') && isfield(app.CurrentL1Data.epsi, key)
                 dnum = app.CurrentL1Data.epsi.dnum(:);
                 y = app.CurrentL1Data.epsi.(key)(:);
+            end
+        end
+
+        function reg = row1FieldRegistry(~)
+            % Registry of extra per-scan Profile fields offered on row 1's
+            % timeseries dropdowns, beyond pressure/temperature (see
+            % availableRow1Extras, getSeries, normalizeLegacyProfile).
+            % Each row is {display base name, Profile source field,
+            % CurrentData storage field, number of columns, plot in log10}.
+            % A 2-column field is offered as two dropdown entries,
+            % "name(1)"/"name(2)" (column 1/2 = t1/t2, matching every
+            % other 2-column Profile field this app already splits that
+            % way - see normalizeLegacyProfile's cutoffPairs). chi/chi_mle
+            % use a different storage field ('chi_raw'/'chi_mle_raw') than
+            % their display name, since 'chi'/'chi_mle' already name the
+            % per-channel struct form (chi.t1/.t2) the Batchelor overlay
+            % on WavAxes needs - see normalizeLegacyProfile. epsilon_final/
+            % epsilon_co/epsilon_mle/chi/chi_mle span too many decades to
+            % read as a linear-scale timeseries, so those are only offered
+            % in log10 form ("log10(name)"/"log10(name(col))" - see
+            % availableRow1Extras/getSeries), not also as a raw linear
+            % option.
+            reg = { ...
+                'w',             'w',             'w',             1, false; ...
+                's',             's',             's',             1, false; ...
+                'th',            'th',            'th',            1, false; ...
+                'sgth',          'sgth',          'sgth',          1, false; ...
+                'epsilon_final', 'epsilon_final', 'epsilon_final', 1, true;  ...
+                'pitch',         'pitch',         'pitch',         1, false; ...
+                'roll',          'roll',          'roll',          1, false; ...
+                'epsi_qc',       'epsi_qc',       'epsi_qc',       1, false; ...
+                'epsi_fom',      'epsi_fom',      'epsi_fom',      1, false; ...
+                'chi_fom',       'chi_fom',       'chi_fom',       1, false; ...
+                'epsi_fom_mle',  'epsi_fom_mle',  'epsi_fom_mle',  1, false; ...
+                'chi_fom_mle',   'chi_fom_mle',   'chi_fom_mle',   1, false; ...
+                'epsilon_co',    'epsilon_co',    'epsilon_co',    2, true;  ...
+                'epsilon_mle',   'epsilon_mle',   'epsilon_mle',   2, true;  ...
+                'chi',           'chi',           'chi_raw',       2, true;  ...
+                'chi_mle',       'chi_mle',       'chi_mle_raw',   2, true;  ...
+                'flag_tg_kc',    'flag_tg_kc',    'flag_tg_kc',    1, false; ...
+            };
+        end
+
+        function items = availableRow1Extras(app)
+            % Row1FieldRegistry entries actually present in the currently
+            % loaded file, expanded into dropdown item strings - scalar
+            % (1-column) entries as their bare name, 2-column entries as
+            % "name(1)"/"name(2)", each wrapped as "log10(...)" when the
+            % registry marks that entry log-scale (see getSeries for where
+            % the log10 is actually applied). Only entries this file's
+            % normalizeLegacyProfile call actually populated are offered,
+            % same pattern as the existing hasTemp check for 'temperature'.
+            items = {};
+            reg = app.row1FieldRegistry();
+            for i = 1:size(reg,1)
+                dispName = reg{i,1};
+                storageField = reg{i,3};
+                nCols = reg{i,4};
+                isLog = reg{i,5};
+                if ~isfield(app.CurrentData, storageField) || isempty(app.CurrentData.(storageField))
+                    continue
+                end
+                if nCols == 1
+                    label = dispName;
+                    if isLog; label = sprintf('log10(%s)', label); end
+                    items{end+1} = label; %#ok<AGROW>
+                else
+                    v = app.CurrentData.(storageField);
+                    for c = 1:min(nCols, size(v,2))
+                        label = sprintf('%s(%d)', dispName, c);
+                        if isLog; label = sprintf('log10(%s)', label); end
+                        items{end+1} = label; %#ok<AGROW>
+                    end
+                end
+            end
+        end
+
+        function [base, idx] = parseIndexedKey(~, key)
+            % Splits a "name(col)" dropdown value (see availableRow1Extras)
+            % back into its base name and column index; a plain "name"
+            % (no parens) returns idx = [] and base = key unchanged.
+            base = char(key);
+            idx = [];
+            tok = regexp(base, '^(\w+)\((\d+)\)$', 'tokens', 'once');
+            if ~isempty(tok)
+                base = tok{1};
+                idx = str2double(tok{2});
             end
         end
 
@@ -1360,18 +1619,36 @@ classdef MODvis_spectra < handle
                 clr = [0 0 0];
                 return
             end
-            if strcmp(key, 'fpo7_noise_f') || strcmp(key, 'fpo7_noise_modeled_f')
-                clr = [0 0 0];
-                return
-            end
             if strcmp(key, 'temperature')
                 clr = [193 41 46]./255;
                 return
             end
+            % Bench-measured noise floor curves (raw + per-channel-shifted)
+            % and the cutoffs derived from them, in both frequency
+            % (t1_fc/t2_fc) and wavenumber (t1_kc/t2_kc), all share one
+            % color (black) regardless of channel; the theoretical/modeled
+            % noise floor and its cutoffs (t1_fc_modeled/t2_fc_modeled,
+            % t1_kc_modeled/t2_kc_modeled) share a second color (red) - so
+            % bench vs. modeled reads as a color at a glance on either
+            % panel. Channel identity (t1 vs t2) for these is carried by
+            % line style instead - see plotCutoffLines. s1_fc/s2_fc/
+            % s1_kc/s2_kc (shear) have no modeled counterpart and no noise
+            % floor is ever plotted for them, so they fall through to the
+            % channel-color token match below, unchanged.
+            if any(strcmp(key, {'fpo7_noise_f','t1_noise_shifted_f','t2_noise_shifted_f', ...
+                    't1_fc','t2_fc','t1_kc','t2_kc'}))
+                clr = app.BenchNoiseColor;
+                return
+            end
+            if any(strcmp(key, {'fpo7_noise_modeled_f','t1_fc_modeled','t2_fc_modeled', ...
+                    't1_kc_modeled','t2_kc_modeled'}))
+                clr = app.ModeledNoiseColor;
+                return
+            end
             % SignalColors is keyed by base channel name (t1/t2/s1/s2/
             % a1/a2/a3); every other key variant (t1_volt_f, t1_Tg_k,
-            % t1_noise_shifted_f, a1_g_f, plain t1/s1/...) starts with one
-            % of these tokens - match on that so raw/wavenumber/theory
+            % a1_g_f, plain t1/s1/..., s1_fc/s2_fc/s1_kc/s2_kc) starts with
+            % one of these tokens - match on that so raw/wavenumber/theory
             % representations of the same channel share one color.
             tokens = {'t1','t2','s1','s2','a1','a2','a3'};
             clr = [0.3 0.3 0.3];
@@ -1694,11 +1971,46 @@ classdef MODvis_spectra < handle
             app.ShadePatch(rowIdx) = patch(ax, [t0 t1 t1 t0], [yl(1) yl(1) yl(2) yl(2)], ...
                 [1 0.85 0.2], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
                 'HitTest', 'off', 'PickableParts', 'none');
-            % uistack can fail on a yyaxis-enabled uiaxes ("Children may
-            % only be set to a permutation of itself") - purely a z-order
-            % nicety, so don't let it break scan selection if it does.
-            try; uistack(app.ShadePatch(rowIdx), 'bottom'); catch; end
             hold(ax,'off');
+
+            % The patch just above is the newest object in the left
+            % y-axis's z-stack, so - left unaddressed - it paints in FRONT
+            % of the axis-1 line (the axis-2/right line's z-order relative
+            % to the patch is unaffected either way - confirmed empirically
+            % it already renders above regardless). uistack(...,'bottom')
+            % is the normal fix, but it throws on a yyaxis-enabled uiaxes
+            % ("Children may only be set to a permutation of itself" - a
+            % real MATLAB limitation, not a typo/logic bug), so it can
+            % never actually move the patch back. Recreating the axis-1
+            % line here instead makes IT the newest object, which puts it
+            % back on top with no z-order API needed at all.
+            app.restackAxis1Line(rowIdx);
+        end
+
+        function restackAxis1Line(app, rowIdx)
+            % Deletes and immediately recreates TopLine(rowIdx) with
+            % identical data/appearance - see redrawShade for why: it's
+            % the only reliable way to get the axis-1 line to paint above
+            % a just-added scan-shade patch on a yyaxis-enabled uiaxes.
+            ax = app.TopAxes(rowIdx);
+            h = app.TopLine(rowIdx);
+            if ~isgraphics(h); return; end
+
+            xdata = h.XData; ydata = h.YData;
+            lineStyle = h.LineStyle; marker = h.Marker;
+            clr = h.Color; lw = h.LineWidth; ms = h.MarkerSize;
+            bdf = h.ButtonDownFcn;
+            delete(h);
+
+            if numel(ax.YAxis) > 1
+                yyaxis(ax, 'left');
+            end
+            hold(ax,'on');
+            hNew = plot(ax, xdata, ydata, 'LineStyle', lineStyle, 'Marker', marker, ...
+                'Color', clr, 'LineWidth', lw, 'MarkerSize', ms);
+            hold(ax,'off');
+            hNew.ButtonDownFcn = bdf;
+            app.TopLine(rowIdx) = hNew;
         end
 
         function [t0, t1] = scanWindow(app, idx)
@@ -1722,6 +2034,7 @@ classdef MODvis_spectra < handle
             cla(app.SpecAxes);
             hold(app.SpecAxes,'on');
             app.SpecLines = struct();
+            app.SpecShade = struct();
 
             channels = app.getChannelList();
             for i = 1:numel(channels)
@@ -1752,9 +2065,39 @@ classdef MODvis_spectra < handle
                     switch ch
                         case 'fpo7_noise_f';           style = '--';  % unshifted bench, black
                         case {'t1_noise_shifted_f','t2_noise_shifted_f'}
-                                                        style = ':';   % shifted bench, channel color
-                        case 'fpo7_noise_modeled_f';   style = '-.';  % theoretical/modeled, black
+                                                        style = ':';   % shifted bench, black
+                        case 'fpo7_noise_modeled_f';   style = '-.';  % theoretical/modeled, red
                     end
+
+                    % Shade the noise floor up to NoiseFloorShadeSNmin x
+                    % itself - the actual "still trustworthy" zone each
+                    % cutoff search thresholds against - using this curve's
+                    % own color at low alpha, so it reads as gray for the
+                    % bench curve and light red for the modeled one without
+                    % needing separate shade colors. Only the per-channel
+                    % curves an actual cutoff search compares against are
+                    % shaded: t1/t2_noise_shifted_f (what
+                    % mod_scan_fpo7_cutoff.m's SN_min comparison actually
+                    % runs against - see mod_scan_fpo7_noise_adjust.m) and
+                    % fpo7_noise_modeled_f (what the live modeled-cutoff
+                    % checkbox compares against). fpo7_noise_f is the raw,
+                    % unshifted bench reference curve - not itself a
+                    % decision boundary for any cutoff - so it's left
+                    % unshaded.
+                    hs = gobjects(1,0);
+                    if ~strcmp(ch, 'fpo7_noise_f')
+                        fmask = keep & isfinite(Pxx) & Pxx > 0;
+                        if any(fmask)
+                            fShade  = f(fmask);
+                            loBound = Pxx(fmask);
+                            hiBound = app.NoiseFloorShadeSNmin * loBound;
+                            hs = fill(app.SpecAxes, [fShade, fliplr(fShade)], [loBound, fliplr(hiBound)], ...
+                                clr, 'FaceAlpha', 0.15, 'EdgeColor', 'none');
+                            hs.Visible = app.ChannelOn.(ch);
+                        end
+                    end
+                    app.SpecShade.(ch) = hs;
+
                     h = loglog(app.SpecAxes, f(keep), Pxx(keep), style, 'Color', clr, 'LineWidth', 1.2);
                     if isfield(app.ChannelOn, ch)
                         h.Visible = app.ChannelOn.(ch);
@@ -1776,9 +2119,25 @@ classdef MODvis_spectra < handle
                 end
             end
 
+            for i = 1:numel(app.ModeledFreqCutoffOrder)
+                ch = app.ModeledFreqCutoffOrder{i};
+                if ~isfield(app.ChannelCheck, ch) || strcmp(app.ChannelCheck.(ch).Visible, 'off')
+                    continue
+                end
+                h = app.plotCutoffLines(app.SpecAxes, ch, idx);
+                if ~isempty(h)
+                    app.SpecLines.(ch) = h;
+                end
+            end
+
             hold(app.SpecAxes,'off');
             grid(app.SpecAxes,'on');
             set(app.SpecAxes,'XScale','log','YScale','log');
+            % Switching XScale/YScale to log auto-enables minor gridlines
+            % here (2/3/4/.../9-per-decade) even though MinorGrid was never
+            % turned on explicitly - force them back off so only the major
+            % decade lines (10^-1, 10^0, 10^1, ...) show.
+            set(app.SpecAxes,'XMinorGrid','off','YMinorGrid','off');
             xlabel(app.SpecAxes,'Frequency [Hz]');
             ylabel(app.SpecAxes,'Power spectral density');
 
@@ -1820,9 +2179,23 @@ classdef MODvis_spectra < handle
 
         function h = plotCutoffLines(app, ax, ch, idx)
             % Draws CurrentData.(ch)(idx) - one channel's cutoff
-            % frequency/wavenumber (t1_fc/t2_fc/s1_fc/s2_fc on SpecAxes,
-            % t1_kc/t2_kc/s1_kc/s2_kc on WavAxes) - as a vertical line in
-            % that channel's own color. Returns the line handle as a
+            % frequency/wavenumber (t1_fc/t2_fc/s1_fc/s2_fc,
+            % t1_fc_modeled/t2_fc_modeled on SpecAxes, t1_kc/t2_kc/s1_kc/s2_kc,
+            % t1_kc_modeled/t2_kc_modeled on WavAxes) - as a vertical line.
+            % For the FP07 cutoffs that have a bench/modeled pair (t1_fc/
+            % t2_fc/t1_fc_modeled/t2_fc_modeled on SpecAxes, t1_kc/t2_kc/
+            % t1_kc_modeled/t2_kc_modeled on WavAxes), color encodes
+            % bench-vs-modeled (getSignalColor: black/red) and line style
+            % encodes t1-vs-t2 (solid/dashed) instead - so, next to the
+            % correspondingly-colored/shaded noise floor curves on
+            % SpecAxes, "which noise floor" and "which channel" and
+            % "cutoff vs. floor" all read at a glance instead of colliding
+            % on one channel-color axis, and the same convention carries
+            % over to WavAxes for a direct visual match. s1_fc/s2_fc/
+            % s1_kc/s2_kc have no modeled counterpart to disambiguate from,
+            % so they keep the original channel-colored solid-line
+            % treatment (getSignalColor falls through to the t1/t2/s1/s2
+            % token match for those). Returns the line handle as a
             % 1-element graphics array (empty if this scan's value is
             % missing/NaN), so callers share the same array-safe
             % Visible-toggling path (setLineVisible) as the spectra lines.
@@ -1833,8 +2206,103 @@ classdef MODvis_spectra < handle
             val = vals(idx);
             if ~isfinite(val); return; end
             clr = app.getSignalColor(ch);
-            h = xline(ax, val, '-', 'Color', clr, 'LineWidth', 2.5);
+            style = '-';
+            if startsWith(ch, 't2_fc') || startsWith(ch, 't2_kc')
+                style = '--';
+            end
+            h = xline(ax, val, style, 'Color', clr, 'LineWidth', 2.5);
             set(h, 'Visible', app.getChannelOnOr(ch, true));
+        end
+
+        function computeModeledFreqCutoff(app, pu, hasTempFs)
+            % Populates CurrentData.t1_fc_modeled/t2_fc_modeled: per-scan
+            % cutoff frequency from the same noise-floor-crossing search
+            % mod_scan_fpo7_cutoff.m runs in production
+            % (mod_scan_fpo7_cutoff_search.m, the shared core), run against
+            % the theoretical modeled noise floor
+            % (mod_scan_fpo7_modeled_noise_f.m) instead of the bench-
+            % measured one - see docs/workflow/L2_calc_chi.md,
+            % "Contamination-frequency cap", for why the two are worth
+            % comparing directly. Same shape/contract as t1_fc/t2_fc (a
+            % per-scan array in CurrentData) so plotCutoffLines needs no
+            % special-casing - only getPhysSpectrum's noise-floor-curve
+            % overlays get that treatment, this is a cutoff line like
+            % FreqCutoffOrder's entries.
+            %
+            % Also populates CurrentData.t1_kc_modeled/t2_kc_modeled
+            % (ModeledWavCutoffOrder) when this file carries a per-scan
+            % spectra.k matrix - the same cutoff bin's wavenumber, read
+            % directly out of spectra.k rather than re-deriving a fall
+            % speed, exactly as t1_kc/t2_kc are Profile.tg_kc's own
+            % already-converted companion to Profile.tg_fc.
+            %
+            % pu/hasTempFs are the same values onFileSelected already
+            % resolved for the fpo7_noise_modeled_f checkbox - passed in
+            % rather than re-derived, since the guard conditions are
+            % identical (needs bench noise_coefs for context even though
+            % the modeled floor itself doesn't use them directly, plus
+            % local temperature and Fs_epsi).
+            for i = 1:numel(app.ModeledFreqCutoffOrder)
+                app.CurrentData.(app.ModeledFreqCutoffOrder{i}) = [];
+            end
+            for i = 1:numel(app.ModeledWavCutoffOrder)
+                app.CurrentData.(app.ModeledWavCutoffOrder{i}) = [];
+            end
+            if isempty(pu.noise_coefs) || ~hasTempFs ...
+                    || ~isfield(app.CurrentData, 'spectra') || ~isfield(app.CurrentData.spectra, 'f')
+                return
+            end
+
+            f = app.CurrentData.spectra.f(:);
+            valid = f > 0;
+            if ~any(valid); return; end
+            vidx = find(valid); % index positions, not the logical mask itself -
+            % f(vidx(fc_idx)) below maps a local (f(valid)-space) index back
+            % to the original array; f(valid(fc_idx)) would be a bug (valid
+            % is logical, so valid(fc_idx) evaluates to true/false, and
+            % f(true) silently reads f(1), not the intended bin)
+            fs = app.CurrentData.Fs_epsi;
+            electronics_filter = mod_scan_adc_filter(f(valid), 'sinc4').^2;
+
+            hasK = isfield(app.CurrentData.spectra, 'k') && ~isempty(app.CurrentData.spectra.k) ...
+                && size(app.CurrentData.spectra.k, 2) == numel(f);
+            if hasK
+                kAxis = app.CurrentData.spectra.k;
+            end
+
+            for i = 1:numel(app.ModeledFreqCutoffOrder)
+                outField = app.ModeledFreqCutoffOrder{i};
+                kcField = app.ModeledWavCutoffOrder{i}; % same t1/t2 order as ModeledFreqCutoffOrder
+                base = outField(1:2); % 't1' or 't2'
+                voltField = [base '_volt_f'];
+                if ~isfield(app.CurrentData.spectra, voltField)
+                    continue
+                end
+                Pt_volt_f = app.CurrentData.spectra.(voltField);
+                nScan = size(Pt_volt_f, 1);
+                fc = nan(nScan, 1);
+                kc = nan(nScan, 1);
+                for iScan = 1:nScan
+                    if iScan > numel(app.CurrentData.temperature); break; end
+                    T = app.CurrentData.temperature(iScan);
+                    if ~isfinite(T); continue; end
+                    noise_f = mod_scan_fpo7_modeled_noise_f(f(valid), T, fs, electronics_filter);
+                    medspec = smoothdata(Pt_volt_f(iScan, valid)', 'movmean', app.NSmoothFSpectrum);
+                    fc_idx = mod_scan_fpo7_cutoff_search(f(valid), medspec, noise_f, ...
+                        app.ModeledCutoffSNmin, app.ModeledCutoffNskip, app.ModeledCutoffContamFreqHz);
+                    fc(iScan) = f(vidx(fc_idx));
+                    if hasK && iScan <= size(kAxis, 1)
+                        kval = kAxis(iScan, vidx(fc_idx));
+                        if isfinite(kval)
+                            kc(iScan) = kval;
+                        end
+                    end
+                end
+                app.CurrentData.(outField) = fc;
+                if hasK
+                    app.CurrentData.(kcField) = kc;
+                end
+            end
         end
 
         function Pxx = getPhysSpectrum(app, ch, pu, idx, f)
@@ -1968,9 +2436,23 @@ classdef MODvis_spectra < handle
                 end
             end
 
+            for i = 1:numel(app.ModeledWavCutoffOrder)
+                ch = app.ModeledWavCutoffOrder{i};
+                if ~isfield(app.ChannelCheck, ch) || strcmp(app.ChannelCheck.(ch).Visible, 'off')
+                    continue
+                end
+                h = app.plotCutoffLines(app.WavAxes, ch, idx);
+                if ~isempty(h)
+                    app.WavLines.(ch) = h;
+                end
+            end
+
             hold(app.WavAxes,'off');
             grid(app.WavAxes,'on');
             set(app.WavAxes,'XScale','log','YScale','log');
+            % See plotSpectrum's matching comment - log XScale/YScale
+            % auto-enables minor gridlines here too; force back off.
+            set(app.WavAxes,'XMinorGrid','off','YMinorGrid','off');
             xlabel(app.WavAxes,'Wavenumber [cpm]');
             ylabel(app.WavAxes,'Power spectral density');
 
@@ -2029,6 +2511,7 @@ classdef MODvis_spectra < handle
             % values"), so filter with isgraphics/set() instead, which
             % both handle arrays natively.
             app.setLineVisible('SpecLines', ch, tf);
+            app.setLineVisible('SpecShade', ch, tf);
             app.setLineVisible('WavLines', ch, tf);
             app.setLineVisible('WavTheoryLines', ch, tf);
         end

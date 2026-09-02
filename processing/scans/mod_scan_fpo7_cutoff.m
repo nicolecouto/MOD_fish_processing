@@ -61,6 +61,12 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %                    multiplier (SN_min in DESCRIPTION/NOTES above)
 %                  metadata.PROCESS.CHI.n_skip - lowest-frequency bins
 %                    excluded (n_skip in DESCRIPTION/NOTES above)
+%                  metadata.PROCESS.CHI.contam_freq_hz - known FP07
+%                    electrical-contamination frequency [Hz] for this
+%                    deployment, or Inf if none is known (see NOTES). Caps
+%                    fc_index so a fixed spectral line can't hold the
+%                    smoothed spectrum above the noise floor and pull the
+%                    cutoff out past it.
 %                See MODsetup_metadata_field_registry.m for each one's
 %                historical default (shown as the prompt's starting value).
 %   noise_coefs - struct with fields n0, n1, n2, n3 (bench noise floor
@@ -77,14 +83,15 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %                floor. Caller converts to a cutoff wavenumber via
 %                kc = k(fc_index). If the spectrum never crosses the
 %                noise floor at all, fc_index is the last f > 0 bin (i.e.
-%                "trust the whole spectrum").
+%                "trust the whole spectrum") - unless contam_freq_hz caps
+%                it first (see NOTES).
 %
 % CALLED BY
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_fpo7_bench_noise_f.m,
-%   mod_scan_fpo7_noise_adjust.m
+%   mod_scan_fpo7_noise_adjust.m, mod_scan_fpo7_cutoff_search.m
 %
 % NOTES
 %   Noise floor evaluation (the log10(f) cubic polynomial) used to be
@@ -92,7 +99,10 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   one copy of that formula in the repo, not two - same coefficients,
 %   same math, no behavior change. Same for the adjust_spec normalization
 %   (mod_scan_fpo7_noise_adjust.m) - needed a second caller
-%   (MODvis_spectra.m's shifted-noise-floor checkbox), same extraction.
+%   (MODvis_spectra.m's shifted-noise-floor checkbox), same extraction -
+%   and now the crossing search itself (mod_scan_fpo7_cutoff_search.m),
+%   needed by a third caller (MODvis_spectra.m's live modeled-noise-floor
+%   cutoff checkbox - see the contam_freq_hz paragraph below).
 %
 %   Ports the old MOD_fish_lib FPO7_cutoff.m's approach (bench noise
 %   floor, movmean smoothing, SN_min=3 threshold, skip the first 2
@@ -123,6 +133,29 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   worth having fixed given how much this whole exercise is about
 %   auditing exactly this kind of thing.
 %
+%   contam_freq_hz (added later) covers the opposite failure mode: when
+%   chi is high enough that the observed spectrum never drops into the
+%   bench noise floor at all, the search above has no natural answer and
+%   (like the old code) defaults to trusting the whole spectrum. A fixed
+%   spectral contamination line sitting in that band would hold the
+%   smoothed spectrum up and get integrated as if it were real turbulent
+%   signal. Real ASTRAL data shows exactly this: a sharp, reproducible
+%   ~59 Hz line on the FP07 channels (present on shear too, absent on
+%   accel - looks electrical, not the deployment's separate ~48 Hz
+%   mechanical/pump line, which does the reverse). A deconvolution-gain
+%   threshold was considered instead of a fixed frequency and rejected -
+%   gain at 59 Hz is only ~9x (not yet "blown up"), so any threshold loose
+%   enough not to also truncate legitimate lower-frequency signal would
+%   not have caught it. contam_freq_hz defaults to Inf (no cap) since this
+%   is a per-deployment value - only ASTRAL has been characterized so far.
+%   See docs/workflow/L2_calc_chi.md, "Contamination-frequency cap" for
+%   the full investigation and the per-channel-type frequency table.
+%
+%   MODvis_spectra.m's live "cutoff (modeled)" checkbox reuses this same
+%   search (mod_scan_fpo7_cutoff_search.m), contam_freq_hz cap included,
+%   against the theoretical noise floor instead of the bench-measured one
+%   - see that function's DESCRIPTION for how the two callers share it.
+%
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 yaml_file = '';
@@ -130,12 +163,13 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip'});
+    {'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip', 'contam_freq_hz'});
 
 noise_adjusted_to_f = metadata.PROCESS.CHI.noise_adjusted_to_f;
 n_smooth_f_spectrum = metadata.PROCESS.CHI.n_smooth_f_spectrum;
 SN_min = metadata.PROCESS.CHI.sn_min;
 n_skip = metadata.PROCESS.CHI.n_skip; % don't trust the first n_skip (lowest-frequency) Fourier coefficients
+contam_freq_hz = metadata.PROCESS.CHI.contam_freq_hz; % Inf = no known contamination line, no cap applied
 
 f = scan.spectra.f(:);
 Pxx = scan.spectra.Pt_volt_f(:);
@@ -159,21 +193,14 @@ if adjust_spec > 10
         'noisy scan or a probe/electronics issue worth checking.']);
 end
 
-search_idx = (n_skip + 1):numel(valid); % positions within `valid`/`medspec`, skipping the first n_skip
-below_floor = medspec(search_idx) ./ adjust_spec < SN_min * noise_f(search_idx);
-first_noisy = find(below_floor, 1, 'first');
-
-if isempty(first_noisy)
-    fc_index = valid(end); % never drops into noise - trust the whole spectrum
-else
-    % Convert back from a `search_idx`-relative position to the original
-    % f/Pxx index space (see NOTES point 2), then step back one bin so
-    % fc_index lands on the last bin still above the floor, not the first
-    % one below it (matches the old code's final `fc_index - 1` step).
-    first_noisy_orig = valid(search_idx(first_noisy));
-    fc_index = first_noisy_orig - 1;
-    fc_index = max(fc_index, valid(1));
-end
+% Search runs on the already-scaled bench noise floor (noise_f*adjust_spec
+% puts it on the observed spectrum's own scale - see mod_scan_fpo7_noise_adjust.m)
+% and returns an index local to f(valid)/medspec/noise_f; map back to the
+% original (possibly f=0-inclusive) array via valid(...) - see NOTES point
+% 2 for why this mapping matters.
+fc_index_local = mod_scan_fpo7_cutoff_search(f(valid), medspec, noise_f .* adjust_spec, ...
+    SN_min, n_skip, contam_freq_hz);
+fc_index = valid(fc_index_local);
 
 scan.spectra.fc_index = fc_index;
 
