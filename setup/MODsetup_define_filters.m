@@ -59,7 +59,7 @@ function metadata = MODsetup_define_filters(metadata)
 %   MODsetup_read_yaml.m - needs no L0/L1 data)
 %
 % CALLS
-%   (none)
+%   mod_scan_adc_filter.m
 %
 % NOTES
 %   f is derived via a cheap dummy pwelch call (zeros(nfft,1), same nfft/
@@ -94,7 +94,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
     if isfield(metadata.AFE.(ch), 'ADCfilter')
         ADCfilter = metadata.AFE.(ch).ADCfilter;
     end
-    H_adc = adc_filter(f, ADCfilter);
+    H_adc = mod_scan_adc_filter(f, ADCfilter);
     if isempty(H_adc)
         warning('MODsetup_define_filters:unknownADCfilter', ...
             'Channel %s has unrecognized ADCfilter "%s" - electronics_filter not set.', ...
@@ -125,20 +125,6 @@ for iC = 1:numel(metadata.PROCESS.channels)
 end
 
 end %end function
-
-%% ADC anti-alias filter response, amplitude (not yet squared). Only
-% 'sinc4' is implemented - the only ADCfilter type any real setup.yml or
-% legacy metadata this repo has seen actually uses (get_filters_SOM.m's
-% only case too). Returns [] for anything else, so the caller can warn
-% and skip rather than silently produce a wrong filter.
-function H = adc_filter(f, ADCfilter)
-switch lower(ADCfilter)
-    case 'sinc4'
-        H = (sinc(f ./ (2 * f(end)))).^4;
-    otherwise
-        H = [];
-end
-end
 
 %% Shear probe charge-amp electronics filter, from a network-analysis
 % measurement (freq/coef_filt), interpolated onto f. Gain is 1 - matches

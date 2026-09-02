@@ -83,13 +83,16 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
 %
 % CALLS
-%   MODsetup_validate_metadata.m, mod_scan_fpo7_bench_noise_f.m
+%   MODsetup_validate_metadata.m, mod_scan_fpo7_bench_noise_f.m,
+%   mod_scan_fpo7_noise_adjust.m
 %
 % NOTES
 %   Noise floor evaluation (the log10(f) cubic polynomial) used to be
 %   inline here; pulled out into mod_scan_fpo7_bench_noise_f.m so there's
 %   one copy of that formula in the repo, not two - same coefficients,
-%   same math, no behavior change.
+%   same math, no behavior change. Same for the adjust_spec normalization
+%   (mod_scan_fpo7_noise_adjust.m) - needed a second caller
+%   (MODvis_spectra.m's shifted-noise-floor checkbox), same extraction.
 %
 %   Ports the old MOD_fish_lib FPO7_cutoff.m's approach (bench noise
 %   floor, movmean smoothing, SN_min=3 threshold, skip the first 2
@@ -147,12 +150,9 @@ noise_f = mod_scan_fpo7_bench_noise_f(f(valid), noise_coefs);
 medspec = smoothdata(Pxx(valid), 'movmean', n_smooth_f_spectrum);
 
 % Normalize the observed spectrum's noise floor onto the bench
-% measurement's scale, using only the top frequency range
-% (noise_adjusted_to_f*f(end) to f(end)) - close to Nyquist, where real
-% turbulent signal has long since rolled off and what remains should be
-% almost pure instrument noise on both sides of the comparison.
-high_freq = f(valid) > noise_adjusted_to_f * f(valid(end));
-adjust_spec = median(medspec(high_freq) ./ noise_f(high_freq), 'omitmissing');
+% measurement's scale - see mod_scan_fpo7_noise_adjust.m for why.
+adjust_spec = mod_scan_fpo7_noise_adjust(f(valid), Pxx(valid), noise_coefs, ...
+    noise_adjusted_to_f, n_smooth_f_spectrum);
 if adjust_spec > 10
     warning('mod_scan_fpo7_cutoff:highNoiseFloor', ...
         ['Observed noise floor is >10x the bench measurement - either a ' ...

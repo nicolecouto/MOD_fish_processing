@@ -80,17 +80,17 @@ classdef MODvis_spectra < handle
         SpecAxes
         SpecLines struct = struct()     % channel name -> line handle
         ChannelOn struct = struct()     % channel name -> logical, persists across files
-        ChannelCheckPanel
+        SpecCheckPanel   % 2-column checkbox panel next to SpecAxes (raw | physical+cutoffs)
         ChannelCheck struct = struct()  % channel name -> uicheckbox handle
         ChannelOrder cell = {'t1_volt_f','t2_volt_f','s1_volt_f','s2_volt_f','a1_g_f','a2_g_f','a3_g_f'}
         SpecTitle matlab.ui.control.Label
 
-        % Physical-units frequency-domain spectra + FPO7 noise floor
+        % FPO7 noise-floor curves, in physical (volts^2/Hz) units
         % (legacy Profile files only - see normalizeLegacyProfile). Share
-        % the same ChannelCheckPanel/ChannelOn/ChannelCheck maps as
-        % ChannelOrder above (keyed by these same 5 strings), just a
-        % second group of rows appended below a divider.
-        PhysChannelOrder cell = {'t1_Tg_f','t2_Tg_f','s1_vel_f','s2_vel_f','fpo7_noise_f'}
+        % the same SpecCheckPanel/ChannelOn/ChannelCheck maps as
+        % ChannelOrder above, just a second group of rows ("Noise floors"
+        % divider) appended below.
+        PhysChannelOrder cell = {'fpo7_noise_f','t1_noise_shifted_f','t2_noise_shifted_f','fpo7_noise_modeled_f'}
 
         % Cutoff frequency/wavenumber - Profile.tg_fc/.sh_fc/.tg_kc/.sh_kc
         % are each [nbscan x 2], one column per channel (t1/t2 for tg_*,
@@ -105,17 +105,32 @@ classdef MODvis_spectra < handle
         FreqCutoffOrder cell = {'t1_fc','t2_fc','s1_fc','s2_fc'}
         WavCutoffOrder cell = {'t1_kc','t2_kc','s1_kc','s2_kc'}
 
+        % Batchelor theory overlay checkboxes - t1/t2 only (Batchelor is a
+        % temperature-gradient spectrum; shear channels keep their existing
+        % Panchev overlay, still tied to the observed s1_shear_k/s2_shear_k
+        % checkbox, untouched by this pair). Decoupled from the observed
+        % *_Tg_k spectrum checkbox so the theory curve can be shown/hidden
+        % independently. "Obs" pairs Profile.chi (mod_scan_calc_chi_obs.m,
+        % fit directly against the data) with epsilon_final; "Mle" pairs
+        % Profile.chi_mle (mod_scan_calc_chi_mle.m) with the same
+        % epsilon_final - Profile carries no separate "final" MLE epsilon,
+        % and epsilon (dissipation) is a property of the flow, not of which
+        % chi-estimation method produced the temperature-gradient variance.
+        BatchelorObsOrder cell = {'t1_batchelor_obs','t2_batchelor_obs'}
+        BatchelorMleOrder cell = {'t1_batchelor_mle','t2_batchelor_mle'}
+
         WavAxes                          % wavenumber-domain panel, below SpecAxes
         WavLines struct = struct()       % _k channel name -> observed line handle
-        WavTheoryLines struct = struct() % same keys -> Batchelor/Panchev theory line handle
+        WavTheoryLines struct = struct() % Batchelor/Panchev theory line handle, keyed by
+                                          % its own checkbox name (_k channel name for
+                                          % Panchev, t{1,2}_batchelor_{obs,mle} for Batchelor)
+        WavCheckPanel    % 2-column checkbox panel next to WavAxes (_k channels+cutoffs | Batchelor obs+MLE)
         WavDivLbl        % "Wavenumber" divider label, rebuilt per file
-        DynamicWavKeys cell = {}  % currently-built _k/cutoff checkbox field
+        BatchelorObsDivLbl  % "Batchelor (from data)" divider label, rebuilt per file
+        BatchelorMleDivLbl  % "Batchelor (MLE)" divider label, rebuilt per file
+        DynamicWavKeys cell = {}  % currently-built _k/cutoff/Batchelor checkbox field
                                   % names, so they can be torn down before the
                                   % next file's rebuild (see rebuildWavCheckboxes)
-        StaticCheckRows double = 0  % row count of the fixed checkbox groups
-                                    % (raw/physical/freq-cutoff) built once in
-                                    % buildUI - rebuildWavCheckboxes appends
-                                    % the dynamic wavenumber group below this
 
         GlobalDnum double = []   % L2 scan-center dnum (drives x-window + scan picking)
         ProfileTmin double = 0
@@ -150,6 +165,24 @@ classdef MODvis_spectra < handle
 
     properties (Constant)
         NoneItem = '(none)'   % axis-2 sentinel meaning "don't plot a second field"
+
+        % Legacy Profile files carry no setup.yml, so the shifted-noise-
+        % floor checkboxes (t1/t2_noise_shifted_f) use this repo's own
+        % historical defaults for mod_scan_fpo7_noise_adjust.m's inputs
+        % (MODsetup_metadata_field_registry.m) - confirmed identical to
+        % what the legacy MOD_fish_lib FPO7_cutoff.m actually used
+        % (hardcoded 0.7/15 there too), so these are a faithful default,
+        % not a guess.
+        NoiseAdjustedToF = 0.7
+        NSmoothFSpectrum = 15
+
+        % Default floor for the wavenumber (bottom) spectrum panel's
+        % y-axis minimum, applied whenever it's not manually locked -
+        % several theory curves (Batchelor/Panchev) decay toward zero at
+        % high wavenumber, so a bare auto-scale often floors many orders
+        % of magnitude below where any real data lives, squashing the
+        % part of the log-scale axis anyone actually wants to see.
+        WavYMinDefault = 1e-11
     end
 
     methods
@@ -173,6 +206,12 @@ classdef MODvis_spectra < handle
             for i = 1:numel(app.WavCutoffOrder)
                 app.ChannelOn.(app.WavCutoffOrder{i}) = true;
             end
+            for i = 1:numel(app.BatchelorObsOrder)
+                app.ChannelOn.(app.BatchelorObsOrder{i}) = true;
+            end
+            for i = 1:numel(app.BatchelorMleOrder)
+                app.ChannelOn.(app.BatchelorMleOrder{i}) = true;
+            end
             app.YTickTextHandles = cell(app.NRows,1);
             app.YTickTextHandles2 = cell(app.NRows,1);
             app.Axis1Color = repmat({[0.15 0.15 0.15]}, app.NRows, 1);
@@ -183,7 +222,7 @@ classdef MODvis_spectra < handle
         end
 
         function buildUI(app)
-            app.Fig = uifigure('Name','Spectra Explorer','Position',[100 100 1350 1300]);
+            app.Fig = uifigure('Name','Spectra Explorer','Position',[100 100 1490 1300]);
 
             app.GL = uigridlayout(app.Fig,[1 2]);
             app.GL.ColumnWidth = {240,'1x'};
@@ -351,14 +390,26 @@ classdef MODvis_spectra < handle
             % Freq-domain spectrum (row 1) + wavenumber-domain spectrum
             % (row 2, new) stacked in column 1, squished narrower than
             % before to leave room for a checkbox column (column 2) that
-            % spans both rows - one checkbox list controls both panels.
+            % spans both rows. Each axis gets its own 2-column checkbox
+            % panel (SpecCheckPanel/WavCheckPanel) rather than one long
+            % shared list, to keep the growing checkbox count from
+            % outrunning the window height.
+            % Left padding (68) matches the top 3 rows' own left margin
+            % (reserved there for their custom axis-1 tick text - see the
+            % row-building loop above) purely so SpecAxes/WavAxes line up
+            % under TopAxes, not because these axes need that margin
+            % themselves. The checkbox-column width (403) is sized so the
+            % axes column comes out exactly as wide as TopAxes - measured
+            % empirically (TopAxes 723px vs SpecAxes 914px before this
+            % fix, at this class's current Fig/GL/left-panel dimensions);
+            % revisit this number if those change.
             combinedRow = uigridlayout(specSection, [2 2]);
             combinedRow.Layout.Row = 2; combinedRow.Layout.Column = 1;
             combinedRow.RowHeight = {'1x','1x'};
-            combinedRow.ColumnWidth = {'1x', 140};
+            combinedRow.ColumnWidth = {'1x', 403};
             combinedRow.ColumnSpacing = 6;
             combinedRow.RowSpacing = 6;
-            combinedRow.Padding = [0 0 0 0];
+            combinedRow.Padding = [68 0 0 0];
 
             app.SpecAxes = uiaxes(combinedRow);
             app.SpecAxes.Layout.Row = 1; app.SpecAxes.Layout.Column = 1;
@@ -372,52 +423,73 @@ classdef MODvis_spectra < handle
             xlabel(app.WavAxes,'Wavenumber [cpm]');
             ylabel(app.WavAxes,'Power spectral density');
 
-            % Static checkbox groups (raw / physical units / freq
-            % cutoffs) - built once here, visibility toggled per file.
-            % The dynamic wavenumber group (any _k spectra this file has,
-            % plus the wavenumber cutoffs) is appended below these by
-            % rebuildWavCheckboxes every time a file loads, since its row
-            % count varies file to file.
+            % Spec checkbox panel (static, built once here, visibility
+            % toggled per file): column 1 = raw channels, column 2 =
+            % noise floors + freq cutoffs.
             nRawCb = numel(app.ChannelOrder);
             nPhysCb = numel(app.PhysChannelOrder);
             nFreqCutoffCb = numel(app.FreqCutoffOrder);
-            app.StaticCheckRows = nRawCb + 1 + nPhysCb + 1 + nFreqCutoffCb;
+            col1Rows = 1 + nRawCb;                        % "Raw channels" + entries
+            col2Rows = 1 + nPhysCb + 1 + nFreqCutoffCb;    % "Physical units" + entries + "Cutoffs" + entries
+            specRows = max(col1Rows, col2Rows);
 
-            app.ChannelCheckPanel = uigridlayout(combinedRow, [app.StaticCheckRows 1]);
-            app.ChannelCheckPanel.Layout.Row = [1 2]; app.ChannelCheckPanel.Layout.Column = 2;
-            app.ChannelCheckPanel.RowHeight = repmat({'fit'},1,app.StaticCheckRows);
-            app.ChannelCheckPanel.ColumnWidth = {'1x'};
-            app.ChannelCheckPanel.RowSpacing = 6;
-            app.ChannelCheckPanel.Padding = [4 20 0 0];
+            app.SpecCheckPanel = uigridlayout(combinedRow, [specRows 2]);
+            app.SpecCheckPanel.Layout.Row = 1; app.SpecCheckPanel.Layout.Column = 2;
+            app.SpecCheckPanel.RowHeight = repmat({'fit'},1,specRows);
+            app.SpecCheckPanel.ColumnWidth = {'1x','1x'};
+            app.SpecCheckPanel.RowSpacing = 6;
+            app.SpecCheckPanel.ColumnSpacing = 8;
+            app.SpecCheckPanel.Padding = [4 20 0 0];
 
+            rawDivLbl = uilabel(app.SpecCheckPanel, 'Text', 'Raw channels', 'FontWeight', 'bold');
+            rawDivLbl.Layout.Row = 1; rawDivLbl.Layout.Column = 1;
+            rawDivLbl.FontSize = 10;
             for i = 1:nRawCb
                 ch = app.ChannelOrder{i};
-                app.addChannelCheckbox(ch, ch, i);
+                app.addChannelCheckbox(ch, ch, app.SpecCheckPanel, 1 + i, 1);
             end
 
-            divRow = nRawCb + 1;
-            divLbl = uilabel(app.ChannelCheckPanel, 'Text', 'Physical units', 'FontWeight', 'bold');
-            divLbl.Layout.Row = divRow; divLbl.Layout.Column = 1;
+            row = 1;
+            divLbl = uilabel(app.SpecCheckPanel, 'Text', 'Noise floors', 'FontWeight', 'bold');
+            divLbl.Layout.Row = row; divLbl.Layout.Column = 2;
             divLbl.FontSize = 10;
-
             for i = 1:nPhysCb
+                row = row + 1;
                 ch = app.PhysChannelOrder{i};
                 lbl = ch;
-                if strcmp(ch, 'fpo7_noise_f')
-                    lbl = 'FPO7 noise floor';
+                switch ch
+                    case 'fpo7_noise_f'
+                        lbl = 'FPO7 noise floor';
+                    case 't1_noise_shifted_f'
+                        lbl = 't1 noise floor (shifted)';
+                    case 't2_noise_shifted_f'
+                        lbl = 't2 noise floor (shifted)';
+                    case 'fpo7_noise_modeled_f'
+                        lbl = 'FPO7 noise floor (modeled)';
                 end
-                app.addChannelCheckbox(ch, lbl, divRow + i);
+                app.addChannelCheckbox(ch, lbl, app.SpecCheckPanel, row, 2);
             end
 
-            divRow2 = divRow + nPhysCb + 1;
-            divLbl2 = uilabel(app.ChannelCheckPanel, 'Text', 'Cutoffs (vertical lines)', 'FontWeight', 'bold');
-            divLbl2.Layout.Row = divRow2; divLbl2.Layout.Column = 1;
+            row = row + 1;
+            divLbl2 = uilabel(app.SpecCheckPanel, 'Text', 'Cutoffs (vertical lines)', 'FontWeight', 'bold');
+            divLbl2.Layout.Row = row; divLbl2.Layout.Column = 2;
             divLbl2.FontSize = 10;
-
             for i = 1:nFreqCutoffCb
+                row = row + 1;
                 ch = app.FreqCutoffOrder{i};
-                app.addChannelCheckbox(ch, ch, divRow2 + i);
+                app.addChannelCheckbox(ch, ch, app.SpecCheckPanel, row, 2);
             end
+
+            % Wav checkbox panel: dynamic, torn down/rebuilt per file (row
+            % count varies) - see rebuildWavCheckboxes. Built empty here so
+            % the layout exists before the first file loads.
+            app.WavCheckPanel = uigridlayout(combinedRow, [1 2]);
+            app.WavCheckPanel.Layout.Row = 2; app.WavCheckPanel.Layout.Column = 2;
+            app.WavCheckPanel.RowHeight = {'fit'};
+            app.WavCheckPanel.ColumnWidth = {'1x','1x'};
+            app.WavCheckPanel.RowSpacing = 6;
+            app.WavCheckPanel.ColumnSpacing = 8;
+            app.WavCheckPanel.Padding = [4 20 0 0];
 
             ylimRow = uigridlayout(specSection, [1 6]);
             ylimRow.Layout.Row = 3; ylimRow.Layout.Column = 1;
@@ -481,9 +553,9 @@ classdef MODvis_spectra < handle
         end
 
         function buildFieldControls(app, parent, colIdx, rowIdx, axisNum)
-            % One "Field / Y-limits / Reset" control panel for either axis 1
-            % (left, required) or axis 2 (right, optional - its Items
-            % include NoneItem as the first, default entry).
+            % One "Field / Y-limits / Reset" control panel for either axis -
+            % both left and right include NoneItem as a selectable entry
+            % (Items populated per file in onFileSelected/clearAll).
             ctrl = uigridlayout(parent,[4 3]);
             ctrl.Layout.Row = 1;
             ctrl.Layout.Column = colIdx;
@@ -693,7 +765,7 @@ classdef MODvis_spectra < handle
             end
 
             for i = 2:app.NRows
-                app.FieldADrop(i).Items = cellstr(channels);
+                app.FieldADrop(i).Items = [{app.NoneItem}; cellstr(channels)];
                 app.FieldBDrop(i).Items = [{app.NoneItem}; cellstr(channels)];
                 app.FieldADrop(i).Enable = has_l1_epsi;
                 app.FieldBDrop(i).Enable = has_l1_epsi;
@@ -712,19 +784,20 @@ classdef MODvis_spectra < handle
                 app.ChannelCheck.(ch).Visible = any(strcmp(l2_channels, ch));
             end
 
-            % Physical-units checkboxes - only legacy Profile files carry
+            % Noise-floor checkboxes - only legacy Profile files carry
             % this data (normalizeLegacyProfile); new-format L2/profile
             % files have no physUnits/wavenumber fields, so these stay
             % hidden for them.
-            pu = struct('cal', struct(), 'vel_f', struct(), 'noise_coefs', []);
+            pu = struct('noise_coefs', []);
             if isfield(app.CurrentData, 'physUnits')
                 pu = app.CurrentData.physUnits;
             end
-            app.ChannelCheck.t1_Tg_f.Visible = isfield(pu.cal, 't1') && any(strcmp(l2_channels, 't1_volt_f'));
-            app.ChannelCheck.t2_Tg_f.Visible = isfield(pu.cal, 't2') && any(strcmp(l2_channels, 't2_volt_f'));
-            app.ChannelCheck.s1_vel_f.Visible = isfield(pu.vel_f, 's1');
-            app.ChannelCheck.s2_vel_f.Visible = isfield(pu.vel_f, 's2');
             app.ChannelCheck.fpo7_noise_f.Visible = ~isempty(pu.noise_coefs);
+            app.ChannelCheck.t1_noise_shifted_f.Visible = ~isempty(pu.noise_coefs) && any(strcmp(l2_channels, 't1_volt_f'));
+            app.ChannelCheck.t2_noise_shifted_f.Visible = ~isempty(pu.noise_coefs) && any(strcmp(l2_channels, 't2_volt_f'));
+            hasTempFs = isfield(app.CurrentData,'temperature') && ~isempty(app.CurrentData.temperature) ...
+                && isfield(app.CurrentData,'Fs_epsi') && isfinite(app.CurrentData.Fs_epsi);
+            app.ChannelCheck.fpo7_noise_modeled_f.Visible = ~isempty(pu.noise_coefs) && hasTempFs;
 
             % Frequency-domain cutoff checkboxes (vertical lines on SpecAxes).
             for i = 1:numel(app.FreqCutoffOrder)
@@ -766,37 +839,38 @@ classdef MODvis_spectra < handle
             end
         end
 
-        function cb = addChannelCheckbox(app, ch, lbl, row, clr)
+        function cb = addChannelCheckbox(app, ch, lbl, panel, row, col, clr)
             % Shared checkbox-creation helper for every group (raw,
-            % physical units, cutoffs, dynamic wavenumber) - keeps the
-            % checkbox's initial Value in sync with any persisted
-            % ChannelOn preference (relevant for the dynamic wavenumber
-            % group, whose checkboxes are torn down and rebuilt every file
+            % noise floors, cutoffs, dynamic wavenumber, Batchelor
+            % obs/MLE) - keeps the checkbox's initial Value in sync with
+            % any persisted ChannelOn preference (relevant for the dynamic
+            % groups, whose checkboxes are torn down and rebuilt every file
             % load - see rebuildWavCheckboxes).
-            if nargin < 5
+            if nargin < 7
                 clr = app.getSignalColor(ch);
             end
             if ~isfield(app.ChannelOn, ch)
                 app.ChannelOn.(ch) = true;
             end
-            cb = uicheckbox(app.ChannelCheckPanel, 'Text', lbl, ...
+            cb = uicheckbox(panel, 'Text', lbl, ...
                 'Value', app.ChannelOn.(ch), ...
                 'FontColor', clr, ...
                 'ValueChangedFcn', @(src,~)app.onChannelCheckChanged(ch, src.Value));
-            cb.Layout.Row = row; cb.Layout.Column = 1;
+            cb.Layout.Row = row; cb.Layout.Column = col;
             cb.FontSize = 11;
             app.ChannelCheck.(ch) = cb;
         end
 
         function rebuildWavCheckboxes(app)
-            % Rebuilds the dynamic wavenumber checkbox group - any
-            % spectra.*_k channel this file has (getWavChannelList), plus
+            % Rebuilds WavCheckPanel's two columns - column 1: any
+            % spectra.*_k channel this file has (getWavChannelList) plus
             % the wavenumber cutoffs (WavCutoffOrder) when this file
-            % carries them - appended below the static groups built once
-            % in buildUI. Unlike those static groups, this one's row count
-            % varies file to file (legacy Profile files only; new-format
-            % files have none), so it's torn down and rebuilt on every
-            % onFileSelected rather than built once.
+            % carries them; column 2: Batchelor theory-overlay checkboxes
+            % (BatchelorObsOrder/BatchelorMleOrder), each only offered when
+            % this file actually carries the corresponding chi/chi_mle
+            % channel. Row count varies file to file (legacy Profile files
+            % only; new-format files have none), so it's torn down and
+            % rebuilt on every onFileSelected rather than built once.
             for i = 1:numel(app.DynamicWavKeys)
                 ch = app.DynamicWavKeys{i};
                 if isfield(app.ChannelCheck, ch)
@@ -807,9 +881,9 @@ classdef MODvis_spectra < handle
                 end
             end
             app.DynamicWavKeys = {};
-            if isgraphics(app.WavDivLbl)
-                delete(app.WavDivLbl);
-            end
+            if isgraphics(app.WavDivLbl); delete(app.WavDivLbl); end
+            if isgraphics(app.BatchelorObsDivLbl); delete(app.BatchelorObsDivLbl); end
+            if isgraphics(app.BatchelorMleDivLbl); delete(app.BatchelorMleDivLbl); end
 
             wavChannels = app.getWavChannelList();
             availableWavCutoffs = {};
@@ -820,32 +894,88 @@ classdef MODvis_spectra < handle
                 end
             end
 
-            nWavCb = numel(wavChannels) + numel(availableWavCutoffs);
-            if nWavCb == 0
-                app.ChannelCheckPanel.RowHeight = repmat({'fit'}, 1, app.StaticCheckRows);
+            chiObs = app.getFieldOr(app.CurrentData, 'chi', struct());
+            chiMle = app.getFieldOr(app.CurrentData, 'chi_mle', struct());
+            availableBatchelorObs = {};
+            for i = 1:numel(app.BatchelorObsOrder)
+                ch = app.BatchelorObsOrder{i};
+                base = ch(1:2); % 't1'/'t2'
+                if isfield(chiObs, base) && ~isempty(chiObs.(base))
+                    availableBatchelorObs{end+1} = ch; %#ok<AGROW>
+                end
+            end
+            availableBatchelorMle = {};
+            for i = 1:numel(app.BatchelorMleOrder)
+                ch = app.BatchelorMleOrder{i};
+                base = ch(1:2);
+                if isfield(chiMle, base) && ~isempty(chiMle.(base))
+                    availableBatchelorMle{end+1} = ch; %#ok<AGROW>
+                end
+            end
+
+            col1Rows = 0;
+            if ~isempty(wavChannels) || ~isempty(availableWavCutoffs)
+                col1Rows = 1 + numel(wavChannels) + numel(availableWavCutoffs); % +1 for "Wavenumber (_k)"
+            end
+            col2Rows = 0;
+            if ~isempty(availableBatchelorObs)
+                col2Rows = col2Rows + 1 + numel(availableBatchelorObs); % +1 for "Batchelor (from data)"
+            end
+            if ~isempty(availableBatchelorMle)
+                col2Rows = col2Rows + 1 + numel(availableBatchelorMle); % +1 for "Batchelor (MLE)"
+            end
+
+            if col1Rows == 0 && col2Rows == 0
+                app.WavCheckPanel.RowHeight = {'fit'};
                 return
             end
+            totalRows = max([col1Rows, col2Rows, 1]);
+            app.WavCheckPanel.RowHeight = repmat({'fit'}, 1, totalRows);
 
-            totalRows = app.StaticCheckRows + 1 + nWavCb; % +1 for the "Wavenumber" divider
-            app.ChannelCheckPanel.RowHeight = repmat({'fit'}, 1, totalRows);
-
-            divRow = app.StaticCheckRows + 1;
-            app.WavDivLbl = uilabel(app.ChannelCheckPanel, 'Text', 'Wavenumber (_k)', 'FontWeight', 'bold');
-            app.WavDivLbl.Layout.Row = divRow; app.WavDivLbl.Layout.Column = 1;
-            app.WavDivLbl.FontSize = 10;
-
-            row = divRow;
-            for i = 1:numel(wavChannels)
+            row = 0;
+            if col1Rows > 0
                 row = row + 1;
-                ch = char(wavChannels(i));
-                app.addChannelCheckbox(ch, ch, row);
-                app.DynamicWavKeys{end+1} = ch;
+                app.WavDivLbl = uilabel(app.WavCheckPanel, 'Text', 'Wavenumber (_k)', 'FontWeight', 'bold');
+                app.WavDivLbl.Layout.Row = row; app.WavDivLbl.Layout.Column = 1;
+                app.WavDivLbl.FontSize = 10;
+                for i = 1:numel(wavChannels)
+                    row = row + 1;
+                    ch = char(wavChannels(i));
+                    app.addChannelCheckbox(ch, ch, app.WavCheckPanel, row, 1);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
+                for i = 1:numel(availableWavCutoffs)
+                    row = row + 1;
+                    ch = availableWavCutoffs{i};
+                    app.addChannelCheckbox(ch, ch, app.WavCheckPanel, row, 1);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
             end
-            for i = 1:numel(availableWavCutoffs)
+
+            row = 0;
+            if ~isempty(availableBatchelorObs)
                 row = row + 1;
-                ch = availableWavCutoffs{i};
-                app.addChannelCheckbox(ch, ch, row);
-                app.DynamicWavKeys{end+1} = ch;
+                app.BatchelorObsDivLbl = uilabel(app.WavCheckPanel, 'Text', 'Batchelor (from data)', 'FontWeight', 'bold');
+                app.BatchelorObsDivLbl.Layout.Row = row; app.BatchelorObsDivLbl.Layout.Column = 2;
+                app.BatchelorObsDivLbl.FontSize = 10;
+                for i = 1:numel(availableBatchelorObs)
+                    row = row + 1;
+                    ch = availableBatchelorObs{i};
+                    app.addChannelCheckbox(ch, ch(1:2), app.WavCheckPanel, row, 2);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
+            end
+            if ~isempty(availableBatchelorMle)
+                row = row + 1;
+                app.BatchelorMleDivLbl = uilabel(app.WavCheckPanel, 'Text', 'Batchelor (MLE)', 'FontWeight', 'bold');
+                app.BatchelorMleDivLbl.Layout.Row = row; app.BatchelorMleDivLbl.Layout.Column = 2;
+                app.BatchelorMleDivLbl.FontSize = 10;
+                for i = 1:numel(availableBatchelorMle)
+                    row = row + 1;
+                    ch = availableBatchelorMle{i};
+                    app.addChannelCheckbox(ch, ch(1:2), app.WavCheckPanel, row, 2);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
             end
         end
 
@@ -932,29 +1062,13 @@ classdef MODvis_spectra < handle
             S2.Fs_epsi = Fs_epsi;
             S2.N_epsi = (dof - 1) * S2.nfft;
 
-            % --- Physical-units frequency-domain spectra + FPO7 noise
-            % floor (t1_Tg_f/t2_Tg_f/s1_vel_f/s2_vel_f/fpo7_noise_f
-            % checkboxes - see plotSpectrum/getPhysSpectrum). Only ever
-            % populated for legacy files - new-format L2/profile files
-            % don't reach normalizeLegacyProfile at all, so these fields
-            % are simply absent there and the checkboxes stay hidden.
-            S2.physUnits = struct('cal', struct(), 'vel_f', struct(), 'noise_coefs', []);
-            if isfield(Meta_Data, 'AFE') && isstruct(Meta_Data.AFE)
-                tChans = {'t1', 't2'};
-                for iT = 1:numel(tChans)
-                    ch = tChans{iT};
-                    if isfield(Meta_Data.AFE, ch) && isfield(Meta_Data.AFE.(ch), 'cal')
-                        S2.physUnits.cal.(ch) = Meta_Data.AFE.(ch).cal;
-                    end
-                end
-            end
-            if isfield(Profile, 'Ps_velocity_f') && isstruct(Profile.Ps_velocity_f)
-                velChans = fieldnames(Profile.Ps_velocity_f);
-                for iV = 1:numel(velChans)
-                    ch = velChans{iV};
-                    S2.physUnits.vel_f.(ch) = Profile.Ps_velocity_f.(ch);
-                end
-            end
+            % --- FPO7 noise-floor checkboxes (fpo7_noise_f/
+            % t1_noise_shifted_f/t2_noise_shifted_f/fpo7_noise_modeled_f -
+            % see plotSpectrum/getPhysSpectrum). Only ever populated for
+            % legacy files - new-format L2/profile files don't reach
+            % normalizeLegacyProfile at all, so this field is simply
+            % absent there and the checkboxes stay hidden.
+            S2.physUnits = struct('noise_coefs', []);
             if isfield(Meta_Data, 'PROCESS') && isstruct(Meta_Data.PROCESS) && isfield(Meta_Data.PROCESS, 'FPO7noise')
                 S2.physUnits.noise_coefs = Meta_Data.PROCESS.FPO7noise;
             end
@@ -996,6 +1110,15 @@ classdef MODvis_spectra < handle
             chi = app.getFieldOr(Profile, 'chi', []);
             if ~isempty(chi) && size(chi,2) >= 2
                 S2.chi = struct('t1', chi(:,1), 't2', chi(:,2));
+            end
+            % Profile.chi_mle - same shape/column order as chi, from the
+            % MLE chi estimator (mod_scan_calc_chi_mle.m) rather than the
+            % direct-fit-to-data one (mod_scan_calc_chi_obs.m) - feeds the
+            % second ("Batchelor MLE") theory overlay.
+            S2.chi_mle = struct();
+            chi_mle = app.getFieldOr(Profile, 'chi_mle', []);
+            if ~isempty(chi_mle) && size(chi_mle,2) >= 2
+                S2.chi_mle = struct('t1', chi_mle(:,1), 't2', chi_mle(:,2));
             end
             S2.epsilon_final = app.getFieldOr(Profile, 'epsilon_final', []);
             S2.kvis = app.getFieldOr(Profile, 'kvis', []);
@@ -1237,7 +1360,7 @@ classdef MODvis_spectra < handle
                 clr = [0 0 0];
                 return
             end
-            if strcmp(key, 'fpo7_noise_f')
+            if strcmp(key, 'fpo7_noise_f') || strcmp(key, 'fpo7_noise_modeled_f')
                 clr = [0 0 0];
                 return
             end
@@ -1246,9 +1369,9 @@ classdef MODvis_spectra < handle
                 return
             end
             % SignalColors is keyed by base channel name (t1/t2/s1/s2/
-            % a1/a2/a3); every other key variant (t1_volt_f, t1_Tg_f,
-            % s1_vel_f, a1_g_f, plain t1/s1/...) starts with one of these
-            % tokens - match on that so raw/physical/wavenumber/theory
+            % a1/a2/a3); every other key variant (t1_volt_f, t1_Tg_k,
+            % t1_noise_shifted_f, a1_g_f, plain t1/s1/...) starts with one
+            % of these tokens - match on that so raw/wavenumber/theory
             % representations of the same channel share one color.
             tokens = {'t1','t2','s1','s2','a1','a2','a3'};
             clr = [0.3 0.3 0.3];
@@ -1626,7 +1749,12 @@ classdef MODvis_spectra < handle
                     if isempty(Pxx); continue; end
                     clr = app.getSignalColor(ch);
                     style = '-';
-                    if strcmp(ch, 'fpo7_noise_f'); style = '--'; end
+                    switch ch
+                        case 'fpo7_noise_f';           style = '--';  % unshifted bench, black
+                        case {'t1_noise_shifted_f','t2_noise_shifted_f'}
+                                                        style = ':';   % shifted bench, channel color
+                        case 'fpo7_noise_modeled_f';   style = '-.';  % theoretical/modeled, black
+                    end
                     h = loglog(app.SpecAxes, f(keep), Pxx(keep), style, 'Color', clr, 'LineWidth', 1.2);
                     if isfield(app.ChannelOn, ch)
                         h.Visible = app.ChannelOn.(ch);
@@ -1705,7 +1833,7 @@ classdef MODvis_spectra < handle
             val = vals(idx);
             if ~isfinite(val); return; end
             clr = app.getSignalColor(ch);
-            h = xline(ax, val, '-', 'Color', clr, 'LineWidth', 1.2);
+            h = xline(ax, val, '-', 'Color', clr, 'LineWidth', 2.5);
             set(h, 'Visible', app.getChannelOnOr(ch, true));
         end
 
@@ -1716,25 +1844,6 @@ classdef MODvis_spectra < handle
             % used for the raw channels.
             Pxx = [];
             switch ch
-                case {'t1_Tg_f','t2_Tg_f'}
-                    base = ch(1:2); % 't1' or 't2'
-                    voltField = [base '_volt_f'];
-                    if ~isfield(pu.cal, base) || ~isfield(app.CurrentData.spectra, voltField)
-                        return
-                    end
-                    % Pt_T_f = Pt_volt_f * (degC/Volt slope)^2 - step 1 of
-                    % mod_scan_fpo7_volts_to_Tg_spectrum.m, without that
-                    % function's further thermal-lag deconvolution (that
-                    % deconvolved, wavenumber-domain version is what the
-                    % wavenumber panel below shows instead, from Profile's
-                    % own precomputed Pt_Tg_k).
-                    Pxx = app.CurrentData.spectra.(voltField)(idx,:) * pu.cal.(base)^2;
-                case {'s1_vel_f','s2_vel_f'}
-                    base = ch(1:2); % 's1' or 's2'
-                    if ~isfield(pu.vel_f, base)
-                        return
-                    end
-                    Pxx = pu.vel_f.(base)(idx,:);
                 case 'fpo7_noise_f'
                     if isempty(pu.noise_coefs)
                         return
@@ -1742,6 +1851,49 @@ classdef MODvis_spectra < handle
                     Pxx = nan(size(f));
                     valid = f > 0;
                     Pxx(valid) = mod_scan_fpo7_bench_noise_f(f(valid), pu.noise_coefs);
+                case {'t1_noise_shifted_f','t2_noise_shifted_f'}
+                    % Bench noise floor, scaled onto this scan's own
+                    % observed spectrum (mod_scan_fpo7_noise_adjust.m) -
+                    % same normalization mod_scan_fpo7_cutoff.m applies
+                    % before comparing, so this is what the noise-floor
+                    % cutoff decision actually sees, not the raw bench
+                    % curve.
+                    base = ch(1:2); % 't1' or 't2'
+                    voltField = [base '_volt_f'];
+                    if isempty(pu.noise_coefs) || ~isfield(app.CurrentData.spectra, voltField)
+                        return
+                    end
+                    Pxx = nan(size(f));
+                    valid = f > 0;
+                    noise_f = mod_scan_fpo7_bench_noise_f(f(valid), pu.noise_coefs);
+                    Pt_volt_f = app.CurrentData.spectra.(voltField)(idx,:);
+                    adjust_spec = mod_scan_fpo7_noise_adjust(f(valid), Pt_volt_f(valid), pu.noise_coefs, ...
+                        app.NoiseAdjustedToF, app.NSmoothFSpectrum);
+                    Pxx(valid) = noise_f * adjust_spec;
+                case 'fpo7_noise_modeled_f'
+                    % Theoretical Johnson+amplifier noise floor
+                    % (mod_scan_fpo7_modeled_noise_f.m), at this scan's own
+                    % local water temperature - the "not yet wired into
+                    % anything" alternative to the bench-measured floor
+                    % (see PLAN.md's 2026-08-25/26 session log). Visualized
+                    % here only; production chi still uses bench noise.
+                    if isempty(pu.noise_coefs) || ~isfield(app.CurrentData,'temperature') ...
+                            || idx > numel(app.CurrentData.temperature)
+                        return
+                    end
+                    T  = app.CurrentData.temperature(idx);
+                    fs = app.getFieldOr(app.CurrentData, 'Fs_epsi', NaN);
+                    if ~isfinite(T) || ~isfinite(fs)
+                        return
+                    end
+                    Pxx = nan(size(f));
+                    valid = f > 0;
+                    % Only ADCfilter type any real setup.yml or legacy
+                    % metadata this repo has seen actually uses (see
+                    % mod_scan_adc_filter.m) - legacy Profile files carry
+                    % no metadata.AFE.(ch).ADCfilter to read this from.
+                    electronics_filter = mod_scan_adc_filter(f(valid), 'sinc4').^2;
+                    Pxx(valid) = mod_scan_fpo7_modeled_noise_f(f(valid), T, fs, electronics_filter);
             end
         end
 
@@ -1749,10 +1901,14 @@ classdef MODvis_spectra < handle
             % Any wavenumber-domain channel this file has (getWavChannelList
             % - t1_Tg_k/t2_Tg_k/s1_shear_k/s2_shear_k today, generalizes to
             % whatever *_k field Profile carries), each gated by its own
-            % dynamically-built checkbox (rebuildWavCheckboxes), overlaid
-            % with a theoretical Batchelor curve for 't*' channels or
-            % Panchev for 's*' channels. Cutoff wavenumbers (tg_kc/sh_kc)
-            % are drawn as vertical lines the same way.
+            % dynamically-built checkbox (rebuildWavCheckboxes). Shear
+            % channels ('s*') are overlaid with a theoretical Panchev curve
+            % tied to that same checkbox. Temperature channels ('t*') get
+            % their Batchelor theory curves separately below, gated by
+            % their own BatchelorObsOrder/BatchelorMleOrder checkboxes
+            % instead - independent of whether the observed *_Tg_k spectrum
+            % itself is shown. Cutoff wavenumbers (tg_kc/sh_kc) are drawn
+            % as vertical lines the same way as the observed channels.
             cla(app.WavAxes);
             app.WavLines = struct();
             app.WavTheoryLines = struct();
@@ -1769,7 +1925,8 @@ classdef MODvis_spectra < handle
             epsilon = app.scalarOr(app.getFieldOr(app.CurrentData, 'epsilon_final', []), idx);
             kvis    = app.scalarOr(app.getFieldOr(app.CurrentData, 'kvis', []), idx);
             ktemp   = app.scalarOr(app.getFieldOr(app.CurrentData, 'ktemp', []), idx);
-            chiS    = app.getFieldOr(app.CurrentData, 'chi', struct());
+            chiObs  = app.getFieldOr(app.CurrentData, 'chi', struct());
+            chiMle  = app.getFieldOr(app.CurrentData, 'chi_mle', struct());
 
             hold(app.WavAxes,'on');
 
@@ -1786,21 +1943,19 @@ classdef MODvis_spectra < handle
                 h.Visible = app.ChannelOn.(ch);
                 app.WavLines.(ch) = h;
 
-                if startsWith(base, 't') && isfield(chiS, base)
-                    chi = app.scalarOr(chiS.(base), idx);
-                    if isfinite(chi) && isfinite(epsilon) && isfinite(kvis) && isfinite(ktemp)
-                        Psg = mod_scan_batchelor_spectrum(epsilon, chi, kvis, ktemp, k(keep));
-                        ht = loglog(app.WavAxes, k(keep), Psg, '--', 'Color', clr, 'LineWidth', 1);
-                        ht.Visible = app.ChannelOn.(ch);
-                        app.WavTheoryLines.(ch) = ht;
-                    end
-                elseif startsWith(base, 's') && isfinite(epsilon) && isfinite(kvis)
+                if startsWith(base, 's') && isfinite(epsilon) && isfinite(kvis)
                     Pan = mod_scan_panchev_spectrum(epsilon, kvis, k(keep));
                     ht = loglog(app.WavAxes, k(keep), Pan, '--', 'Color', clr, 'LineWidth', 1);
                     ht.Visible = app.ChannelOn.(ch);
                     app.WavTheoryLines.(ch) = ht;
                 end
             end
+
+            % ----- Batchelor theory overlays (t1/t2), each on its own
+            % checkbox - drawn regardless of whether the corresponding
+            % observed t{1,2}_Tg_k spectrum checkbox is on.
+            app.plotBatchelorOverlay(app.BatchelorObsOrder, chiObs, epsilon, kvis, ktemp, k, keep, idx, '--');
+            app.plotBatchelorOverlay(app.BatchelorMleOrder, chiMle, epsilon, kvis, ktemp, k, keep, idx, ':');
 
             for i = 1:numel(app.WavCutoffOrder)
                 ch = app.WavCutoffOrder{i};
@@ -1823,16 +1978,39 @@ classdef MODvis_spectra < handle
                     && app.WavYMaxField.Value > app.WavYMinField.Value
                 app.WavAxes.YLim = [app.WavYMinField.Value, app.WavYMaxField.Value];
             else
-                app.WavAxes.YLimMode = 'auto';
-                yl = app.WavAxes.YLim;
-                app.WavYMinField.Value = yl(1);
-                app.WavYMaxField.Value = yl(2);
+                app.applyWavYAutoDefault();
             end
 
             if isfinite(epsilon)
-                title(app.WavAxes, sprintf('\\epsilon_{final} = %.2e W/kg (dashed = Batchelor/Panchev theory)', epsilon));
+                title(app.WavAxes, sprintf('\\epsilon_{final} = %.2e W/kg (dashed = Panchev/Batchelor-data theory, dotted = Batchelor-MLE)', epsilon));
             else
                 title(app.WavAxes, '');
+            end
+        end
+
+        function plotBatchelorOverlay(app, order, chiStruct, epsilon, kvis, ktemp, k, keep, idx, style)
+            % Draws one Batchelor theory curve per checkbox in `order`
+            % (BatchelorObsOrder or BatchelorMleOrder) using chiStruct.t1/
+            % .t2 (Profile.chi or Profile.chi_mle) - shared by both, only
+            % `chiStruct` and `style` (line style, so the two variants stay
+            % visually distinct) differ between the two call sites in
+            % plotWavenumberSpectrum.
+            for i = 1:numel(order)
+                ch = order{i};
+                if ~isfield(app.ChannelCheck, ch) || strcmp(app.ChannelCheck.(ch).Visible, 'off')
+                    continue
+                end
+                base = ch(1:2); % 't1'/'t2'
+                if ~isfield(chiStruct, base); continue; end
+                chi = app.scalarOr(chiStruct.(base), idx);
+                if ~(isfinite(chi) && isfinite(epsilon) && isfinite(kvis) && isfinite(ktemp))
+                    continue
+                end
+                clr = app.getSignalColor(base);
+                Psg = mod_scan_batchelor_spectrum(epsilon, chi, kvis, ktemp, k(keep));
+                ht = loglog(app.WavAxes, k(keep), Psg, style, 'Color', clr, 'LineWidth', 1);
+                ht.Visible = app.ChannelOn.(ch);
+                app.WavTheoryLines.(ch) = ht;
             end
         end
 
@@ -1909,18 +2087,28 @@ classdef MODvis_spectra < handle
             if tf
                 app.onWavYLimChanged();
             else
-                app.WavAxes.YLimMode = 'auto';
-                yl = app.WavAxes.YLim;
-                app.WavYMinField.Value = yl(1);
-                app.WavYMaxField.Value = yl(2);
+                app.applyWavYAutoDefault();
             end
         end
 
         function onWavYReset(app)
             app.WavYLock = false;
             app.WavYLockCheck.Value = false;
+            app.applyWavYAutoDefault();
+        end
+
+        function applyWavYAutoDefault(app)
+            % Auto-scales WavAxes, then floors the minimum at
+            % WavYMinDefault (see that property's comment for why) -
+            % shared by plotWavenumberSpectrum, onWavYLockChanged (unlock),
+            % and onWavYReset, so the floor applies everywhere the axis
+            % falls back to "default" rather than a user-set/locked range.
             app.WavAxes.YLimMode = 'auto';
             yl = app.WavAxes.YLim;
+            if yl(2) > app.WavYMinDefault
+                yl(1) = app.WavYMinDefault;
+                app.WavAxes.YLim = yl;
+            end
             app.WavYMinField.Value = yl(1);
             app.WavYMaxField.Value = yl(2);
         end
