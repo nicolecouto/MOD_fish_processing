@@ -79,6 +79,25 @@ This function tracks original-array indices throughout, so the index it returns 
 
 **Verified visually**: plotting the smoothed spectrum against the scaled noise floor for a real t1_volt scan shows the two curves clearly diverging below the returned cutoff and converging/tracking together above it - the crossing is visually exactly where the function says it is (fc ≈ 30.6 Hz for w≈0.65 m/s, sensibly in the same ballpark as the Module 2 thermal-rolloff cutoff for similar fall speeds).
 
+#### Contamination-frequency cap (`contam_freq_hz`)
+
+The noise-floor search above has no natural answer when chi is high enough that the observed spectrum never drops back into the bench noise floor at all - it just defaults to trusting the whole spectrum (`fc_index = valid(end)`). That is the same behavior MMP's thermistor cutoff (`thcut1_*_mmp.m`, `~/Dropbox/SIO/_instrument_software/mmp_matlab`) falls back to when its own noise-floor search never crosses. Rockland's ODAS shear/epsilon code (`get_diss_odas.m`, `~/Dropbox/SIO/_instrument_software/rockland/odas`) does the opposite: it imposes a hard wavenumber ceiling (`K_limit = min(K_AA, 150 cpm)`) independent of the noise floor. `MOD_fish_lib`'s own legacy epsilon code already follows Rockland's approach, but only for epsilon - `mod_efe_scan_epsilon.m` caps `kmax = fpump/w` where `fpump = Meta_Data.PROCESS.ctd_fc` ("arbitrary cutoff frequency, usually extracted from coherence spectra shear/accel"). `mod_efe_scan_chi.m` never had an equivalent cap.
+
+This isn't hypothetical: a sandboxed copy of ASTRAL `Profile100_nfft1024.mat` has `Profile.fpump = 45 Hz`, and of 620 valid t1/t2 chi estimates in that one profile, 21 have `tg_fc` (the legacy equivalent of this function's cutoff) landing between 46 and 110 Hz - well past 45 Hz.
+
+Looking directly at the raw per-channel spectra (median across all scans, both nfft=1024 and nfft=512, across 6 ASTRAL profiles - `Profile100` at both nfft, `Profile025`, `Profile145`, `Profile186`, `Profile233`) turned up two real, sharp, highly reproducible contamination tones - neither matching the stored 45 Hz:
+
+| tone | t1/t2 (FP07) | s1/s2 (shear) | a1/a2/a3 (accel) |
+|---|---|---|---|
+| ~48.1-48.8 Hz | no elevation (~0.7-0.9x) | huge (~55-330x) | strong on a2/a3 (~30-150x), negligible on a1 (~2-3x) |
+| ~58.75-59.4 Hz | strong (~15-50x) | huge (~40-220x) | no elevation (~0.9-1.1x) |
+
+Consistent across every profile and both FFT lengths checked - a true fixed-Hz tone lands near the same frequency regardless of nfft/binning, and it does. Read as two physically distinct sources: ~48 Hz looks mechanical (shear+accel, not FP07 - likely the real identity of this deployment's nominal "45 Hz" `fpump`, which may just be an unverified/rounded figure for this deployment); ~59 Hz looks electrical, shared by the FP07 and shear analog front end but not the accelerometer path, and is the one that actually matters for chi.
+
+A deconvolution-gain threshold (capping wherever `1/(H_thermal * H_electronics)`, from Module 2/2b, exceeds some limit) was considered as an alternative to a fixed frequency and rejected: at 59 Hz the gain is only ~9x for typical ASTRAL fall speeds (it only gets aggressive past ~80 Hz). Any gain threshold loose enough not to also truncate legitimate high-wavenumber signal at lower frequencies (where the correction is legitimately 5-8x) would have to sit below ~9x to catch this tone - it can't do both. A gain cap and a contamination-frequency notch guard against different failure modes (general amplification of noise near Nyquist vs. a specific deterministic tone at a specific frequency); gain alone doesn't solve this one.
+
+`contam_freq_hz` is therefore a fixed, per-deployment, `setup.yml`-configurable frequency [Hz]: after the noise-floor search above produces `fc_index`, it's additionally capped so `f(fc_index) < contam_freq_hz`. Defaults to `Inf` (no cap) - **this is deliberately not silently populated with 59 Hz for every deployment**. ASTRAL is the only deployment characterized so far; a different deployment's electronics/rigging could easily have a different (or no) contamination line, and using an unverified value would be worse than no cap at all. Setting a real value for a given deployment means repeating this same median-spectrum-across-scans check against that deployment's own data first.
+
 ### 4. `mod_scan_thermal_diffusivity.m` — ktemp
 
 ```matlab
@@ -150,8 +169,8 @@ Fits the Batchelor spectrum to the same observed temperature-gradient spectrum `
 ## Where these values live: `metadata.PROCESS.CHI.*` is never silently defaulted
 
 `kmin_obs`, `time_constant_s`, `fall_speed_exponent`, `noise_adjusted_to_f`, `n_smooth_f_spectrum`,
-`sn_min`, `n_skip`, `hamming_window_length_nfft`, `chi_mle_start_search`, `chi_mle_end_search` - the
-ten operator-tunable parameters this chain reads - are **not** filled with a historical default by
+`sn_min`, `n_skip`, `contam_freq_hz`, `hamming_window_length_nfft`, `chi_mle_start_search`,
+`chi_mle_end_search` - the eleven operator-tunable parameters this chain reads - are **not** filled with a historical default by
 `MODsetup_read_yaml.m` when a deployment's `setup.yml` doesn't declare a `chi:` block (a FastCTD
 deployment needs none of them, so silently populating all ten for every deployment would be wrong,
 not just undocumented). Instead, each of the five functions above validates exactly the values it

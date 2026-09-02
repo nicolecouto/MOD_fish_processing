@@ -61,6 +61,12 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %                    multiplier (SN_min in DESCRIPTION/NOTES above)
 %                  metadata.PROCESS.CHI.n_skip - lowest-frequency bins
 %                    excluded (n_skip in DESCRIPTION/NOTES above)
+%                  metadata.PROCESS.CHI.contam_freq_hz - known FP07
+%                    electrical-contamination frequency [Hz] for this
+%                    deployment, or Inf if none is known (see NOTES). Caps
+%                    fc_index so a fixed spectral line can't hold the
+%                    smoothed spectrum above the noise floor and pull the
+%                    cutoff out past it.
 %                See MODsetup_metadata_field_registry.m for each one's
 %                historical default (shown as the prompt's starting value).
 %   noise_coefs - struct with fields n0, n1, n2, n3 (bench noise floor
@@ -77,7 +83,8 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %                floor. Caller converts to a cutoff wavenumber via
 %                kc = k(fc_index). If the spectrum never crosses the
 %                noise floor at all, fc_index is the last f > 0 bin (i.e.
-%                "trust the whole spectrum").
+%                "trust the whole spectrum") - unless contam_freq_hz caps
+%                it first (see NOTES).
 %
 % CALLED BY
 %   mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m
@@ -120,6 +127,24 @@ function scan = mod_scan_fpo7_cutoff(scan, metadata, noise_coefs)
 %   worth having fixed given how much this whole exercise is about
 %   auditing exactly this kind of thing.
 %
+%   contam_freq_hz (added later) covers the opposite failure mode: when
+%   chi is high enough that the observed spectrum never drops into the
+%   bench noise floor at all, the search above has no natural answer and
+%   (like the old code) defaults to trusting the whole spectrum. A fixed
+%   spectral contamination line sitting in that band would hold the
+%   smoothed spectrum up and get integrated as if it were real turbulent
+%   signal. Real ASTRAL data shows exactly this: a sharp, reproducible
+%   ~59 Hz line on the FP07 channels (present on shear too, absent on
+%   accel - looks electrical, not the deployment's separate ~48 Hz
+%   mechanical/pump line, which does the reverse). A deconvolution-gain
+%   threshold was considered instead of a fixed frequency and rejected -
+%   gain at 59 Hz is only ~9x (not yet "blown up"), so any threshold loose
+%   enough not to also truncate legitimate lower-frequency signal would
+%   not have caught it. contam_freq_hz defaults to Inf (no cap) since this
+%   is a per-deployment value - only ASTRAL has been characterized so far.
+%   See docs/workflow/L2_calc_chi.md, "Contamination-frequency cap" for
+%   the full investigation and the per-channel-type frequency table.
+%
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 yaml_file = '';
@@ -127,12 +152,13 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip'});
+    {'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip', 'contam_freq_hz'});
 
 noise_adjusted_to_f = metadata.PROCESS.CHI.noise_adjusted_to_f;
 n_smooth_f_spectrum = metadata.PROCESS.CHI.n_smooth_f_spectrum;
 SN_min = metadata.PROCESS.CHI.sn_min;
 n_skip = metadata.PROCESS.CHI.n_skip; % don't trust the first n_skip (lowest-frequency) Fourier coefficients
+contam_freq_hz = metadata.PROCESS.CHI.contam_freq_hz; % Inf = no known contamination line, no cap applied
 
 f = scan.spectra.f(:);
 Pxx = scan.spectra.Pt_volt_f(:);
@@ -173,6 +199,17 @@ else
     first_noisy_orig = valid(search_idx(first_noisy));
     fc_index = first_noisy_orig - 1;
     fc_index = max(fc_index, valid(1));
+end
+
+% Cap against a known contamination line (see NOTES) - a fixed spectral
+% line can hold the smoothed spectrum above the noise floor and pull the
+% search above out past it. Inf (no known line for this deployment) is a
+% no-op.
+if isfinite(contam_freq_hz)
+    below_contam = valid(f(valid) < contam_freq_hz);
+    if ~isempty(below_contam)
+        fc_index = min(fc_index, below_contam(end));
+    end
 end
 
 scan.spectra.fc_index = fc_index;
