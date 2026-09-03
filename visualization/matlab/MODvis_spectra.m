@@ -1965,12 +1965,22 @@ classdef MODvis_spectra < handle
             if numel(ax.YAxis) > 1
                 yyaxis(ax, 'left');
             end
-            yl = ax.YLim;
 
+            % Y extent is set far beyond any real YLim rather than to the
+            % axes' current YLim - a fixed-height patch goes stale (stops
+            % spanning the full plot) the moment YLim changes afterward
+            % (autoscale, Y-lock, manual Y min/max, ...) without another
+            % redrawShade call. Clipping (on by default for patch) trims
+            % it to the actual plot box, so it always fills the full
+            % height no matter what YLim does later. YLimInclude must be
+            % off or the oversized patch would blow up autoscaling.
+            yBig = 1e10;
             hold(ax,'on');
-            app.ShadePatch(rowIdx) = patch(ax, [t0 t1 t1 t0], [yl(1) yl(1) yl(2) yl(2)], ...
+            app.ShadePatch(rowIdx) = patch(ax, [t0 t1 t1 t0], [-yBig -yBig yBig yBig], ...
                 [1 0.85 0.2], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
                 'HitTest', 'off', 'PickableParts', 'none');
+            app.ShadePatch(rowIdx).YLimInclude = 'off';
+            app.ShadePatch(rowIdx).XLimInclude = 'off';
             hold(ax,'off');
 
             % The patch just above is the newest object in the left
