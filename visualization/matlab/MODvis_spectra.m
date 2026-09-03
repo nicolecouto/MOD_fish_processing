@@ -2607,6 +2607,17 @@ classdef MODvis_spectra < handle
             app.XWindowLen  = val;
             app.UseXWindow  = true;
             app.XWinSlider.Enable = 'on';
+
+            if ~isempty(app.SelectedScanIdx) && ~isempty(app.GlobalDnum) && ...
+                    isfinite(app.ProfileTmin) && app.ProfileTmax > app.ProfileTmin
+                centerT    = app.GlobalDnum(app.SelectedScanIdx);
+                winDays    = val / 86400;
+                profileDur = app.ProfileTmax - app.ProfileTmin;
+                maxFrac    = 1 - winDays / profileDur;
+                frac       = (centerT - winDays/2 - app.ProfileTmin) / profileDur;
+                app.XWinFraction = min(max(frac, 0), max(maxFrac, 0));
+            end
+
             app.applyXWindow();
         end
 
