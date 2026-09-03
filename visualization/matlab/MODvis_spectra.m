@@ -1732,6 +1732,10 @@ classdef MODvis_spectra < handle
                 if ~(isfinite(ymin) && isfinite(ymax) && ymax > ymin); return; end
                 if dual; yyaxis(ax, 'left'); end
                 ax.YLim = [ymin ymax];
+                % Left axis's YLim just changed - the scan shade is sized
+                % to match it (see redrawShade), so it must be redrawn or
+                % it goes stale.
+                app.redrawShade(rowIdx);
             end
         end
 
@@ -1753,6 +1757,10 @@ classdef MODvis_spectra < handle
                 autoYLim = ax.YLim;
                 app.YMinField(rowIdx).Value = autoYLim(1);
                 app.YMaxField(rowIdx).Value = autoYLim(2);
+                % Left axis's YLim just changed - the scan shade is sized
+                % to match it (see redrawShade), so it must be redrawn or
+                % it goes stale.
+                app.redrawShade(rowIdx);
             end
         end
 
@@ -1992,21 +2000,26 @@ classdef MODvis_spectra < handle
                 yyaxis(ax, 'left');
             end
 
-            % Y extent is set far beyond any real YLim rather than to the
-            % axes' current YLim - a fixed-height patch goes stale (stops
-            % spanning the full plot) the moment YLim changes afterward
-            % (autoscale, Y-lock, manual Y min/max, ...) without another
-            % redrawShade call. Clipping (on by default for patch) trims
-            % it to the actual plot box, so it always fills the full
-            % height no matter what YLim does later. YLimInclude must be
-            % off or the oversized patch would blow up autoscaling.
-            yBig = 1e10;
+            % Matches the axes' current YLim (left side, when dual) rather
+            % than some oversized stand-in: an earlier version drew the
+            % patch far beyond YLim and relied on axes Clipping to trim it,
+            % so it wouldn't go stale after a later YLim change - but on a
+            % yyaxis-enabled uiaxes that made the patch fail to render at
+            % all (confirmed empirically: a patch with Y data around 1e8+
+            % on an axis with data around 1e1 silently disappears, most
+            % likely single-precision loss somewhere in the render
+            % pipeline; the failure threshold is data-range-dependent, so
+            % there's no fixed "big enough" constant that's safe for every
+            % channel this app can plot). Every call site that changes the
+            % left axis's YLim after this point must call redrawShade
+            % again to keep the patch in sync - see plotRow (end of
+            % function), onYLimitChanged, onYLimitReset.
+            yl = ax.YLim;
+
             hold(ax,'on');
-            app.ShadePatch(rowIdx) = patch(ax, [t0 t1 t1 t0], [-yBig -yBig yBig yBig], ...
+            app.ShadePatch(rowIdx) = patch(ax, [t0 t1 t1 t0], [yl(1) yl(1) yl(2) yl(2)], ...
                 [1 0.85 0.2], 'FaceAlpha', 0.3, 'EdgeColor', 'none', ...
                 'HitTest', 'off', 'PickableParts', 'none');
-            app.ShadePatch(rowIdx).YLimInclude = 'off';
-            app.ShadePatch(rowIdx).XLimInclude = 'off';
             hold(ax,'off');
 
             % The patch just above is the newest object in the left
