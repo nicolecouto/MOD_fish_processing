@@ -761,6 +761,17 @@ classdef MODvis_spectra < handle
                 uialert(app.Fig, "Failed to load: " + fp + newline + ME.message, "Load error");
                 return;
             end
+
+            % Carry the selection across profiles by depth rather than by
+            % index - profiles have different scan counts, so the same
+            % index would land at an unrelated depth. Capture the old
+            % profile's pressure at the current selection before it (and
+            % CurrentData) get overwritten below.
+            prevPressure = [];
+            if ~isempty(app.SelectedScanIdx) && isfield(app.CurrentData,'pressure') ...
+                    && numel(app.CurrentData.pressure) >= app.SelectedScanIdx
+                prevPressure = app.CurrentData.pressure(app.SelectedScanIdx);
+            end
             app.SelectedScanIdx = [];
             app.Fig.Name = "Spectra Explorer — " + app.CurrentFile;
             app.CurrentL1Data = struct();
@@ -903,11 +914,26 @@ classdef MODvis_spectra < handle
             % its row count varies (see rebuildWavCheckboxes).
             app.rebuildWavCheckboxes();
 
-            cla(app.SpecAxes);
-            cla(app.WavAxes);
-            app.SpecTitle.Text = 'Click a point above to show its spectrum';
+            % Re-select the scan at the closest depth to the one that was
+            % selected in the previous profile, so a selection survives
+            % moving between profiles instead of always being dropped.
+            if ~isempty(prevPressure) && isfield(app.CurrentData,'pressure') ...
+                    && ~isempty(app.CurrentData.pressure)
+                [~, idx] = min(abs(app.CurrentData.pressure(:) - prevPressure));
+                app.SelectedScanIdx = idx;
+                for i = 1:app.NRows
+                    app.redrawShade(i);
+                end
+                app.plotSpectrum(idx);
+                app.plotWavenumberSpectrum(idx);
+            else
+                cla(app.SpecAxes);
+                cla(app.WavAxes);
+                app.SpecTitle.Text = 'Click a point above to show its spectrum';
+            end
 
             if app.UseXWindow
+                app.centerXWindowOnSelectedScan();
                 app.applyXWindow();
             end
         end
@@ -2617,18 +2643,21 @@ classdef MODvis_spectra < handle
             app.XWindowLen  = val;
             app.UseXWindow  = true;
             app.XWinSlider.Enable = 'on';
-
-            if ~isempty(app.SelectedScanIdx) && ~isempty(app.GlobalDnum) && ...
-                    isfinite(app.ProfileTmin) && app.ProfileTmax > app.ProfileTmin
-                centerT    = app.GlobalDnum(app.SelectedScanIdx);
-                winDays    = val / 86400;
-                profileDur = app.ProfileTmax - app.ProfileTmin;
-                maxFrac    = 1 - winDays / profileDur;
-                frac       = (centerT - winDays/2 - app.ProfileTmin) / profileDur;
-                app.XWinFraction = min(max(frac, 0), max(maxFrac, 0));
-            end
-
+            app.centerXWindowOnSelectedScan();
             app.applyXWindow();
+        end
+
+        function centerXWindowOnSelectedScan(app)
+            if isempty(app.SelectedScanIdx) || isempty(app.GlobalDnum) || ...
+                    ~isfinite(app.ProfileTmin) || app.ProfileTmax <= app.ProfileTmin
+                return;
+            end
+            centerT    = app.GlobalDnum(app.SelectedScanIdx);
+            winDays    = app.XWindowLen / 86400;
+            profileDur = app.ProfileTmax - app.ProfileTmin;
+            maxFrac    = 1 - winDays / profileDur;
+            frac       = (centerT - winDays/2 - app.ProfileTmin) / profileDur;
+            app.XWinFraction = min(max(frac, 0), max(maxFrac, 0));
         end
 
         function onXWinSliderMoved(app)
