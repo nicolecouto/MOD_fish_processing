@@ -239,9 +239,15 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     calibrations_root/SBE/<SN>.CAL
 %     GEOMETRY.alt_angle_deg, .alt_dist_from_crashguard_ft,
 %              .alt_probe_dist_from_crashguard_in
-%                                   - only set when setup.yml has an
-%                                     altimeter.fctd or altimeter.epsi
-%                                     block matching fish_flag
+%                                   - from setup.yml's altimeter.fctd or
+%                                     altimeter.epsi block matching
+%                                     fish_flag, if present; otherwise
+%                                     looked up from the repo-committed
+%                                     setup/platform_instrument_geometry.yml
+%                                     table by fish_flag (and vehicle_name,
+%                                     where the table needs it) - see that
+%                                     file's header. Left unset if neither
+%                                     source has a matching entry
 %                                     (deployments with no alt/isap
 %                                     hardware don't need one)
 %
@@ -253,7 +259,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   toolbox/YAMLMatlab_0.4.3/ReadYaml.m
 %   MODsetup_save_metadata.m
 %   (local subfunctions: read_sbe_cal, read_probe_cal, probe_cal_subdir,
-%    hash_file)
+%    lookup_altimeter_geometry, hash_file)
 %
 % NOTES
 %   MATLAB has no built-in YAML reader (checked in R2024b: no yaml.*
@@ -503,7 +509,13 @@ switch lower(yml.fish_flag)
             'fish_flag "%s" is neither FCTD nor EPSI - cannot pick an altimeter geometry block.', yml.fish_flag);
 end
 if isfield(yml, 'altimeter') && isfield(yml.altimeter, fish_flag_key)
+    % Deployment-specific override - one unit's own setup.yml wins over the
+    % shared table below.
     alt_geom = yml.altimeter.(fish_flag_key);
+else
+    alt_geom = lookup_altimeter_geometry(metadata.fish_flag, metadata.vehicle_name);
+end
+if ~isempty(alt_geom)
     metadata.GEOMETRY.alt_angle_deg                    = alt_geom.angle_deg;
     metadata.GEOMETRY.alt_dist_from_crashguard_ft       = alt_geom.dist_from_crashguard_ft;
     metadata.GEOMETRY.alt_probe_dist_from_crashguard_in = alt_geom.probe_dist_from_crashguard_in;
@@ -571,6 +583,30 @@ line = fgetl(fid); SBEcal.ptempa1 = str2double(line(strfind(line,'=')+1:end));
 line = fgetl(fid); SBEcal.ptempa2 = str2double(line(strfind(line,'=')+1:end));
 
 fclose(fid);
+end
+
+%% Look up shared altimeter geometry by platform (fish_flag, vehicle_name)
+% from setup/platform_instrument_geometry.yml's altimeter: block -
+% repo-committed, not a per-deployment path. A fish_flag entry is either a
+% geometry block directly (one mount shared by every vehicle with that
+% fish_flag, e.g. FCTD) or a struct of per-vehicle_name geometry blocks
+% (e.g. EPSI) - isfield(entry,'angle_deg') tells the two apart. Returns []
+% if fish_flag has no entry, or (per-vehicle case) vehicle_name has no
+% entry - same "absent means not set, never guessed" rule as the rest of
+% this function.
+function alt_geom = lookup_altimeter_geometry(fish_flag, vehicle_name)
+alt_geom = [];
+table_file = fullfile(fileparts(mfilename('fullpath')), 'platform_instrument_geometry.yml');
+table = ReadYaml(table_file);
+if ~isfield(table, 'altimeter') || ~isfield(table.altimeter, fish_flag)
+    return
+end
+entry = table.altimeter.(fish_flag);
+if isfield(entry, 'angle_deg')
+    alt_geom = entry;
+elseif ~isempty(vehicle_name) && isfield(entry, vehicle_name)
+    alt_geom = entry.(vehicle_name);
+end
 end
 
 %% Map an AFE channel's declared type to its calibration folder name.

@@ -79,6 +79,12 @@ function metadata = MODsetup_define_filters(metadata)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
+end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'nfft', 'Fs_epsi'});
+
 nfft = metadata.PROCESS.nfft;
 Fs_epsi = metadata.PROCESS.Fs_epsi;
 [~, f] = pwelch(zeros(nfft, 1), nfft, [], nfft, Fs_epsi, 'psd');

@@ -161,6 +161,12 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
+end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'nfft', 'dof', 'Fs_epsi'});
+
 if nargin < 4
     PressureTimeseries = [];
 end

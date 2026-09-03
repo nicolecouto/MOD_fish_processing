@@ -84,7 +84,7 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'hamming_window_length_nfft'});
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'hamming_window_length_nfft', 'nfft', 'Fs_epsi'});
 
 nfft = metadata.PROCESS.nfft;
 Fs_epsi = metadata.PROCESS.Fs_epsi;

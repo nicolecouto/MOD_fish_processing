@@ -250,6 +250,14 @@ end
 %% Altimeter/ISA500 raw distance -> height above bottom
 function hab = calibrate_altimeter_hab(dst, metadata)
 
+if ~isfield(metadata, 'GEOMETRY')
+    error('MODprocess_single_L0_to_L1:missingGeometry', ...
+        ['Altimeter/ISAP raw data is present but metadata.GEOMETRY is not set - no altimeter: ' ...
+         'block in this deployment''s setup.yml, and no matching entry in ' ...
+         'setup/platform_instrument_geometry.yml for fish_flag=%s, vehicle_name=''%s''. Add one or ' ...
+         'the other and reload metadata.'], metadata.fish_flag, metadata.vehicle_name);
+end
+
 feet2meters = @(x) x*0.3048;
 inches2meters = @(x) x*0.0254;
 

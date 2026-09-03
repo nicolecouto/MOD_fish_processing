@@ -1,0 +1,32 @@
+# setup/platform_instrument_geometry.yml - shared physical geometry between
+# instruments on a platform. Keyed by geometry type first (altimeter: today;
+# growing to include probe-to-CTD/fluorometer-to-CTD vertical offsets as
+# those are measured - see PLAN.md's sensor time-alignment follow-up), then
+# fish_flag, then vehicle_name.
+#
+# altimeter: angle_deg, dist_from_crashguard_ft, probe_dist_from_crashguard_in
+# - a fixed mechanical fact about a platform, not something to retype into
+# every deployment's setup.yml - same idea as the shear-probe SN calibration
+# lookup (MOD_fish_calibrations/SHEAR_PROBES/). A deployment's own setup.yml
+# can still declare an explicit altimeter: block to override this table for
+# one specific unit - MODsetup_read_yaml.m checks the deployment's own yml
+# first, this table second.
+#
+# Two shapes under a fish_flag: a single geometry block directly (FCTD -
+# every FCTD unit shares one mount, no vehicle_name needed), or one block
+# per vehicle_name (EPSI - geometry differs by platform).
+
+altimeter:
+  FCTD:
+    angle_deg: 45
+    dist_from_crashguard_ft: 4
+    probe_dist_from_crashguard_in: 0
+  EPSI:
+    Mako:
+      angle_deg: 10
+      dist_from_crashguard_ft: 5
+      probe_dist_from_crashguard_in: 2.02
+    # Add DeepSolo/Wirewalker/etc. entries here as their alt/isap geometry is measured.
+
+# probe_offsets / fluor_offsets (future): vertical distance [m] between each
+# instrument and the CTD, per platform - not populated yet, see PLAN.md.

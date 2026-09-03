@@ -131,7 +131,7 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsi_gap_factor'});
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsi_gap_factor', 'Fs_epsi'});
 
 profile_data.profile_number = profile.profile_number;
 profile_data.direction = profile.direction;

@@ -78,14 +78,14 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-lowpass_factor = 3;
-ctd_gap_factor = 5;
-buffer_bins = 1;
-if isfield(metadata, 'PROFILES')
-    if isfield(metadata.PROFILES, 'lowpass_factor'), lowpass_factor = metadata.PROFILES.lowpass_factor; end
-    if isfield(metadata.PROFILES, 'ctd_gap_factor'), ctd_gap_factor = metadata.PROFILES.ctd_gap_factor; end
-    if isfield(metadata.PROFILES, 'buffer_bins'), buffer_bins = metadata.PROFILES.buffer_bins; end
+yaml_file = '';
+if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+    yaml_file = metadata.paths.setup_yml;
 end
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'lowpass_factor', 'ctd_gap_factor', 'buffer_bins'});
+lowpass_factor = metadata.PROFILES.lowpass_factor;
+ctd_gap_factor = metadata.PROFILES.ctd_gap_factor;
+buffer_bins = metadata.PROFILES.buffer_bins;
 if lowpass_factor <= 2
     error('mod_L1_detect_profiling_direction:invalidLowpassFactor', ...
         ['metadata.PROFILES.lowpass_factor must be > 2 (got %.2f) - the normalized filter ' ...
