@@ -73,3 +73,9 @@ For a ~0.65 m/s platform like the ASTRAL Mako above, `fft_length=1024` doesn't f
 ![Schematic: one scan split into Welch segments (fft_length chosen, fft_segments_per_scan chosen, scan_length computed) at the top, successive scans spaced along a profile by scan_overlap in the middle, and dof vs. fft_segments_per_scan at the fixed 50% overlap with ATOMIX's thresholds marked at the bottom](images/spectral_windowing_schematic.png)
 
 Top and middle panels use an illustrative `fft_length=512`, `fft_segments_per_scan=3` (`scan_length=1024`, derived), `scan_overlap=50%` (not real data - generated for this page). Note the two panels' x-axes are unrelated in scale: the top panel's segments overlap *inside* one scan and set `dof`; the middle panel's scans overlap *across* the profile and set vertical resolution - moving one slider never moves the other.
+
+`plots/MODplot_scans_and_segments.m` generates the same kind of figure on demand, from just `fft_length`/`scan_length`/`fall_speed` - no L1 file needed - to explore a candidate combination before committing it to `setup.yml`:
+
+![Example MODplot_scans_and_segments.m output: five scans tiled at 50% overlap (top), each scan's Welch segments shown in shades of that scan's own color (middle), and the same scans converted to meters via fall_speed with the center scan's physical footprint and kmin printed (bottom)](images/scans_and_segments_example.png)
+
+Same illustrative `fft_length=512`/`scan_length=1024`/`scan_overlap=50%` as above, plus `fall_speed=0.65 m/s` (median for `epsi_mako`'s ASTRAL deployment, see above) - the highlighted (3rd) scan spans 2.08 m, and `kmin = Fs_epsi/(fft_length*fall_speed) = 0.962 cpm`. See `MODplot_scan_context.m` for the equivalent diagnostic run against real data instead of just the parameters.
