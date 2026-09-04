@@ -5,14 +5,17 @@ function fig = MODplot_scan_context(data, metadata, target_pressure, channel, op
 %
 % DESCRIPTION
 %   Diagnostic figure for one scan of one L1 file: how that scan's window
-%   relates to its neighbors (between-scan overlap, tied to nfft/dof via
-%   MODprocess_single_L1_to_L2.m's scan_step = N_epsi/2 - always ~50% by
-%   construction here, unlike the old mod_fish_lib pipeline where scan
-%   spacing was a fixed, independent dz), and what pwelch does inside
-%   that one scan (within-scan segmenting/windowing/averaging). A
-%   hand-rolled re-implementation of pwelch is included and checked
-%   against MATLAB's own pwelch as a sanity check that the segment
-%   bookkeeping shown is actually what gets computed.
+%   relates to its neighbors (between-scan overlap, tied to fft_length/
+%   fft_segments_per_scan/scan_overlap via MODprocess_single_L1_to_L2.m's
+%   scan_step = (1-scan_overlap)*N_epsi, unlike the old mod_fish_lib
+%   pipeline where scan spacing was a fixed, independent dz), and what
+%   mod_scan_get_spectra.m does inside that one scan (within-scan
+%   segmenting/per-segment-detrend/windowing/averaging, at a hardcoded
+%   50% overlap - see NOTES). A hand-rolled re-implementation of that
+%   Welch average is included and checked against MATLAB's own
+%   periodogram (on the same per-segment-detrended segments) as a sanity
+%   check that the segment bookkeeping shown is actually what gets
+%   computed.
 %
 %   Does not depend on any precomputed L2 scan table - scan windows are
 %   computed here the same way MODprocess_single_L1_to_L2.m computes them
@@ -22,25 +25,33 @@ function fig = MODplot_scan_context(data, metadata, target_pressure, channel, op
 %   data            - L1 struct. Uses data.epsi.dnum, data.epsi.(channel);
 %                      data.ctd.dnum, data.ctd.P
 %   metadata         - metadata struct (MODsetup_read_yaml.m). Uses
-%                      metadata.PROCESS.nfft, .dof, .Fs_epsi as defaults
-%                      (overridable - see OPTIONS)
+%                      metadata.PROCESS.fft_length, .fft_segments_per_scan,
+%                      .scan_overlap, .Fs_epsi as defaults (overridable -
+%                      see OPTIONS)
 %   target_pressure - db; the scan whose center pressure is closest to
 %                      this is the one plotted
 %   channel         - e.g. 't1_volt', 's1_volt' - which data.epsi field
 %                      to plot
 %
 % OPTIONS (name-value)
-%   nfft         - override metadata.PROCESS.nfft, to explore "what would
-%                  this look like with a different nfft" without editing
-%                  metadata. Default: metadata.PROCESS.nfft
-%   dof          - override metadata.PROCESS.dof, same idea. Default:
-%                  metadata.PROCESS.dof
-%   n_neighbors  - scans shown on each side in the context panels.
-%                  Default: 8
-%   window_type  - 'hamming' | 'hann' | 'rectwin' | 'flattop'. Default:
-%                  'hamming'
-%   noverlap     - pwelch sub-window overlap, in samples. Default: []
-%                  (pwelch's own default, nfft/2)
+%   fft_length            - override metadata.PROCESS.fft_length, to
+%                            explore "what would this look like with a
+%                            different fft_length" without editing
+%                            metadata. Default: metadata.PROCESS.fft_length
+%   fft_segments_per_scan - override metadata.PROCESS.fft_segments_per_scan,
+%                            same idea. Default:
+%                            metadata.PROCESS.fft_segments_per_scan
+%   scan_overlap          - override metadata.PROCESS.scan_overlap
+%                            (fraction, 0-1), same idea. Default:
+%                            metadata.PROCESS.scan_overlap
+%   n_neighbors           - scans shown on each side in the context
+%                            panels. Default: 8
+%   window_type           - 'hamming' | 'hann' | 'rectwin' | 'flattop'.
+%                            Default: 'hamming'
+%
+%   No fft_overlap option - the Welch-segment overlap is hardcoded at
+%   50% everywhere in this repo (matching mod_scan_get_spectra.m), so
+%   this diagnostic tool doesn't re-open it as a variable either.
 %
 % OUTPUTS
 %   fig - the figure handle
@@ -49,36 +60,53 @@ function fig = MODplot_scan_context(data, metadata, target_pressure, channel, op
 %   data = load('L1/modsom_07.mat');
 %   metadata = MODsetup_read_yaml('meta/metadata.yml');
 %   MODplot_scan_context(data, metadata, 50, 't1_volt');
-%   MODplot_scan_context(data, metadata, 50, 't1_volt', 'nfft', 2048);
+%   MODplot_scan_context(data, metadata, 50, 't1_volt', 'fft_length', 2048);
+%
+% CALLED BY
+%   (interactive/diagnostic use only)
+%
+% CALLS
+%   toolbox/mod_scan_length_from_segments.m
+%   (MATLAB's Signal Processing Toolbox periodogram, detrend, hamming;
+%   aguFigure, subtightplot)
+%
+% NOTES
+%   Segments are each individually detrended before their own Hamming
+%   window/FFT (matching mod_scan_get_spectra.m's welch_psd_detrend_
+%   per_segment, not a single whole-scan detrend) - see
+%   docs/concepts/spectral_windowing.md for why that distinction matters.
+%
+% Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 arguments
     data
     metadata
     target_pressure (1,1) double
     channel (1,:) char
-    opts.nfft (1,1) double = metadata.PROCESS.nfft
-    opts.dof (1,1) double = metadata.PROCESS.dof
+    opts.fft_length (1,1) double = metadata.PROCESS.fft_length
+    opts.fft_segments_per_scan (1,1) double = metadata.PROCESS.fft_segments_per_scan
+    opts.scan_overlap (1,1) double = metadata.PROCESS.scan_overlap
     opts.n_neighbors (1,1) double = 8
     opts.window_type (1,:) char {mustBeMember(opts.window_type,{'hamming','hann','rectwin','flattop'})} = 'hamming'
-    opts.noverlap = []
 end
 
 Fs_epsi = metadata.PROCESS.Fs_epsi;
-nfft    = opts.nfft;
-dof     = opts.dof;
-if nfft ~= metadata.PROCESS.nfft || dof ~= metadata.PROCESS.dof
-    fprintf('using nfft=%d, dof=%d (overridden from metadata.PROCESS: nfft=%d, dof=%d)\n', ...
-        nfft, dof, metadata.PROCESS.nfft, metadata.PROCESS.dof);
+fft_length = opts.fft_length;
+N_epsi = mod_scan_length_from_segments(fft_length, opts.fft_segments_per_scan);
+if fft_length ~= metadata.PROCESS.fft_length || opts.fft_segments_per_scan ~= metadata.PROCESS.fft_segments_per_scan ...
+        || opts.scan_overlap ~= metadata.PROCESS.scan_overlap
+    fprintf(['using fft_length=%d, fft_segments_per_scan=%d, scan_overlap=%.2f ' ...
+        '(overridden from metadata.PROCESS) -> scan_length=%d\n'], ...
+        fft_length, opts.fft_segments_per_scan, opts.scan_overlap, N_epsi);
 end
 
-%% locate scans the same way MODprocess_single_L1_to_L2.m does: 50%-overlapping
-% windows of N_epsi = (dof-1)*nfft samples, step = N_epsi/2
-N_epsi    = (dof-1)*nfft;
-scan_step = N_epsi/2;
+%% locate scans the same way MODprocess_single_L1_to_L2.m does: windows of
+% N_epsi = scan_length samples, step = (1-scan_overlap)*N_epsi
+scan_step = round((1-opts.scan_overlap)*N_epsi);
 n_samples = numel(data.epsi.dnum);
 if n_samples < N_epsi
-    error('MODplot_scan_context:tooShort','this file has only %d epsi samples, needs at least N_epsi=%d for one scan at nfft=%d, dof=%d', ...
-        n_samples, N_epsi, nfft, dof);
+    error('MODplot_scan_context:tooShort','this file has only %d epsi samples, needs at least scan_length=%d for one scan at fft_length=%d', ...
+        n_samples, N_epsi, fft_length);
 end
 scan_starts = 1:scan_step:(n_samples - N_epsi + 1);
 n_scans_total = numel(scan_starts);
@@ -105,66 +133,70 @@ P0_nb = interp1(data.ctd.dnum, data.ctd.P, data.epsi.dnum(idxE_all(:,1)), 'linea
 P1_nb = interp1(data.ctd.dnum, data.ctd.P, data.epsi.dnum(idxE_all(:,2)), 'linear', 'extrap');
 width_db_nb = P1_nb - P0_nb;
 
-%% window + segment bookkeeping for the chosen scan (mirrors what pwelch does internally)
+%% window + segment bookkeeping for the chosen scan (mirrors
+% mod_scan_get_spectra.m's welch_psd_detrend_per_segment)
 idx0 = scan_starts(iScan);
 idx1 = idx0 + N_epsi - 1;
-x = detrend(double(data.epsi.(channel)(idx0:idx1)));
+x_raw = double(data.epsi.(channel)(idx0:idx1));   % NOT detrended - each segment gets its own detrend below
 t = (0:N_epsi-1)'/Fs_epsi;
 
 switch opts.window_type
-    case 'hamming', win = hamming(nfft);
-    case 'hann',    win = hann(nfft);
-    case 'rectwin', win = rectwin(nfft);
-    case 'flattop', win = flattopwin(nfft);
+    case 'hamming', win = hamming(fft_length);
+    case 'hann',    win = hann(fft_length);
+    case 'rectwin', win = rectwin(fft_length);
+    case 'flattop', win = flattopwin(fft_length);
 end
 
-noverlap = opts.noverlap;
-if isempty(noverlap)
-    noverlap = floor(nfft/2);   % pwelch's own default when noverlap = []
-end
-step = nfft - noverlap;
-seg_starts = 1:step:(N_epsi - nfft + 1);
+FFT_OVERLAP = 0.5; % hardcoded - matches mod_scan_get_spectra.m, see its NOTES
+noverlap = round(FFT_OVERLAP*fft_length);
+step = fft_length - noverlap;
+seg_starts = 1:step:(N_epsi - fft_length + 1);
 n_segs = numel(seg_starts);
 
 fprintf('window length = %d samples (%.2fs); overlap = %d samples (%.0f%% of window); -> %d segment(s)\n', ...
-    nfft, nfft/Fs_epsi, noverlap, 100*noverlap/nfft, n_segs);
+    fft_length, fft_length/Fs_epsi, noverlap, 100*noverlap/fft_length, n_segs);
 
-%% replicate pwelch by hand, segment by segment
-U = sum(win.^2);
-nfreq = nfft/2 + 1;
+%% replicate mod_scan_get_spectra.m's welch_psd_detrend_per_segment by hand
+nfreq = fft_length/2 + 1;
 Pxx_segs = zeros(nfreq, n_segs);
-seg_raw  = zeros(nfft, n_segs);
-seg_win  = zeros(nfft, n_segs);
+seg_raw  = zeros(fft_length, n_segs);   % raw, undetrended
+seg_det  = zeros(fft_length, n_segs);   % individually detrended
+seg_win  = zeros(fft_length, n_segs);   % windowed after individual detrend
 
 for i = 1:n_segs
-    idx = seg_starts(i):seg_starts(i) + nfft - 1;
-    xi  = x(idx);
-    xiw = xi .* win;
-    seg_raw(:,i) = xi;
+    idx = seg_starts(i):seg_starts(i) + fft_length - 1;
+    xi_raw = x_raw(idx);
+    xi_det = detrend(xi_raw);   % per-segment detrend - the whole point of this diagnostic
+    xiw = xi_det .* win;
+    seg_raw(:,i) = xi_raw;
+    seg_det(:,i) = xi_det;
     seg_win(:,i) = xiw;
 
-    Xi = fft(xiw, nfft);
-    Xi = Xi(1:nfreq);
-    Pxx_i = (abs(Xi).^2) / (Fs_epsi*U);
-    Pxx_i(2:end-1) = 2*Pxx_i(2:end-1);
-    Pxx_segs(:,i) = Pxx_i;
+    [Pseg, f_manual] = periodogram(xiw, [], fft_length, Fs_epsi, 'psd');
+    Pxx_segs(:,i) = Pseg;
 end
 Pxx_manual = mean(Pxx_segs, 2);
-f_manual = (0:nfreq-1)'*Fs_epsi/nfft;
 
-[Pxx_pwelch, f_pwelch] = pwelch(x, win, noverlap, nfft, Fs_epsi, 'psd');
-fprintf('max |manual - pwelch| = %.3e (should be ~0)\n', max(abs(Pxx_manual - Pxx_pwelch)));
+% sanity check: same math via MATLAB's own periodogram/pwelch, called
+% per-segment the same way welch_psd_detrend_per_segment does, since
+% pwelch itself has no per-segment-detrend option to check against directly.
+Pxx_check = zeros(nfreq, n_segs);
+for i = 1:n_segs
+    Pxx_check(:,i) = periodogram(seg_win(:,i), [], fft_length, Fs_epsi, 'psd');
+end
+fprintf('max |manual - periodogram-per-segment| = %.3e (should be ~0)\n', ...
+    max(abs(Pxx_manual - mean(Pxx_check,2))));
 
 %% figure
 n_rows = 6;
+gap = [0.05 0.06]; marg_h = [0.05 0.05]; marg_w = [0.07 0.03];
 fig = aguFigure(16, (17/5)*n_rows, 10);
-tiledlayout(n_rows,2,'TileSpacing','compact');
 cmap = lines(max(n_segs,1));   % segment i's color (cmap(i,:)) is reused in every later panel that shows that segment
 
 % 0a. between-scan overlap, epsi domain: this scan (black) and its
 % neighbors (colored), each drawn over its own window, offset by a
 % steady per-scan-index climb so "which scan is which" stays unambiguous.
-nexttile([1 2]);
+subtightplot(n_rows,2,[1 2],gap,marg_h,marg_w);
 off_step_e = 2*range(x_epsi_ctx) / max(2*opts.n_neighbors,1);
 hold on
 plot(t_epsi_ctx, x_epsi_ctx, 'color',[0.8 0.8 0.8])
@@ -185,11 +217,10 @@ title(sprintf('scan %d (black) and %d neighbors on each side - epsi-sample windo
 
 % 0b. same neighborhood in pressure/depth space, Gantt-style: one
 % horizontal bar per scan (length = that scan's pressure window width),
-% stacked by scan index. Overlap here is ~50% by construction
-% (scan_step = N_epsi/2) - shown, not measured, unlike the old
-% mod_fish_lib pipeline where it was an incidental side effect of a
-% fixed, independent dz.
-nexttile([1 2]);
+% stacked by scan index. Overlap here is scan_overlap by construction -
+% shown, not measured, unlike the old mod_fish_lib pipeline where it was
+% an incidental side effect of a fixed, independent dz.
+subtightplot(n_rows,2,[3 4],gap,marg_h,marg_w);
 hold on
 yline(0, ':', 'color',[0.75 0.75 0.75])
 for k = 1:n_nb
@@ -203,62 +234,65 @@ for k = 1:n_nb
 end
 ylim([-opts.n_neighbors-1, opts.n_neighbors+1])
 xlabel('pressure [db]'); ylabel(sprintf('scan index relative to scan %d',iScan))
-title(sprintf('scan\\_step = N\\_epsi/2 -> 50%% overlap by construction (median window width = %.2f db)', ...
-    median(width_db_nb)))
+title(sprintf('scan\\_step = (1-scan\\_overlap)\\times N\\_epsi -> %.0f%% overlap by construction (median window width = %.2f db)', ...
+    100*opts.scan_overlap, median(width_db_nb)))
 
-% 1. full record (black) with every pwelch segment overlaid in its own
-% color (cmap(i,:), reused in the panels below), nudged just enough
-% alternately below/above the black line to stay visible.
-nexttile([1 2]);
-tiny_off = 0.02*range(x);
+% 1. full record (black, undetrended) with every Welch segment overlaid
+% in its own color (cmap(i,:), reused in the panels below, shown AFTER
+% its own individual detrend), nudged just enough alternately below/above
+% the black line to stay visible.
+subtightplot(n_rows,2,[5 6],gap,marg_h,marg_w);
+tiny_off = 0.02*range(x_raw - mean(x_raw));
 hold on
-plot(t, x, 'k-', 'linewidth', 1.3)
+plot(t, x_raw-mean(x_raw), 'k-', 'linewidth', 1.3)
 for i = 1:n_segs
-    idx = seg_starts(i):seg_starts(i)+nfft-1;
+    idx = seg_starts(i):seg_starts(i)+fft_length-1;
     sign_i = 1 - 2*mod(i,2);   % i=1 (odd) -> below, i=2 (even) -> above, i=3 -> below, ...
     off = sign_i*tiny_off;
-    plot(t(idx), x(idx)+off, 'color', cmap(i,:), 'linewidth',1.4)
+    plot(t(idx), seg_det(:,i)+off, 'color', cmap(i,:), 'linewidth',1.4)
 end
 xlabel('time [s]'); ylabel(strrep(channel,'_','\_'))
-title(sprintf('scan %d: full record (black) with %d segment(s) overlaid, step %d samples (%.0f%% overlap)', ...
-    iScan, n_segs, step, 100*noverlap/nfft))
+title(sprintf('scan %d: raw record (black, mean-removed for display), %d segment(s) shown after their own individual detrend, step %d samples (%.0f%% overlap)', ...
+    iScan, n_segs, step, 100*noverlap/fft_length))
 
 % 2. the window shape itself
-nexttile
-plot((0:nfft-1)/Fs_epsi, win, 'k-','linewidth',1.5)
+subtightplot(n_rows,2,7,gap,marg_h,marg_w);
+plot((0:fft_length-1)/Fs_epsi, win, 'k-','linewidth',1.5)
 xlabel('time within segment [s]'); ylabel('window amplitude')
-title(sprintf('%s window, length %d', opts.window_type, nfft))
+title(sprintf('%s window, length %d', opts.window_type, fft_length))
 ylim([0 1.05*max(win)])
 
-% 3. segment 1, raw vs windowed - this is "where the window lives".
-% Segment 1's color (cmap(1,:)), solid for raw and dashed for windowed.
-nexttile
-plot((0:nfft-1)/Fs_epsi, seg_raw(:,1),'-','color',cmap(1,:),'linewidth',1.1); hold on
-plot((0:nfft-1)/Fs_epsi, seg_win(:,1),'--','color',cmap(1,:),'linewidth',1.6)
-legend('raw segment','windowed segment','location','best')
+% 3. segment 1: raw -> per-segment detrend -> windowed.
+subtightplot(n_rows,2,8,gap,marg_h,marg_w);
+hold on
+plot((0:fft_length-1)/Fs_epsi, seg_raw(:,1)-mean(seg_raw(:,1)),'-','color',[0.6 0.6 0.6],'linewidth',1.2)
+plot((0:fft_length-1)/Fs_epsi, seg_det(:,1),'-','color',cmap(1,:),'linewidth',1.5)
+plot((0:fft_length-1)/Fs_epsi, seg_win(:,1),'k-','linewidth',1)
+legend('raw (mean-removed)','individually detrended','windowed','location','best')
 xlabel('time within segment [s]'); ylabel('amplitude')
-title('segment 1: before vs after windowing')
+title('segment 1: raw -> per-segment detrend -> window')
 
 % 4. every segment's own periodogram (in its own segment color) + their
 % average (black). Positioned left, 2 row-heights x 1 column so it reads
 % as roughly square.
-nexttile([2 1])
+subtightplot(n_rows,2,[9 11],gap,marg_h,marg_w);
 semilogy(f_manual, Pxx_segs(:,1), 'color', cmap(1,:)); hold on
 for i = 2:n_segs
     semilogy(f_manual, Pxx_segs(:,i), 'color', cmap(i,:))
 end
 semilogy(f_manual, Pxx_manual, 'k-','linewidth',2)
 xlabel('frequency [Hz]'); ylabel('PSD')
-title(sprintf('%d individual periodogram(s) -> Welch average', n_segs))
+title(sprintf('%d individual periodogram(s) (per-segment detrend) -> Welch average', n_segs))
 xlim([0 Fs_epsi/2])
 
-% 5. hand-rolled Welch vs pwelch, sanity check. Same 2x1 footprint as panel 4.
-nexttile([2 1])
+% 5. hand-rolled Welch vs. the same math via MATLAB's periodogram, sanity
+% check. Same 2x1 footprint as panel 4.
+subtightplot(n_rows,2,[10 12],gap,marg_h,marg_w);
 semilogy(f_manual, Pxx_manual,'b-','linewidth',2); hold on
-semilogy(f_pwelch, Pxx_pwelch,'r--','linewidth',1.5)
-legend('manual (by hand)','pwelch','location','best')
+semilogy(f_manual, mean(Pxx_check,2),'r--','linewidth',1.5)
+legend('manual (by hand)','MATLAB periodogram, per segment','location','best')
 xlabel('frequency [Hz]'); ylabel('PSD [units^2/Hz]')
-title('sanity check: hand-rolled Welch matches pwelch exactly')
+title('sanity check: hand-rolled per-segment-detrend Welch matches periodogram exactly')
 xlim([0 Fs_epsi/2])
 
 end

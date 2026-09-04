@@ -29,7 +29,7 @@ function H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
 %   bundle the AFE electronics/ADC sinc^4 filter response that the old
 %   MOD_fish_lib's get_filters_MADRE.m combined into a single H.FPO7(speed)
 %   (H.electFPO7.^2 .* H.magsq(speed)) - that electronics term is a
-%   separate, much smaller correction at typical epsi nfft/Fs (its rolloff
+%   separate, much smaller correction at typical epsi fft_length/Fs (its rolloff
 %   sits near Nyquist; the thermal rolloff modeled here sits far below it,
 %   around 1/(2*pi*tau) ~ tens of Hz for typical fall speeds) and belongs
 %   to modProcess_L1_apply_filters.m (PLAN.md Section 6.2, not started

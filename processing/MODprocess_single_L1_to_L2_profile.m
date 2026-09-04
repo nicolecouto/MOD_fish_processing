@@ -75,7 +75,7 @@ function L2data = MODprocess_single_L1_to_L2_profile(profile, TimeIndex, metadat
 %   When compute_epsi is true (see DESCRIPTION), also has
 %   mod_L2_tile_scans.m's per-scan OUTPUTS (dnum, pressure, w, temperature,
 %   salinity, spectra.*, chi_obs.*, chi_obs_kc.*,
-%   nfft/dof/Fs_epsi/N_epsi/scan_step) - epsi's own raw record
+%   fft_length/dof/Fs_epsi/N_epsi/scan_step) - epsi's own raw record
 %   (profile_data.epsi) is never itself saved into L2data, only these
 %   derived per-scan products. When compute_epsi is false, these fields
 %   are still present (mod_L2_tile_scans.m's empty-input shape) but every

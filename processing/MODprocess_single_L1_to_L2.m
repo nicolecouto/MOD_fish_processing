@@ -9,8 +9,8 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   splitting into per-profile files (PLAN.md Section 4 - this is the
 %   deliberate divergence from the old mod_fish_lib profile-based L2
 %   approach). Scans tile data.epsi within this file only ("realtime"
-%   mode - see PLAN.md's Context section) with 50% overlap:
-%   N_epsi = (dof-1)*nfft samples per scan, step = N_epsi/2.
+%   mode - see PLAN.md's Context section):
+%   N_epsi = scan_length samples per scan, step = (1-scan_overlap)*N_epsi.
 %
 %   Only scans classified as descending (PressureTimeseries.is_down at the
 %   scan's center time) get spectra computed - see

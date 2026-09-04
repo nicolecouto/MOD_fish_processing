@@ -41,6 +41,7 @@ nav:
       - "Profile detection and extraction": workflow/profile_detection.md
   - Concepts:
       - Overview: concepts/index.md
+      - "Choosing fft_length, fft_segments_per_scan, and scan_overlap": concepts/spectral_windowing.md
   - References: references.md
 
 markdown_extensions:

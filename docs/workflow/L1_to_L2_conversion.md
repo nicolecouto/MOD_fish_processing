@@ -60,7 +60,7 @@ Real output, `epsi_deepsolo/26_0520_ljc` (sandbox test run, 2026-07-26): pressur
 scan = mod_scan_get_spectra(scan, metadata)
 ```
 
-Pure function - `scan.epsi` is `data.epsi` already sliced to one scan's `N_epsi = (dof-1)*nfft` samples. For every channel in `metadata.PROCESS.channels`, computes `[Pxx, f] = pwelch(detrend(x), nfft, [], nfft, Fs_epsi, 'psd')` - the same call shape as the old `mod_efe_scan_acceleration.m`, minus the `h_freq` transfer-function correction (SOM filters, PLAN.md Section 6.2, aren't implemented yet - these spectra are **uncorrected**, documented as such rather than silently glossed over). Returns the same `scan` struct with `spectra.f` (shared frequency vector) and `spectra.(channel)_f` added (e.g. `spectra.t1_volt_f`, `spectra.a2_g_f` - matching `MOD_fish_lib`'s `Pt_volt_f`/`Pa_g_f` naming, see [FP07 calibration and chi](L2_calc_chi.md)).
+Pure function - `scan.epsi` is `data.epsi` already sliced to one scan's `scan_length` samples. For every channel in `metadata.PROCESS.channels`, Welch-averages `fft_length`-length segments (overlapping by a hardcoded 50%, each individually detrended before its own Hamming window/FFT - see [Choosing fft_length, fft_segments_per_scan, and scan_overlap](../concepts/spectral_windowing.md) for why per-segment detrend matters and how these parameters combine into `dof`) rather than calling `pwelch` on the whole scan directly. Returns the same `scan` struct with `spectra.f` (shared frequency vector) and `spectra.(channel)_f` added (e.g. `spectra.t1_volt_f`, `spectra.a2_g_f` - matching `MOD_fish_lib`'s `Pt_volt_f`/`Pa_g_f` naming, see [FP07 calibration and chi](L2_calc_chi.md)).
 
 **Every channel gets a spectrum, regardless of `metadata.AFE.(ch).type`** (branch `chi_processing`, follow-up review) - `type: acc` gets the gravity-unit field name (`[ch '_g']`), every other type defaults to the raw-volts field name (`[ch '_volt']`), matching `MODprocess_single_L0_to_L1.m`'s `convert_efe_channels`, which already applies that same acc-vs-everything-else split when converting raw counts to physical units. This is what makes a channel slot repurposed for a sensor this repo has no dedicated processing for yet - e.g. a microconductivity or fluorometer probe wired into a slot that's normally shear (`instrument_manifest.afe.channel_N: {name: c1, type: microconductivity, sn: ...}` instead of the usual `{name: s2, type: shear, sn: ...}`) - still get a real spectrum computed, rather than being silently dropped. `instrument_manifest.afe`'s `name`/`type` fields are free-form strings with no enum validation anywhere in this repo; only `type: shear` triggers automatic SN-based calibration-file lookup (`MODsetup_read_yaml.m`'s `probe_cal_subdir`) - every other type gets no automatic calibration. Channel-specific processing beyond the raw spectrum (calibration, chi, etc.) is added as its own dedicated step later, per channel type, the same precedent `MODprocess_L1_apply_fpo7_calibration.m`/`mod_scan_calc_chi_obs.m` set for `fpo7` - a microconductivity chi/turbulence computation is not yet designed and is not part of this repo today.
 
@@ -78,10 +78,10 @@ data = load('L1/modsom_20.mat');
 L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
 ```
 
-1. Tiles `data.epsi` **within this file only**, `N_epsi`-sample windows with 50% overlap (`scan_step = N_epsi/2`).
+1. Tiles `data.epsi` **within this file only**, `scan_length`-sample windows overlapping by `scan_overlap` (`scan_step = (1-scan_overlap)*scan_length`).
 2. For each scan's center time, nearest-matches against `PressureTimeseries.dnum`/`.is_down`. Deliberately **no extrapolation** here: a scan center time outside `[min(PressureTimeseries.dnum), max(PressureTimeseries.dnum)]` has no real pressure information at all - e.g. epsi logging that started hours before DeepSolo's pressure record begins (real case: `epsi_deepsolo/26_0520_ljc`'s first 14 L1 files, ~18.5 h of epsi data recorded before the first fallrise pressure sample) - and gets excluded rather than nearest-matched to a potentially far-distant, meaningless sample. This was caught during testing: an earlier version used `interp1(...,'nearest','extrap')`, which would have nearest-matched all of those early scans to whatever the first `PressureTimeseries` sample happened to be classified as, regardless of how many hours away it was.
 3. For kept (descending) scans, slices `data.epsi` and calls `mod_scan_get_spectra`.
-4. Assembles output arrays over the scan dimension: `dnum`, `pressure`/`w` (interpolated from this file's own `data.ctd.P`/`.dzdt` at scan center), `spectra.f` (shared, `1 × nfreq`), per-channel `spectra.(channel)_f` matrices (`nbscan × nfreq`), plus provenance (`nfft`, `dof`, `Fs_epsi`, `N_epsi`, `scan_step`). **Update (branch `chi_processing`):** also `temperature`/`salinity` (from `data.ctd.T`/`.S` at scan center, only when this file's CTD has real T/S), `chi_obs.(channel)`/`chi_obs_kc.(channel)` for every fpo7 channel with a resolved `volts_to_C` calibration, and the deconvolved spectrum/cutoff those are computed from (`spectra.k`, `spectra.(channel)_Tg_k`, `spectra.(channel)_fc_index`) - see [FP07 calibration and chi](L2_calc_chi.md).
+4. Assembles output arrays over the scan dimension: `dnum`, `pressure`/`w` (interpolated from this file's own `data.ctd.P`/`.dzdt` at scan center), `spectra.f` (shared, `1 × nfreq`), per-channel `spectra.(channel)_f` matrices (`nbscan × nfreq`), plus provenance (`fft_length`, `fft_segments_per_scan`, `Fs_epsi`, `N_epsi`, `scan_step`, and `dof` - `N_epsi` (`scan_length`) derived from `fft_length`/`fft_segments_per_scan` via `toolbox/mod_scan_length_from_segments.m`, `dof` from `fft_segments_per_scan` alone via `toolbox/mod_scan_dof.m`, neither a yaml-configurable input itself, see [Choosing fft_length, fft_segments_per_scan, and scan_overlap](../concepts/spectral_windowing.md)). **Update (branch `chi_processing`):** also `temperature`/`salinity` (from `data.ctd.T`/`.S` at scan center, only when this file's CTD has real T/S), `chi_obs.(channel)`/`chi_obs_kc.(channel)` for every fpo7 channel with a resolved `volts_to_C` calibration, and the deconvolved spectrum/cutoff those are computed from (`spectra.k`, `spectra.(channel)_Tg_k`, `spectra.(channel)_fc_index`) - see [FP07 calibration and chi](L2_calc_chi.md).
 
 Returns an all-empty `L2data` (consistent field shapes, `nbscan = 0`) if this file has no epsi data, is too short for even one scan, or no scan lands on a descending part of the record - not an error, since that's expected for files recorded entirely during an upcast or before pressure logging started.
 
@@ -106,12 +106,13 @@ profile_detection:        # -> metadata.PROFILES.*
   ctd_gap_factor: 5         # gaps > ctd_gap_factor * median(dt) split the record, not interpolated across
   buffer_bins: 1             # pad each descending run by this many raw pressure samples on each side
 
-spectral:                  # -> metadata.PROCESS.nfft / .dof
-  nfft: 1024
-  dof: 3
+spectral:                  # -> metadata.PROCESS.fft_length / .fft_segments_per_scan / .scan_overlap
+  fft_length: 1024
+  fft_segments_per_scan: 3  # -> scan_length = 2048 samples, dof = 5.7 (overlap hardcoded at 50%)
+  scan_overlap: 0.5
 ```
 
-`nfft`/`dof` default to `1024`/`3` (same defaults the old `MOD_fish_lib` `Acquisition/setup.yml` templates used) if the `spectral:` block is absent. `Fs_epsi` defaults to `320` Hz (the standard EFE board rate) if `afe.sample_rate` is absent.
+`fft_length`/`fft_segments_per_scan`/`scan_overlap` default to `1024`/`3`/`0.5` if the `spectral:` block is absent - see [Choosing fft_length, fft_segments_per_scan, and scan_overlap](../concepts/spectral_windowing.md) for what these mean and how to pick them for a given platform's fall speed. `Fs_epsi` defaults to `320` Hz (the standard EFE board rate) if `afe.sample_rate` is absent.
 
 ## How to run it
 

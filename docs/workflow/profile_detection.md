@@ -90,8 +90,9 @@ profile_detection:              # -> metadata.PROFILES.* (profile-picking only)
   profile_dir: down               # 'down' | 'up' | 'both'
 
 spectral:                        # -> metadata.PROCESS.* (existing block, extended)
-  nfft: 1024
-  dof: 3
+  fft_length: 1024
+  fft_segments_per_scan: 3
+  scan_overlap: 0.5
   epsi_gap_factor: 3              # scan-window gap threshold - governs which FFT windows are
                                    # valid, not which samples are part of a profile, so it lives
                                    # here (PROCESS), not under profile_detection: (PROFILES)

@@ -119,9 +119,13 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                noise_adjusted_to_f/.n_smooth_f_spectrum/.sn_min/.n_skip -
 %                see those functions for exact fields). Also used directly
 %                here:
-%                  metadata.PROCESS.dof - degrees of freedom of the power
-%                    spectrum estimate, sets how tightly the MLE trusts
-%                    each spectral bin against the model
+%                  metadata.PROCESS.fft_segments_per_scan - fed to
+%                    toolbox/mod_scan_dof.m to derive the power spectrum
+%                    estimate's degrees of freedom, which sets how
+%                    tightly the MLE trusts each spectral bin against the
+%                    model. dof itself is not a yaml-configurable field -
+%                    see mod_scan_dof.m/mod_L2_tile_scans.m for why it's
+%                    derived instead of its own setting.
 %                  metadata.PROCESS.CHI.kmin_obs - low-wavenumber
 %                    integration bound [cpm], matches mod_scan_calc_chi_obs.m
 %                  metadata.PROCESS.CHI.chi_mle_start_search,
@@ -168,7 +172,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_fpo7_volts_to_Tg_spectrum.m,
-%   mod_scan_fpo7_cutoff.m, mod_scan_batchelor_spectrum.m
+%   mod_scan_fpo7_cutoff.m, mod_scan_batchelor_spectrum.m, toolbox/mod_scan_dof.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -177,11 +181,12 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search', 'dof', ...
+    {'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search', ...
+     'fft_segments_per_scan', ...
      'time_constant_s', 'fall_speed_exponent', ...
      'noise_adjusted_to_f', 'n_smooth_f_spectrum', 'sn_min', 'n_skip'});
 
-dof = metadata.PROCESS.dof;
+dof = mod_scan_dof(metadata.PROCESS.fft_segments_per_scan);
 kmin = metadata.PROCESS.CHI.kmin_obs; % cpm
 chi_mle_start_search = metadata.PROCESS.CHI.chi_mle_start_search; % multiplier on chi_seed
 chi_mle_end_search = metadata.PROCESS.CHI.chi_mle_end_search;

@@ -15,7 +15,7 @@ function metadata = MODsetup_define_filters(metadata)
 %   function on its own (mod_scan_fpo7_transfer_function.m, already
 %   built). Everything else in get_filters_SOM.m - the per-channel ADC
 %   sinc^4 response, shear's charge-amp electronics filter, gains -
-%   depends only on f (itself just metadata.PROCESS.nfft/.Fs_epsi) and
+%   depends only on f (itself just metadata.PROCESS.fft_length/.Fs_epsi) and
 %   metadata.AFE.(ch), so it's a genuine "resolve once, like volts_to_C"
 %   value. See PLAN.md Section 6.2's "Design note: instrument filters"
 %   for the full reasoning, and docs/workflow/L2_calc_chi.md for how
@@ -40,7 +40,7 @@ function metadata = MODsetup_define_filters(metadata)
 %
 % INPUTS
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
-%              metadata.PROCESS.nfft/.Fs_epsi/.channels,
+%              metadata.PROCESS.fft_length/.Fs_epsi/.channels,
 %              metadata.AFE.(ch).type/.ADCfilter,
 %              metadata.paths.calibrations_root (shear only)
 %
@@ -48,7 +48,7 @@ function metadata = MODsetup_define_filters(metadata)
 %   metadata - same struct, with metadata.AFE.(ch).electronics_filter
 %              (magnitude-squared, nfreq x 1, same f as
 %              mod_scan_get_spectra.m produces for this deployment's
-%              nfft/Fs_epsi) added for every channel with a resolvable
+%              fft_length/Fs_epsi) added for every channel with a resolvable
 %              type/filter. A shear channel is left without the field
 %              (warning, not error) if the charge-amp filter file isn't
 %              found - same "missing calibration is not an error"
@@ -62,7 +62,7 @@ function metadata = MODsetup_define_filters(metadata)
 %   mod_scan_adc_filter.m
 %
 % NOTES
-%   f is derived via a cheap dummy pwelch call (zeros(nfft,1), same nfft/
+%   f is derived via a cheap dummy pwelch call (zeros(fft_length,1), same fft_length/
 %   Fs_epsi/'psd' args mod_scan_get_spectra.m uses) rather than hand-
 %   deriving the one-sided PSD frequency-bin formula - guarantees this
 %   function's f is bit-identical to every real scan's f, rather than
@@ -83,11 +83,11 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'nfft', 'Fs_epsi'});
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'fft_length', 'Fs_epsi'});
 
-nfft = metadata.PROCESS.nfft;
+fft_length = metadata.PROCESS.fft_length;
 Fs_epsi = metadata.PROCESS.Fs_epsi;
-[~, f] = pwelch(zeros(nfft, 1), nfft, [], nfft, Fs_epsi, 'psd');
+[~, f] = pwelch(zeros(fft_length, 1), fft_length, [], fft_length, Fs_epsi, 'psd');
 f = f(:);
 
 for iC = 1:numel(metadata.PROCESS.channels)

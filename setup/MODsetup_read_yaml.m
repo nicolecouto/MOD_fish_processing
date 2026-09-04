@@ -109,10 +109,19 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     NOT set at all if the key is absent -
 %                                     see NOTES below on why this function
 %                                     never silently defaults anything.
-%     PROCESS.nfft, .dof            - spectral processing parameters for
-%                                     mod_scan_get_spectra.m, from
-%                                     setup.yml's spectral.nfft/.dof. NOT
-%                                     set if the spectral: block or the
+%     PROCESS.fft_length,
+%              .fft_segments_per_scan, .scan_overlap
+%                                   - spectral/scan-windowing parameters for
+%                                     mod_scan_get_spectra.m/mod_L2_tile_scans.m,
+%                                     from setup.yml's spectral.fft_length/
+%                                     .fft_segments_per_scan/.scan_overlap.
+%                                     scan_length is derived from the first
+%                                     two (toolbox/mod_scan_length_from_segments.m),
+%                                     dof from fft_segments_per_scan alone
+%                                     (toolbox/mod_scan_dof.m) - neither is a
+%                                     yaml-configurable field of its own -
+%                                     see mod_scan_calc_chi_mle.m. NOT set
+%                                     if the spectral: block or the
 %                                     specific key is absent.
 %     PROCESS.epsi_gap_factor       - scan-window gap threshold for the
 %                                     epsi record (modProcess_extract_profile.m,
@@ -175,13 +184,6 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     (mod_scan_fpo7_cutoff.m), from
 %                                     setup.yml's chi.n_skip. NOT set if
 %                                     absent.
-%     PROCESS.CHI.hamming_window_length_nfft
-%                                   - pwelch Hamming window length, as a
-%                                     fraction of nfft (mod_scan_get_spectra.m:
-%                                     window_length = hamming_window_length_nfft
-%                                     * nfft), from setup.yml's
-%                                     chi.hamming_window_length_nfft. NOT
-%                                     set if absent.
 %     PROCESS.CHI.kmin_obs         - low-wavenumber integration bound [cpm]
 %                                     for chi_obs/chi_mle
 %                                     (mod_scan_calc_chi_obs.m,
@@ -327,16 +329,14 @@ if isfield(yml, 'afe') && isfield(yml.afe, 'sample_rate')
     metadata.PROCESS.Fs_epsi = yml.afe.sample_rate;
 end
 
-%% Spectral processing parameters (mod_scan_get_spectra.m)
+%% Spectral processing parameters (mod_scan_get_spectra.m, mod_L2_tile_scans.m)
 if isfield(yml, 'spectral')
-    if isfield(yml.spectral, 'nfft')
-        metadata.PROCESS.nfft = yml.spectral.nfft;
-    end
-    if isfield(yml.spectral, 'dof')
-        metadata.PROCESS.dof = yml.spectral.dof;
-    end
-    if isfield(yml.spectral, 'epsi_gap_factor')
-        metadata.PROCESS.epsi_gap_factor = yml.spectral.epsi_gap_factor;
+    spectral_fields = {'fft_length', 'fft_segments_per_scan', 'scan_overlap', 'epsi_gap_factor'};
+    for iF = 1:numel(spectral_fields)
+        field = spectral_fields{iF};
+        if isfield(yml.spectral, field)
+            metadata.PROCESS.(field) = yml.spectral.(field);
+        end
     end
 end
 
@@ -374,7 +374,7 @@ end
 % mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m)
 if isfield(yml, 'chi')
     chi_fields = {'time_constant_s', 'fall_speed_exponent', 'noise_adjusted_to_f', ...
-        'n_smooth_f_spectrum', 'sn_min', 'n_skip', 'hamming_window_length_nfft', ...
+        'n_smooth_f_spectrum', 'sn_min', 'n_skip', ...
         'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search'};
     for iF = 1:numel(chi_fields)
         field = chi_fields{iF};

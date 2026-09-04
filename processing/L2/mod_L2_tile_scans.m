@@ -4,8 +4,11 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 % L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %
 % DESCRIPTION
-%   Tiles one continuous epsi record into N_epsi = (dof-1)*nfft-sample
-%   scans with 50% overlap (scan_step = N_epsi/2), computes spectra
+%   Tiles one continuous epsi record into N_epsi-sample scans overlapping
+%   by scan_overlap (scan_step = (1-scan_overlap)*N_epsi) - N_epsi
+%   (scan_length) is derived from fft_length/fft_segments_per_scan
+%   (toolbox/mod_scan_length_from_segments.m), not itself a yaml-
+%   configurable field. Computes spectra
 %   (mod_scan_get_spectra.m) and chi_obs (mod_scan_calc_chi_obs.m, when a
 %   real onboard CTD/volts_to_C is available) per kept scan, and assembles
 %   scan-dimension output arrays.
@@ -60,7 +63,9 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %              modProcess_extract_profile.m) - see DESCRIPTION.
 %   ctd      - data.ctd or profile_data.ctd, same source as epsi
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Directly used
-%              here: metadata.PROCESS.nfft, .dof, .Fs_epsi, .channels,
+%              here: metadata.PROCESS.fft_length, .fft_segments_per_scan
+%              (together derive N_epsi/scan_length and dof - see
+%              DESCRIPTION/OUTPUTS), .scan_overlap, .Fs_epsi, .channels,
 %              metadata.AFE.(channel).type, .volts_to_C (isfield-checked
 %              to decide chi_obs_channels), metadata.paths.calibrations_root
 %              (to load the FPO7 bench noise file). Passed straight
@@ -135,7 +140,14 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   mod_scan_calc_chi_obs.m's OUTPUTS. Same values as
 %                   spectra.k(:, spectra.(channel)_fc_index), just
 %                   pre-indexed for convenience.
-%     nfft, dof, Fs_epsi, N_epsi, scan_step - provenance
+%     fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, scan_step -
+%                   provenance. fft_segments_per_scan is the actual
+%                   yaml-configurable input; N_epsi (scan_length) is
+%                   derived from it and fft_length
+%                   (toolbox/mod_scan_length_from_segments.m), and dof
+%                   from fft_segments_per_scan alone (toolbox/mod_scan_dof.m)
+%                   - see mod_scan_calc_chi_mle.m for the other consumer
+%                   of that same dof derivation.
 %   nbscan is 0 (all fields empty) if epsi has no data, is too short for
 %   even one scan, or (realtime mode only) no scan lands on a descending
 %   part of the record.
@@ -146,7 +158,8 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 % CALLS
 %   mod_scan_get_spectra.m, mod_scan_thermal_diffusivity.m,
 %   mod_scan_calc_chi_obs.m (only for fpo7 channels with a resolved
-%   volts_to_C calibration)
+%   volts_to_C calibration), toolbox/mod_scan_dof.m,
+%   toolbox/mod_scan_length_from_segments.m
 %
 % NOTES
 %   File-boundary/segment-boundary coverage gaps (a partial window at the
@@ -165,7 +178,8 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'nfft', 'dof', 'Fs_epsi'});
+metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
+    {'fft_length', 'fft_segments_per_scan', 'scan_overlap', 'Fs_epsi'});
 
 if nargin < 4
     PressureTimeseries = [];
@@ -173,13 +187,14 @@ end
 have_direction_gate = ~isempty(PressureTimeseries);
 have_segment_id = isfield(epsi, 'segment_id') && ~isempty(epsi.segment_id);
 
-nfft = metadata.PROCESS.nfft;
-dof = metadata.PROCESS.dof;
+fft_length = metadata.PROCESS.fft_length;
+fft_segments_per_scan = metadata.PROCESS.fft_segments_per_scan;
 Fs_epsi = metadata.PROCESS.Fs_epsi;
-N_epsi = (dof - 1) * nfft;
-scan_step = N_epsi / 2; % 50% overlap
+N_epsi = mod_scan_length_from_segments(fft_length, fft_segments_per_scan);
+scan_step = round((1 - metadata.PROCESS.scan_overlap) * N_epsi);
+dof = mod_scan_dof(fft_segments_per_scan);
 
-L2data = empty_L2data(nfft, dof, Fs_epsi, N_epsi, scan_step);
+L2data = empty_L2data(fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, scan_step);
 
 if isempty(epsi) || ~isfield(epsi, 'dnum') || isempty(epsi.dnum)
     return
@@ -387,7 +402,7 @@ end
 
 %% Empty-scan-count output shape, so callers get consistent fields even
 % when there are no kept scans.
-function L2data = empty_L2data(nfft, dof, Fs_epsi, N_epsi, scan_step)
+function L2data = empty_L2data(fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, scan_step)
 L2data.dnum = [];
 L2data.pressure = [];
 L2data.w = [];
@@ -396,7 +411,8 @@ L2data.salinity = [];
 L2data.spectra = struct('f', []);
 L2data.chi_obs = struct();
 L2data.chi_obs_kc = struct();
-L2data.nfft = nfft;
+L2data.fft_length = fft_length;
+L2data.fft_segments_per_scan = fft_segments_per_scan;
 L2data.dof = dof;
 L2data.Fs_epsi = Fs_epsi;
 L2data.N_epsi = N_epsi;
