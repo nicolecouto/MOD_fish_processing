@@ -115,6 +115,7 @@ addpath('/path/to/MOD_fish_processing/processing/L2');
 addpath('/path/to/MOD_fish_processing/processing/scans');
 addpath('/path/to/MOD_fish_processing/setup');
 addpath('/path/to/MOD_fish_processing/toolbox');
+addpath('/path/to/MOD_fish_processing/toolbox/theoretical_spectra'); % batchelor/panchev/nasmyth - addpath isn't recursive
 
 metadata = MODsetup_read_yaml('/path/to/deployment/meta/setup.yml');
 scan.spectra.f = ...;          % from mod_scan_get_spectra.m

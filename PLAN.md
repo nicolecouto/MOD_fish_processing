@@ -89,8 +89,14 @@ alongside `chi_obs`/`chi_obs_kc`, not just the summary scalars.
 
 **Carve-out:** generic physics/math helpers with no natural home in a `scan` struct — reusable
 outside the fish-scan pipeline entirely — stay scalar-in/scalar-out. Currently:
-`mod_scan_batchelor_spectrum.m`, `mod_scan_thermal_diffusivity.m`,
-`mod_scan_fpo7_transfer_function.m`. Everything else under `processing/scans/` should take
+`mod_scan_thermal_diffusivity.m`, `mod_scan_fpo7_transfer_function.m` (both still under
+`processing/scans/` - they take `metadata`/probe-specific arguments, not pure math). The three
+theoretical-spectrum-shape functions this carve-out originally covered -
+`mod_scan_batchelor_spectrum.m`, `mod_scan_panchev_spectrum.m`, `mod_scan_nasmyth_spectrum.m` -
+were moved to `toolbox/theoretical_spectra/` (branch `epsilon_processing`, 2026-09-08) once there
+were three of them, not one, making the carve-out's own "reusable outside the fish-scan pipeline
+entirely" reasoning literal rather than just a documentation note - see Section 12 session log.
+Everything else under `processing/scans/` should take
 `(scan, metadata, ...)`.
 
 *Status: this reconciles with the top-of-section principle above ("every L1/L2/L3 processing
@@ -650,10 +656,10 @@ Ran `/code-review` against the branch after the `chi_obs`/`chi_mle`/reorg work a
 
 1. **`MODprocess_single_L1_to_L2.m:227`** (correctness, confirmed) - `chi_obs` is computed from an interpolated fall speed (`w_all(iScan)`) with no check that it's finite/nonzero. `w=0` or non-finite makes `mod_scan_fpo7_transfer_function.m` compute `tau=Inf`, so `mod_scan_calc_chi_obs.m` returns `chi_obs=NaN` but `kc=Inf` instead of the documented `NaN` - silently corrupting `L2data.chi_obs_kc` for that scan.
 2. **`docs/workflow/L1_to_L2_conversion.md:117` / `docs/workflow/L0_to_L1_conversion.md:273`** (documentation, confirmed) - the manual "run it by hand" `addpath` instructions were never updated for the `processing/scans/`/`processing/L1/` moves; `addpath` isn't recursive, so following either doc verbatim throws "Undefined function" on the first per-scan/per-file call.
-3. **`processing/scans/mod_scan_batchelor_spectrum.m:68`** (correctness) - `kb = (epsilon/nu/ktemp^2)^(1/4)` has no guard against `epsilon <= 0`; produces a complex-valued spectrum instead of erroring, which `mod_scan_calc_chi_mle.m` then feeds into `chi2pdf` as a complex `z` (undefined behavior) with no warning.
+3. **`toolbox/theoretical_spectra/mod_scan_batchelor_spectrum.m:68`** (correctness; moved from `processing/scans/` 2026-09-08, line number unchanged) - `kb = (epsilon/nu/ktemp^2)^(1/4)` has no guard against `epsilon <= 0`; produces a complex-valued spectrum instead of erroring, which `mod_scan_calc_chi_mle.m` then feeds into `chi2pdf` as a complex `z` (undefined behavior) with no warning.
 4. **`processing/scans/mod_scan_calc_chi_mle.m:149`** (correctness) - when the direct-integration seed (`chi_seed`) is non-positive/non-finite, returns `chi_mle=NaN` but leaves `kc` at its already-computed valid value instead of also `NaN`, contradicting the function's own documented contract (and the `kc<=kmin` branch just above it, which does reset both).
 5. **`processing/scans/mod_scan_calc_chi_mle.m:131`** (duplication) - re-derives `mod_scan_calc_chi_obs.m`'s entire preprocessing (deconvolve, find `kc`, restrict range, integrate for a seed) inline instead of reusing it, and `kmin = 3` cpm is hardcoded independently in both files - a caller needing both estimates (e.g. `analysis/chi_tau_mle_comparison.m`) redoes the noise-floor search and deconvolution twice, and a future `kmin` retune could silently land in only one of the two files.
-6. **`processing/scans/mod_scan_batchelor_spectrum.m:78`** (correctness, latent) - the scalar-chi `reshape(Psg, size(k))` is a no-op since `k` was already overwritten to a column vector earlier in the function; not exercised by the current caller (always passes a vector of candidate chi values), but a future scalar-chi/row-vector-k caller would silently get the wrong orientation back.
+6. **`toolbox/theoretical_spectra/mod_scan_batchelor_spectrum.m:78`** (correctness, latent; moved from `processing/scans/` 2026-09-08, line number unchanged) - the scalar-chi `reshape(Psg, size(k))` is a no-op since `k` was already overwritten to a column vector earlier in the function; not exercised by the current caller (always passes a vector of candidate chi values), but a future scalar-chi/row-vector-k caller would silently get the wrong orientation back.
 7. **`processing/scans/mod_scan_calc_chi_mle.m:190`** (robustness) - the fixed 4-pass grid search returns `chi_grid(best)` with no flag for whether it actually converged vs. landed pinned to a search-range edge (e.g. a scan where `kc` barely exceeds `kmin`, so `chi_seed` is derived from very few bins).
 8. **`analysis/chi_tau_mle_comparison.m:79`** (correctness, one-off script) - `cal_pr` is read only from `Meta_Data.AFE.t1.pr` and reused for `t2`'s `cal_profile` interpolation too, on an assumption stated in a comment but never checked at runtime; if t2's segments actually used different pressure bins, every t2 `chi_obs`/`chi_mle` number this script reports would be silently wrong.
 9. **`processing/MODprocess_single_L1_to_L2.m:158`** (duplication, pre-existing) - the "which channels are of type X" filter loop is duplicated near-identically in `MODprocess_single_L1_to_L2.m`, `MODprocess_L1_apply_fpo7_calibration.m`, and `MODprocess_single_L0_to_L1.m`; a future AFE-type-taxonomy change would need to be applied to all three copies.
@@ -694,6 +700,35 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-09-08 - Moved theoretical-spectrum functions into toolbox/theoretical_spectra/ (branch `epsilon_processing`)
+
+`mod_scan_batchelor_spectrum.m` and `mod_scan_nasmyth_spectrum.m` (Phase B, same day) are both
+already in the "Carve-out" category (Section 2) - generic physics/math helpers with no natural
+home in a `scan` struct, reusable outside the fish-scan pipeline entirely - alongside
+`mod_scan_panchev_spectrum.m` (added 2026-09-01, currently only consumed by `MODvis_spectra.m`'s
+plotting). With three theoretical-spectrum-shape functions now living side by side in
+`processing/scans/`, sharing that carve-out but not that directory's `(scan, metadata, ...)`
+convention (all three are plain `(params..., k) -> spectrum` functions, no `scan`/`metadata`
+argument at all), moved all three - unchanged, filenames kept exactly as-is (`git mv`, no rename) -
+into a new `toolbox/theoretical_spectra/`. `mod_scan_thermal_diffusivity.m`/
+`mod_scan_fpo7_transfer_function.m` stay in `processing/scans/`: both take `metadata`/probe-
+specific arguments and aren't pure `(params, k)` spectrum shapes, so they don't fit this new
+directory's narrower scope.
+
+No call sites needed updating - every consumer (`mod_scan_calc_chi_mle.m`,
+`mod_scan_calc_epsilon_obs.m`, `mod_scan_calc_epsilon_mle.m`, `modProcess_L2_calc_epsilon.m`,
+`MODvis_spectra.m`) calls these by bare function name, resolved via the MATLAB path, not a literal
+path string - confirmed by a repo-wide grep before moving. This repo has no recursive
+`addpath(genpath(...))` anywhere (confirmed by grep) - path setup is either a one-off `addpath()`
+inside a specific function (e.g. `MODsetup_read_yaml.m` adding `toolbox/YAMLMatlab_0.4.3`) or the
+manual "How to run it" doc snippets. Nicole's own `startup_mod_fish_processing` (used by `deepsolo`
+and other downstream repos, not itself part of this repo) already uses a recursive `addpath`, so no
+in-code `addpath` was added here for `toolbox/theoretical_spectra/` - only
+`docs/workflow/L2_calc_eps.md`'s "How to run it" snippet was updated, for a reader not using that
+script. Updated the two still-open code-review findings (Section 9, items 3 and 6) that named
+`processing/scans/mod_scan_batchelor_spectrum.m` by path to point at the new location (line numbers
+unchanged - pure move, no content change).
 
 ### 2026-09-08 - Phase B: built the epsilon module, wired chi_mle in (branch `epsilon_processing`)
 
