@@ -38,7 +38,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % OUTPUTS
 %   metadata  - struct with fields:
-%     paths.data_root, .raw, .L0, .L1, .L2, .profiles, .meta,
+%     paths.data_root, .raw, .L0, .L1, .L2, .profiles, .profiles_raw, .meta,
 %     .calibrations_root, .ctd, .setup_yml
 %                                   - .ctd is only meaningful for vehicles
 %                                     with an independent CTD file (see
@@ -47,11 +47,21 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     whether or not data_root/ctd/ exists.
 %                                     .profiles is where
 %                                     MODprocess_all_L1_to_L2_profiles.m
-%                                     saves Profile####.mat, deliberately a
-%                                     sibling of .L2 (not inside it) so the
-%                                     per-file realtime output and the
+%                                     saves the converted (spectra/chi/
+%                                     epsilon) Profile####.mat, deliberately
+%                                     a sibling of .L2 (not inside it) so
+%                                     the per-file realtime output and the
 %                                     per-cast final output never share a
-%                                     directory. .setup_yml is this call's
+%                                     directory. .profiles_raw is where
+%                                     MODprocess_all_extract_profiles.m
+%                                     saves the stitched-but-not-yet-
+%                                     converted raw epsi/ctd record for each
+%                                     profile - a separate directory from
+%                                     .profiles so the two pipeline stages
+%                                     (extraction, conversion) never
+%                                     collide on the same Profile####.mat
+%                                     filename (PLAN.md Phase A refactor).
+%                                     .setup_yml is this call's
 %                                     own input argument, carried along so
 %                                     MODsetup_validate_metadata.m (called
 %                                     from deep inside mod_scan_*.m) can
@@ -296,6 +306,7 @@ metadata.paths.L0                = fullfile(yml.data_root, 'L0');
 metadata.paths.L1                = fullfile(yml.data_root, 'L1');
 metadata.paths.L2                = fullfile(yml.data_root, 'L2');
 metadata.paths.profiles          = fullfile(yml.data_root, 'profiles');
+metadata.paths.profiles_raw      = fullfile(yml.data_root, 'profiles_raw');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file

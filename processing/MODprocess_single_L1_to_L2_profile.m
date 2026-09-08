@@ -1,76 +1,77 @@
-function L2data = MODprocess_single_L1_to_L2_profile(profile, TimeIndex, metadata)
+function L2data = MODprocess_single_L1_to_L2_profile(profile_data, metadata)
 % MODprocess_single_L1_to_L2_profile        Part of MOD_fish_processing
 %
-% L2data = MODprocess_single_L1_to_L2_profile(profile, TimeIndex, metadata)
+% L2data = MODprocess_single_L1_to_L2_profile(profile_data, metadata)
 %
 % DESCRIPTION
-%   Converts one detected profile (modProcess_detect_profiles.m) into a
-%   Profile####.mat: always the profile's stitched, cropped CTD record
-%   (profile_data.ctd, unchanged raw resolution - see OUTPUTS), and, only
-%   when this deployment both has epsi hardware and trusts this profile's
-%   direction for it, per-scan spectra too (mod_L2_tile_scans.m) - the
-%   final science-quality counterpart to MODprocess_single_L1_to_L2.m's
-%   per-file "realtime" mode (PLAN.md Section 6.3). When spectra are
-%   computed, they're built by stitching the profile's raw epsi/ctd record
-%   across however many L1 files it spans (modProcess_extract_profile.m)
-%   before windowing, so a profile spanning two L1 files gets no coverage
-%   gap at the seam - unlike realtime mode, which drops the trailing
-%   partial window at every file end regardless of whether the underlying
-%   sampling was actually continuous there.
+%   Converts one already-extracted profile (modProcess_extract_profile.m,
+%   typically loaded from a Profile####.mat saved by
+%   MODprocess_all_extract_profiles.m) into its L2 counterpart: always the
+%   profile's stitched, cropped CTD record (profile_data.ctd, unchanged
+%   raw resolution - see OUTPUTS), and, only when this deployment both has
+%   epsi hardware and trusts this profile's direction for it, per-scan
+%   spectra too (mod_L2_tile_scans.m) - the final science-quality
+%   counterpart to MODprocess_single_L1_to_L2.m's per-file "realtime" mode
+%   (PLAN.md Section 6.3).
 %
 %   Whether epsi spectra get computed for THIS profile:
 %     compute_epsi = metadata.manifest.has_epsi && ...
-%         (metadata.PROFILES.profile_dir is 'both', or matches profile.direction)
+%         (metadata.PROFILES.profile_dir is 'both', or matches profile_data.direction)
 %   metadata.manifest.has_epsi (MODsetup_read_yaml.m) is false for a
 %   deployment with no AFE/epsi board at all (a CTD-only vehicle) - no
 %   amount of profile_dir tuning can produce spectra data that was never
 %   recorded. metadata.PROFILES.profile_dir (default 'down') reflects
 %   that, on an epsi-equipped deployment, the CTD/pressure sensor is
 %   normally trustworthy on every cast, but shear/fpo7 usually is not
-%   (vehicle wake turbulence on the untrusted direction) - so
-%   modProcess_detect_profiles.m deliberately returns EVERY detected cast
-%   (both directions), and this is the one place that decides, per
-%   profile, whether its direction is one to compute epsi spectra for.
-%   Every profile - matched direction or not, epsi hardware present or
-%   not - still gets a Profile####.mat with its CTD record.
+%   (vehicle wake turbulence on the untrusted direction) - so a caller
+%   feeding this function every detected cast (both directions) relies on
+%   this being the one place that decides, per profile, whether its
+%   direction is one to compute epsi spectra for. Every profile - matched
+%   direction or not, epsi hardware present or not - still gets a
+%   Profile####.mat with its CTD record.
 %
-%   Pure transformation function - no file I/O beyond what
-%   modProcess_extract_profile.m does to load the profile's contributing
-%   L1 files. To process one profile by hand:
-%       PressureTimeseries = load(fullfile(metadata.paths.meta, 'pressure_time_series.mat'));
+%   Pure transformation function - no file I/O at all (unlike its
+%   pre-refactor version, which called modProcess_extract_profile.m itself
+%   and needed a TimeIndex argument to do it - see PLAN.md's Phase A
+%   session log). Accepts any already-extracted epsi/ctd record with the
+%   right shape, whether it came from modProcess_extract_profile.m, a
+%   hand-built manual profile (see deepsolo's
+%   process_mod_fish_processing_july2026.m), or anywhere else - "any type
+%   of L1 file, whether or not it's already broken into a profile" -
+%   matching MODprocess_single_L1_to_L2.m's already-generic (data,
+%   metadata, PressureTimeseries) shape one level up.
+%
+%   To process one profile by hand:
 %       TimeIndex = load(fullfile(metadata.paths.meta, 'time_index.mat'));
+%       PressureTimeseries = load(fullfile(metadata.paths.meta, 'pressure_time_series.mat'));
 %       profiles = modProcess_detect_profiles(PressureTimeseries, metadata);
-%       L2data = MODprocess_single_L1_to_L2_profile(profiles(1), TimeIndex, metadata);
+%       profile_data = modProcess_extract_profile(profiles(1), TimeIndex, metadata);
+%       L2data = MODprocess_single_L1_to_L2_profile(profile_data, metadata);
 %
 % INPUTS
-%   profile   - one element of modProcess_detect_profiles.m's output
-%               struct array
-%   TimeIndex - struct from MODprocess_L1_make_time_index.m
-%               (meta/time_index.mat)
-%   metadata  - metadata struct (from MODsetup_read_yaml.m). Uses
-%               metadata.manifest.has_epsi and metadata.PROFILES.profile_dir
-%               directly (profile_dir validated via
-%               MODsetup_validate_metadata.m as the first executable line -
-%               same point-of-use pattern mod_scan_get_spectra.m uses);
-%               passed through, whole, to modProcess_extract_profile.m and
-%               mod_L2_tile_scans.m - see those functions' headers for the
-%               other fields each reads.
+%   profile_data - modProcess_extract_profile.m's OUTPUTS shape:
+%                  .profile_number, .direction, .dnum_start, .dnum_end,
+%                  .filenames, .epsi, .ctd
+%   metadata     - metadata struct (from MODsetup_read_yaml.m). Uses
+%                  metadata.manifest.has_epsi and metadata.PROFILES.profile_dir
+%                  directly (profile_dir validated via
+%                  MODsetup_validate_metadata.m as the first executable line -
+%                  same point-of-use pattern mod_scan_get_spectra.m uses);
+%                  passed through, whole, to mod_L2_tile_scans.m - see that
+%                  function's header for the other fields it reads.
 %
 % OUTPUTS
 %   L2data - always has:
-%     ctd                  - profile_data.ctd (modProcess_extract_profile.m's
-%                             OUTPUTS): the profile's own dnum/P/T/S/dzdt
-%                             etc., stitched across contributing L1 files
-%                             and cropped to [dnum_start, dnum_end], at raw
-%                             CTD sample resolution (NOT interpolated onto
-%                             scan centers) - present and populated
-%                             regardless of compute_epsi, direction, or
+%     ctd                  - profile_data.ctd, unchanged: the profile's own
+%                             dnum/P/T/S/dzdt etc. at raw CTD sample
+%                             resolution (NOT interpolated onto scan
+%                             centers) - present and populated regardless
+%                             of compute_epsi, direction, or
 %                             instrument_manifest, since this is the one
 %                             piece of a profile every cast can provide.
-%     profile_number, direction  - passthrough from `profile`
-%     filenames                  - contributing L1 filenames, in time
-%                                   order (from modProcess_extract_profile.m)
-%     dnum_start, dnum_end       - passthrough from `profile`
+%     profile_number, direction  - passthrough from `profile_data`
+%     filenames                  - passthrough from `profile_data`
+%     dnum_start, dnum_end       - passthrough from `profile_data`
 %     profile_gap_fraction       - see NOTES; 0 when compute_epsi is false
 %   When compute_epsi is true (see DESCRIPTION), also has
 %   mod_L2_tile_scans.m's per-scan OUTPUTS (dnum, pressure, w, temperature,
@@ -86,8 +87,7 @@ function L2data = MODprocess_single_L1_to_L2_profile(profile, TimeIndex, metadat
 %   MODprocess_all_L1_to_L2_profiles.m
 %
 % CALLS
-%   modProcess_extract_profile.m, mod_L2_tile_scans.m,
-%   MODsetup_validate_metadata.m
+%   mod_L2_tile_scans.m, MODsetup_validate_metadata.m
 %
 % NOTES
 %   No PressureTimeseries is passed to mod_L2_tile_scans.m here (unlike
@@ -118,10 +118,8 @@ if ~any(strcmp(metadata.PROFILES.profile_dir, {'down', 'up', 'both'}))
         metadata.PROFILES.profile_dir);
 end
 
-profile_data = modProcess_extract_profile(profile, TimeIndex, metadata);
-
 compute_epsi = metadata.manifest.has_epsi && ...
-    (strcmp(metadata.PROFILES.profile_dir, 'both') || strcmp(profile.direction, metadata.PROFILES.profile_dir));
+    (strcmp(metadata.PROFILES.profile_dir, 'both') || strcmp(profile_data.direction, metadata.PROFILES.profile_dir));
 
 if compute_epsi
     epsi_for_tiling = profile_data.epsi;
