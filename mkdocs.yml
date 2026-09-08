@@ -38,6 +38,7 @@ nav:
       - "L0 → L1: converting raw counts to physical units": workflow/L0_to_L1_conversion.md
       - "L1 → L2: downcast-gated spectra": workflow/L1_to_L2_conversion.md
       - "FP07 calibration and chi": workflow/L2_calc_chi.md
+      - "Epsilon (shear turbulence)": workflow/L2_calc_eps.md
       - "Profile detection and extraction": workflow/profile_detection.md
   - Concepts:
       - Overview: concepts/index.md

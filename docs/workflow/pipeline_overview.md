@@ -118,6 +118,8 @@ Run once against a complete L1 dataset. Every detected cast - both directions - 
 `Profile####.mat` with its CTD record; `profile_dir` only gates whether that profile also gets
 epsi spectra.
 
+Runs as two explicit phases (extraction, then conversion), not one combined pass - see [Profile detection and extraction](profile_detection.md) for why.
+
 ```mermaid
 flowchart LR
   L1OUT[("L1/*.mat")]
@@ -128,13 +130,15 @@ flowchart LR
   PTSOUT --> DETECT["modProcess_detect_<br/>profiles.m"]
   METAOUT --> DETECT
   DETECT --> PROFLIST["profiles<br/>(down + up, always)"]
-  PROFLIST --> PROFALL["MODprocess_all_<br/>L1_to_L2_profiles.m"]
+  PROFLIST --> EXTRACTALL["MODprocess_all_<br/>extract_profiles.m"]
 
   L1OUT --> EXTRACT["modProcess_extract_<br/>profile.m"]
   TIDXOUT --> EXTRACT
+  EXTRACTALL -->|per profile| EXTRACT
+  EXTRACT --> RAWOUT[("profiles_raw/Profile####.mat<br/>raw epsi+ctd, not yet converted")]
 
-  PROFALL -->|per profile| PROFONE["MODprocess_single_<br/>L1_to_L2_profile.m"]
-  EXTRACT --> PROFONE
+  RAWOUT --> PROFALL["MODprocess_all_<br/>L1_to_L2_profiles.m"]
+  PROFALL -->|per profile, loads raw file| PROFONE["MODprocess_single_<br/>L1_to_L2_profile.m"]
   PROFONE --> TILE2["mod_L2_tile_<br/>scans.m"]
   TILE2 -->|"if has_epsi & direction matches profile_dir"| SPEC2["mod_scan_get_<br/>spectra.m"]
   SPEC2 --> PROFOUT[("profiles/Profile####.mat<br/>ctd always, spectra gated")]
@@ -148,31 +152,45 @@ flowchart LR
 |---|---|---|
 | `modProcess_detect_profiles.m` | PressureTimeseries, metadata → profiles | Speed-limit hysteresis, min-length filter, same-direction merge. Always both directions |
 | `modProcess_extract_profile.m` | profile, TimeIndex, metadata → profile_data | Stitches raw epsi/ctd across L1 file boundaries; real gap detection via `segment_id` |
-| `MODprocess_all_L1_to_L2_profiles.m` | metadata, profiles_dir → profile_files | Batch orchestrator, saves into `metadata.paths.profiles` |
-| `MODprocess_single_L1_to_L2_profile.m` | profile, TimeIndex, metadata → L2data | CTD always attached; spectra computed only if `has_epsi && direction matches profile_dir` |
+| `MODprocess_all_extract_profiles.m` | metadata, profiles_raw_dir → profile_files | Batch orchestrator for extraction only, saves into `metadata.paths.profiles_raw` |
+| `MODprocess_all_L1_to_L2_profiles.m` | metadata, profiles_dir, profiles_raw_dir → profile_files | Batch orchestrator for conversion: calls the extraction orchestrator, then loads+converts each raw file, saves into `metadata.paths.profiles` |
+| `MODprocess_single_L1_to_L2_profile.m` | profile_data, metadata → L2data | No file I/O; CTD always attached; spectra computed only if `has_epsi && direction matches profile_dir` |
 | `mod_L2_tile_scans.m` | epsi, ctd, metadata → L2data | Same core as realtime; `segment_id` skips any window spanning a real gap |
 | `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Identical function, same as realtime path |
 | `modProcess_L3_grid_profiles.m` | profiles → gridded sections | **Not started** - interpolate onto a standard pressure axis |
 
-## Chi (FP07 turbulence) - manual today
+## Chi and epsilon - wired into `mod_L2_tile_scans.m`
 
-This is the actual scientific payload of an epsi_mako deployment, and it exists as tested,
-standalone scan-level functions - but nothing in `MODprocess_single_L1_to_L2.m` or
-`MODprocess_single_L1_to_L2_profile.m` calls them yet, so today they only run if you call them by
-hand on a `scan` struct. See [FP07 calibration and chi](L2_calc_chi.md) for the full writeup.
+The actual scientific payload of an `epsi_mako`-class deployment - both chi (FP07 thermal
+dissipation) and epsilon (shear TKE dissipation) are now computed inside `mod_L2_tile_scans.m`
+itself, called once per scan for every qualifying channel (gated on real onboard CTD T/S -
+DeepSolo's P-only external CTD never qualifies for either). See [FP07 calibration and
+chi](L2_calc_chi.md) and [Epsilon (shear turbulence)](L2_calc_eps.md) for the full writeups.
 
 ```mermaid
 flowchart LR
-  SPECIN["scan.t*_volt<br/>(from mod_scan_get_spectra.m)"] --> TG["mod_scan_fpo7_volts_<br/>to_Tg_spectrum.m"]
+  SPECIN["scan.t*_volt, s*_volt<br/>(from mod_scan_get_spectra.m)"] --> TG["mod_scan_fpo7_volts_<br/>to_Tg_spectrum.m"]
   XFER["mod_scan_fpo7_<br/>transfer_function.m"] -.-> TG
   TG --> CUTOFF["mod_scan_fpo7_<br/>cutoff.m"]
   CUTOFF --> CHIOBS["mod_scan_calc_<br/>chi_obs.m"]
   KT["mod_scan_thermal_<br/>diffusivity.m"] --> CHIOBS
   CHIOBS --> CHIOBSOUT[("scan.chi_obs")]
 
-  CHIOBSOUT --> CHIMLE["mod_scan_calc_<br/>chi_mle.m"]
+  SPECIN --> EPSPROC["modProcess_L2_<br/>calc_epsilon.m"]
+  COH["mod_scan_shear_<br/>accel_coherence.m"] --> EPSPROC
+  SHXFER["mod_scan_shear_<br/>transfer_function.m"] -.-> EPSPROC
+  EPSPROC --> EPSOBS[("scan.epsilon_obs,<br/>.epsilon_obs_co")]
+  NASM["mod_scan_nasmyth_<br/>spectrum.m"] --> EPSMLE["mod_scan_calc_<br/>epsilon_mle.m"]
+  EPSOBS --> EPSMLE
+  EPSMLE --> EPSMLEOUT[("scan.epsilon_mle")]
+
+  EPSOBS -.->|"mean across shear<br/>channels (epsilon_final_source)"| EPSFINAL["L2data.epsilon"]
+  EPSMLEOUT -.-> EPSFINAL
+  EPSFINAL --> CHIMLE["mod_scan_calc_<br/>chi_mle.m"]
+  CHIOBSOUT --> CHIMLE
   BATCH["mod_scan_batchelor_<br/>spectrum.m"] --> CHIMLE
-  EPS["epsilon<br/>(modProcess_L2_calc_epsilon.m - not started)"] -.->|required input| CHIMLE
+  MLEGRID["toolbox/mod_scan_<br/>mle_grid_search.m"] --> CHIMLE
+  MLEGRID --> EPSMLE
   CHIMLE --> CHIMLEOUT[("scan.chi_mle")]
 ```
 
@@ -184,4 +202,13 @@ flowchart LR
 | `mod_scan_thermal_diffusivity.m` | S, T, P → ktemp | Thermal diffusivity via `sw_dens`/`sw_cp` |
 | `mod_scan_calc_chi_obs.m` | scan, metadata, channel, noise_coefs → scan | Direct-integration chi - needs real onboard CTD T |
 | `mod_scan_batchelor_spectrum.m` | epsilon, chi, nu, ktemp, k → Psg | Theoretical Batchelor (1959) temperature-gradient spectrum |
-| `mod_scan_calc_chi_mle.m` | scan, metadata, channel, noise_coefs → scan | Batchelor-spectrum MLE fit - blocked on epsilon, not computed yet |
+| `mod_scan_calc_chi_mle.m` | scan, metadata, channel, noise_coefs → scan | Batchelor-spectrum MLE fit - now wired in, fed by epsilon below |
+| `mod_scan_shear_transfer_function.m` | f, w, lc → H | Oakey (1982) shear-probe dynamic-response filter |
+| `mod_scan_shear_volts_to_shear_spectrum.m` | scan, metadata, channel → scan | Raw shear volts spectrum → shear wavenumber spectrum |
+| `mod_scan_shear_accel_coherence.m` | scan, metadata, channel → scan | Coherence vs. accelerometer channel a3, for spectrum cleaning |
+| `mod_scan_calc_epsilon_obs.m` | scan, metadata → scan | Direct-integration epsilon (raw + coherence-cleaned), `eps1_mmp`/`epsilon2_correct` port |
+| `mod_scan_nasmyth_spectrum.m` | epsilon, nu, k → Psg | Theoretical Nasmyth shear spectrum |
+| `mod_scan_calc_epsilon_mle.m` | scan, metadata → scan | Nasmyth-spectrum MLE fit epsilon |
+| `mod_scan_calc_fom.m` | k, Pobs, Pmodel, klim, dof → fom | Generic figure of merit, used by epsilon (chi's own FOM still not built) |
+| `modProcess_L2_calc_epsilon.m` | scan, metadata, channel → scan | Per-channel epsilon orchestrator, called once per shear channel per scan |
+| `toolbox/mod_scan_mle_grid_search.m` | Pobs, dof, model_fn, seed, ... → best_val | Generic MLE grid search, shared by chi_mle and epsilon_mle |

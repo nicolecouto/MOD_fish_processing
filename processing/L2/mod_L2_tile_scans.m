@@ -53,8 +53,30 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %   mod_scan_fpo7_volts_to_Tg_spectrum.m, not here; missing (older
 %   metadata.mat) is not an error there, just no electronics correction
 %   for that channel. See docs/workflow/L2_calc_chi.md for the full chain.
-%   chi_mle (mod_scan_calc_chi_mle.m) is not computed here - it needs an
-%   epsilon estimate this pipeline doesn't produce yet.
+%
+%   Computes epsilon (turbulent kinetic energy dissipation rate) per scan
+%   for every shear channel with a resolved metadata.AFE.(ch).cal (a
+%   bench-measured Sv, from MODsetup_read_yaml.m's shear-probe calibration
+%   lookup) - gated on the same have_ctd_ts condition as chi_obs, since
+%   kinematic viscosity (nu, needed by the epsilon calculation the same
+%   way ktemp is needed by chi) also depends on real CTD T/S
+%   (toolbox/seawater/sw_visc.m). modProcess_L2_calc_epsilon.m does the
+%   per-channel work (transfer function, coherence, direct-integration and
+%   MLE epsilon estimates, figure of merit); see docs/workflow/L2_calc_eps.md
+%   for the full chain.
+%
+%   chi_mle (mod_scan_calc_chi_mle.m) is now wired in too, using the
+%   epsilon this same scan just computed - selected per
+%   metadata.PROCESS.EPSILON.epsilon_final_source as the mean, omitting
+%   NaN, of whichever epsilon variant across this deployment's shear
+%   channels (see below). This per-scan mean is a deliberate
+%   simplification, not the full profile-level ratio-based per-channel
+%   selection MOD_fish_lib's legacy pipeline does (comparing s1 vs. s2
+%   across a whole profile and picking whichever channel looks more
+%   trustworthy) - that selection needs profile-level QC
+%   (modProcess_L2_qc.m), not built yet. chi_mle is skipped for a scan
+%   whose epsilon comes back NaN/non-finite (e.g. no shear channels
+%   resolved, or every shear channel's own epsilon estimate failed).
 %
 % INPUTS
 %   epsi     - data.epsi (from an L1 file) or profile_data.epsi (from
@@ -140,6 +162,41 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   mod_scan_calc_chi_obs.m's OUTPUTS. Same values as
 %                   spectra.k(:, spectra.(channel)_fc_index), just
 %                   pre-indexed for convenience.
+%     epsilon     - the per-scan epsilon value actually fed to chi_mle
+%                   below [W/kg], nbscan x 1 - mean, omitting NaN, across
+%                   this deployment's epsilon_channels of whichever
+%                   variant metadata.PROCESS.EPSILON.epsilon_final_source
+%                   selects. A per-scan simplification, not the full
+%                   profile-level ratio-based per-channel selection
+%                   MOD_fish_lib's legacy pipeline does - see
+%                   docs/workflow/L2_calc_eps.md's "Known limitations."
+%     chi_mle.(channel)    - Batchelor-spectrum MLE-fit thermal variance
+%                   dissipation rate [degC^2/s], nbscan x 1, one field per
+%                   fpo7 channel in chi_obs_channels (see chi_obs above) -
+%                   computed only for scans where L2data.epsilon (above)
+%                   is finite. NaN for every scan otherwise.
+%     epsilon_obs.(channel), .epsilon_obs_kc.(channel),
+%     epsilon_obs_co.(channel), .epsilon_obs_co_kc.(channel),
+%     epsilon_mle.(channel), .fom.(channel), .fom_mle.(channel),
+%     coherence_sum.(channel) - direct-integration, MLE, and figure-of-
+%                   merit epsilon products, nbscan x 1 each, one field per
+%                   shear channel that both has a resolved
+%                   metadata.AFE.(channel).cal AND ctd has real T/S (same
+%                   have_ctd_ts gate as chi_obs, since kinematic viscosity
+%                   nu needs T/S the same way ktemp does) - these structs
+%                   simply have no fields at all otherwise. See
+%                   modProcess_L2_calc_epsilon.m's OUTPUTS for what each
+%                   one means; coherence_sum is that function's
+%                   spectra.(channel)_coh_a3_sum, pulled up to a top-level
+%                   field for the same "kept rather than discarded"
+%                   reason chi_obs_kc is.
+%     spectra.(channel)_shear_k, .(channel)_shear_co_k - raw and
+%                   coherence-cleaned shear wavenumber spectra, nbscan x
+%                   nfreq, one pair per shear channel with epsilon
+%                   computed - mod_scan_calc_epsilon_obs.m's integration
+%                   inputs, kept the same way spectra.(channel)_Tg_k is
+%                   for chi. _shear_co_k stays NaN for a scan with no
+%                   usable coherence.
 %     fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, scan_step -
 %                   provenance. fft_segments_per_scan is the actual
 %                   yaml-configurable input; N_epsi (scan_length) is
@@ -157,8 +214,11 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %
 % CALLS
 %   mod_scan_get_spectra.m, mod_scan_thermal_diffusivity.m,
-%   mod_scan_calc_chi_obs.m (only for fpo7 channels with a resolved
-%   volts_to_C calibration), toolbox/mod_scan_dof.m,
+%   toolbox/seawater/sw_visc.m, mod_scan_calc_chi_obs.m (only for fpo7
+%   channels with a resolved volts_to_C calibration), mod_scan_calc_chi_mle.m
+%   (only for scans with a finite epsilon estimate),
+%   modProcess_L2_calc_epsilon.m (only for shear channels with a resolved
+%   Sv calibration), toolbox/mod_scan_dof.m,
 %   toolbox/mod_scan_length_from_segments.m
 %
 % NOTES
@@ -247,16 +307,52 @@ if have_ctd_ts
     end
 end
 
+% Which shear channels can get epsilon computed: only those with a
+% resolved bench Sv calibration, and only if this deployment has the CTD
+% T/S/P kinematic viscosity (nu) needs - same have_ctd_ts gate chi_obs
+% uses, for the same reason (nu depends on T/S the same way ktemp does).
+epsilon_channels = {};
+if have_ctd_ts
+    for iC = 1:numel(metadata.PROCESS.channels)
+        ch = metadata.PROCESS.channels{iC};
+        if isfield(metadata.AFE, ch) && strcmpi(metadata.AFE.(ch).type, 'shear') ...
+                && isfield(metadata.AFE.(ch), 'cal') && ~isempty(metadata.AFE.(ch).cal)
+            epsilon_channels{end+1} = ch; %#ok<AGROW>
+        end
+    end
+    if ~isempty(epsilon_channels)
+        % epsilon_final_source is read directly (not by any epsilon
+        % sub-function) in the per-scan loop below, to pick which epsilon
+        % variant feeds chi_mle - validate it here, once, rather than at
+        % point of use inside the loop.
+        metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsilon_final_source'});
+    end
+end
+
 dnum_all = nan(nbscan_candidate, 1);
 pressure_all = nan(nbscan_candidate, 1);
 w_all = nan(nbscan_candidate, 1);
 temperature_all = nan(nbscan_candidate, 1);
 salinity_all = nan(nbscan_candidate, 1);
+epsilon_all = nan(nbscan_candidate, 1); % per-scan value actually fed to chi_mle - see below
 chi_obs_all = struct();
 chi_obs_kc_all = struct();
 for iC = 1:numel(chi_obs_channels)
     chi_obs_all.(chi_obs_channels{iC}) = nan(nbscan_candidate, 1);
     chi_obs_kc_all.(chi_obs_channels{iC}) = nan(nbscan_candidate, 1);
+end
+chi_mle_all = struct();
+for iC = 1:numel(chi_obs_channels)
+    chi_mle_all.(chi_obs_channels{iC}) = nan(nbscan_candidate, 1);
+end
+epsilon_fields = {'epsilon_obs', 'epsilon_obs_kc', 'epsilon_obs_co', 'epsilon_obs_co_kc', ...
+    'epsilon_mle', 'fom', 'fom_mle', 'coherence_sum'};
+epsilon_all_by_field = struct();
+for iF = 1:numel(epsilon_fields)
+    epsilon_all_by_field.(epsilon_fields{iF}) = struct();
+    for iC = 1:numel(epsilon_channels)
+        epsilon_all_by_field.(epsilon_fields{iF}).(epsilon_channels{iC}) = nan(nbscan_candidate, 1);
+    end
 end
 scan_results = cell(nbscan_candidate, 1);
 keep = false(nbscan_candidate, 1);
@@ -303,6 +399,11 @@ for iScan = 1:nbscan_candidate
         temperature_all(iScan) = interp1(ctd.dnum, ctd.T, center_dnum, 'linear', 'extrap');
         salinity_all(iScan) = interp1(ctd.dnum, ctd.S, center_dnum, 'linear', 'extrap');
 
+        % nu (kinematic viscosity) is needed by epsilon the same way ktemp
+        % is needed by chi - computed once per scan, shared across every
+        % shear channel and (via chi_mle) every fpo7 channel too.
+        nu = sw_visc(salinity_all(iScan), temperature_all(iScan), pressure_all(iScan));
+
         if ~isempty(chi_obs_channels)
             ktemp = mod_scan_thermal_diffusivity( ...
                 salinity_all(iScan), temperature_all(iScan), pressure_all(iScan));
@@ -319,6 +420,56 @@ for iScan = 1:nbscan_candidate
                 chi_obs_kc_all.(ch)(iScan) = scan_results{iScan}.chi.(ch).chi_obs_kc;
             end
         end
+
+        if ~isempty(epsilon_channels)
+            for iC = 1:numel(epsilon_channels)
+                ch = epsilon_channels{iC};
+                volt_field = [ch '_volt_f'];
+                eps_scan = struct();
+                eps_scan.spectra.f = scan_results{iScan}.spectra.f;
+                eps_scan.spectra.Ps_volt_f = scan_results{iScan}.spectra.(volt_field);
+                eps_scan.epsi = scan.epsi;
+                eps_scan.w = w_all(iScan);
+                eps_scan.nu = nu;
+                scan_results{iScan}.epsilon.(ch) = modProcess_L2_calc_epsilon(eps_scan, metadata, ch);
+
+                for iF = 1:numel(epsilon_fields)
+                    field = epsilon_fields{iF};
+                    if strcmp(field, 'coherence_sum')
+                        continue % nested under spectra, handled separately below
+                    end
+                    epsilon_all_by_field.(field).(ch)(iScan) = scan_results{iScan}.epsilon.(ch).(field);
+                end
+                coh_sum_field = [ch '_coh_a3_sum'];
+                if isfield(scan_results{iScan}.epsilon.(ch).spectra, coh_sum_field)
+                    epsilon_all_by_field.coherence_sum.(ch)(iScan) = ...
+                        scan_results{iScan}.epsilon.(ch).spectra.(coh_sum_field);
+                end
+            end
+
+            % epsilon fed to chi_mle: mean across available shear channels
+            % of whichever epsilon_final_source selects, omitting NaN -
+            % see this file's DESCRIPTION for why this is a per-scan
+            % simplification, not the full profile-level selection.
+            switch metadata.PROCESS.EPSILON.epsilon_final_source
+                case 'epsilon_mle'
+                    epsi_vals = cellfun(@(ch) epsilon_all_by_field.epsilon_mle.(ch)(iScan), epsilon_channels);
+                otherwise % 'epsilon_co'
+                    epsi_vals = cellfun(@(ch) epsilon_all_by_field.epsilon_obs_co.(ch)(iScan), epsilon_channels);
+            end
+            epsilon_all(iScan) = mean(epsi_vals, 'omitnan');
+
+            if ~isempty(chi_obs_channels) && isfinite(epsilon_all(iScan))
+                for iC = 1:numel(chi_obs_channels)
+                    ch = chi_obs_channels{iC};
+                    scan_results{iScan}.chi.(ch).epsilon = epsilon_all(iScan);
+                    scan_results{iScan}.chi.(ch).nu = nu;
+                    scan_results{iScan}.chi.(ch) = mod_scan_calc_chi_mle( ...
+                        scan_results{iScan}.chi.(ch), metadata, ch, noise_coefs);
+                    chi_mle_all.(ch)(iScan) = scan_results{iScan}.chi.(ch).chi_mle;
+                end
+            end
+        end
     end
     keep(iScan) = true;
 end
@@ -333,10 +484,19 @@ L2data.pressure = pressure_all(keep);
 L2data.w = w_all(keep);
 L2data.temperature = temperature_all(keep);
 L2data.salinity = salinity_all(keep);
+L2data.epsilon = epsilon_all(keep); % per-scan value fed to chi_mle below - see DESCRIPTION
 for iC = 1:numel(chi_obs_channels)
     ch = chi_obs_channels{iC};
     L2data.chi_obs.(ch) = chi_obs_all.(ch)(keep);
     L2data.chi_obs_kc.(ch) = chi_obs_kc_all.(ch)(keep);
+    L2data.chi_mle.(ch) = chi_mle_all.(ch)(keep);
+end
+for iF = 1:numel(epsilon_fields)
+    field = epsilon_fields{iF};
+    for iC = 1:numel(epsilon_channels)
+        ch = epsilon_channels{iC};
+        L2data.(field).(ch) = epsilon_all_by_field.(field).(ch)(keep);
+    end
 end
 L2data.spectra.f = scan_results{1}.spectra.f;
 
@@ -385,6 +545,27 @@ if ~isempty(chi_obs_channels)
     L2data.spectra.k = k_mat;
 end
 
+% Raw and coherence-cleaned shear wavenumber spectra, per shear channel
+% with epsilon computed above - kept rather than discarded, same
+% rationale as the fpo7 Tg_k block above. spectra.(ch)_shear_co_k stays
+% NaN for a scan/channel with no usable coherence (see
+% mod_scan_shear_accel_coherence.m).
+for iC = 1:numel(epsilon_channels)
+    ch = epsilon_channels{iC};
+    shear_k_mat = nan(nbscan, nfreq);
+    shear_co_k_mat = nan(nbscan, nfreq);
+    for iScan = 1:nbscan
+        if isfield(scan_results{iScan}, 'epsilon') && isfield(scan_results{iScan}.epsilon, ch)
+            shear_k_mat(iScan, :) = scan_results{iScan}.epsilon.(ch).spectra.Ps_shear_k;
+            if isfield(scan_results{iScan}.epsilon.(ch).spectra, 'Ps_shear_co_k')
+                shear_co_k_mat(iScan, :) = scan_results{iScan}.epsilon.(ch).spectra.Ps_shear_co_k;
+            end
+        end
+    end
+    L2data.spectra.([ch '_shear_k']) = shear_k_mat;
+    L2data.spectra.([ch '_shear_co_k']) = shear_co_k_mat;
+end
+
 end %end function
 
 %% Slice every field of epsi to samples idx0:idx1
@@ -408,9 +589,19 @@ L2data.pressure = [];
 L2data.w = [];
 L2data.temperature = [];
 L2data.salinity = [];
+L2data.epsilon = [];
 L2data.spectra = struct('f', []);
 L2data.chi_obs = struct();
 L2data.chi_obs_kc = struct();
+L2data.chi_mle = struct();
+L2data.epsilon_obs = struct();
+L2data.epsilon_obs_kc = struct();
+L2data.epsilon_obs_co = struct();
+L2data.epsilon_obs_co_kc = struct();
+L2data.epsilon_mle = struct();
+L2data.fom = struct();
+L2data.fom_mle = struct();
+L2data.coherence_sum = struct();
 L2data.fft_length = fft_length;
 L2data.fft_segments_per_scan = fft_segments_per_scan;
 L2data.dof = dof;

@@ -318,7 +318,7 @@ deployment_root/
 
 **In progress on branch `l1_to_l2_conversion`:** L1 → L2 for `epsi_deepsolo` - per-scan spectra (shear/fpo7/accel, raw uncorrected pwelch), gated by profiling direction (downcast only, `dPdt > 0`) rather than split into `Profile####.mat` casts - a deliberate divergence from the old `mod_fish_lib` approach (see Section 4 note below and `docs/workflow/L1_to_L2_conversion.md`). No epsilon/chi yet. Prerequisite L0→L1 fixes shipped alongside: real DeepSolo external-CTD reader (`ctd/DeepSoloFallrise.mat`, P-only), `calibrate_ctd` renamed `process_ctd_fields` and made T/C-optional, and a new deployment-level `meta/pressure_time_series.mat` (profiling-direction classification - an L1-level product, consumed by L2). Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` - see Section 12 session log entry 2026-07-26.
 
-**In progress on branch `chi_processing`** (off `l1_to_l2_conversion`): FP07 in-situ `volts_to_C` calibration, the tau-based FP07 time-constant deconvolution, the noise-floor cutoff, a direct-integration `chi_obs`, and a Batchelor-spectrum MLE `chi_mle` - prompted by finding that `MOD_fish_lib`'s live chi calculation computes this deconvolution's transfer function but has silently stopped applying it since 2025-10-06 (relevant to a 2025 BLT paper correction Nicole/Arnaud need to describe precisely). Built and tested one module at a time against real `epsi_mako/blt2021_0715` data (the only deployment here with a real onboard CTD). `chi_mle` needs an `epsilon` estimate this repo doesn't compute yet (`modProcess_L2_calc_epsilon.m` not started) - usable standalone wherever epsilon already exists (e.g. an old-format `Profile####.mat`'s `epsilon_final`), not yet wired into `MODprocess_single_L1_to_L2.m`. See `docs/workflow/L2_calc_chi.md` and Section 12 session log entries 2026-07-27 and 2026-07-28.
+**Done** (chi: branch `chi_processing`, off `l1_to_l2_conversion`; epsilon: branch `epsilon_processing`): FP07 in-situ `volts_to_C` calibration, the tau-based FP07 time-constant deconvolution, the noise-floor cutoff, a direct-integration `chi_obs`, and a Batchelor-spectrum MLE `chi_mle` - prompted by finding that `MOD_fish_lib`'s live chi calculation computes this deconvolution's transfer function but has silently stopped applying it since 2025-10-06 (relevant to a 2025 BLT paper correction Nicole/Arnaud need to describe precisely). Built and tested one module at a time against real `epsi_mako/blt2021_0715` data (the only deployment here with a real onboard CTD). `chi_mle` needed an `epsilon` estimate this repo didn't compute yet - `modProcess_L2_calc_epsilon.m` (shear-channel Nasmyth fit) now supplies one, and `chi_mle` is wired into `mod_L2_tile_scans.m` as a result. See `docs/workflow/L2_calc_chi.md`, `docs/workflow/L2_calc_eps.md`, and Section 12 session log entries 2026-07-27, 2026-07-28, and 2026-09-08.
 
 **Next target:** fix the regex block-splitting artifact in `MODprocess_single_modraw_to_L0.m` (Section 9 — parse by declared hex block length instead of regex terminators)
 
@@ -461,6 +461,7 @@ Proposed split, following the pattern `MODsetup_read_yaml.m`/`MODprocess_L1_appl
 | `modProcess_extract_profile.m` | Cut L1 data to a single profile, stitching across an L1 file boundary when a profile spans more than one file, with real gap detection (never lets an FFT window span a genuine timestamp gap) | `epsiProcess_crop_timeseries.m` + `epsiProcess_merge_mat_files.m` (re-derived, not ported — legacy merge has no gap detection at all) | Done (branch `chi_processing`) |
 | `mod_L2_tile_scans.m` | Shared scan-tiling/spectra core, factored out of `MODprocess_single_L1_to_L2.m`, called by both the per-file "realtime" path and the new per-profile path | NEW — extracted from `MODprocess_single_L1_to_L2.m` | Done (branch `chi_processing`) |
 | `MODprocess_single_L1_to_L2_profile.m` / `MODprocess_all_L1_to_L2_profiles.m` | Per-profile L1→L2 orchestration (final science-quality product), parallel to the existing per-file realtime pair | NEW | Done (branch `chi_processing`) |
+| `MODprocess_all_extract_profiles.m` | Extraction-only phase, split out of `MODprocess_single_L1_to_L2_profile.m` so conversion no longer does its own file I/O - saves `profiles_raw/Profile####.mat` | NEW - split out of the function above | Done (branch `epsilon_processing`, 2026-09-08) |
 
 ### 6.4 L1 → L2
 
@@ -471,11 +472,11 @@ Proposed split, following the pattern `MODsetup_read_yaml.m`/`MODprocess_L1_appl
 | `mod_scan_get_spectra.m` | Per-scan: pwelch on shear/fpo7/accel channels (raw, uncorrected — no `h_freq` transfer function yet). No coherence subtract | `get_scan_spectra.m` (stripped down — no epsilon/chi/coherence) | Done (branch `l1_to_l2_conversion`) — spectra only, see Section 4 |
 | `MODprocess_single_L1_to_L2.m` | Per-L1-file: 50% overlap scan tiling, gate by `PressureTimeseries.is_down`, assemble scan-dimension arrays | NEW | Done (branch `l1_to_l2_conversion`) |
 | `MODprocess_all_L1_to_L2.m` | Batch orchestrator, mirrors `MODprocess_all_L0_to_L1.m`'s shape | NEW | Done (branch `l1_to_l2_conversion`) |
-| `modProcess_L2_calc_epsilon.m` | Nasmyth fit → epsilon, loops over `metadata.manifest.shear_channels` | `mod_efe_scan_epsilon.m` | Not started — shear `Sv` already resolved in metadata, natural next step |
+| `modProcess_L2_calc_epsilon.m` | Nasmyth fit → epsilon, called per shear channel from `mod_L2_tile_scans.m`'s per-scan loop (not a `metadata.manifest.shear_channels` list - channels are filtered inline the same way `chi_obs_channels` already is, for consistency) | `mod_efe_scan_epsilon.m` | Done (branch `epsilon_processing`, 2026-09-08) - see `docs/workflow/L2_calc_eps.md` |
 | `mod_scan_fpo7_volts_to_Tg_spectrum.m` | Shared first stage for both chi estimators: raw FP07 volts spectrum → tau-deconvolved temperature-gradient wavenumber spectrum | `mod_efe_scan_chi.m` (steps 1-3) | Done (branch `chi_processing`) — split out of `MODprocess_L2_calc_chi.m` once `chi_mle` needed the identical conversion |
 | `mod_scan_calc_chi_obs.m` | Direct-integration chi_obs (FP07 calibration → tau deconvolution → noise-floor cutoff → wavenumber integration). No FOM yet (**old `mod_efe_scan_chi.m` currently broken — see Section 9**) | `mod_efe_scan_chi.m` | Done (branch `chi_processing`, renamed from `MODprocess_L2_calc_chi.m`) — needs real onboard CTD T (blocked for DeepSolo, works for `epsi_mako`); see `docs/workflow/L2_calc_chi.md`. FOM still not started |
 | `mod_scan_batchelor_spectrum.m` | Theoretical Batchelor (1959) temperature-gradient spectrum evaluated at a given k - the model `chi_mle` fits | `batchelor.m` local subfunction inside `mod_efe_scan_chi.m` | Done (branch `chi_processing`) |
-| `mod_scan_calc_chi_mle.m` | chi_mle via Batchelor-spectrum MLE fit (Ruddick, Ozsoy & Vagle 2000) - grid-search over chi with epsilon/nu/ktemp fixing the spectrum's shape. Needs an externally-supplied `epsilon` (shear-based, not yet computed by this repo) | `mod_efe_scan_chi.m` / `get_chi_mle.m` / `mle_any_model.m` / `logLikelihood.m` | Done as a standalone function (branch `chi_processing`) — not yet wired into `MODprocess_single_L1_to_L2.m` (blocked on `modProcess_L2_calc_epsilon.m`); see `docs/workflow/L2_calc_chi.md` |
+| `mod_scan_calc_chi_mle.m` | chi_mle via Batchelor-spectrum MLE fit (Ruddick, Ozsoy & Vagle 2000) - grid-search over chi with epsilon/nu/ktemp fixing the spectrum's shape | `mod_efe_scan_chi.m` / `get_chi_mle.m` / `mle_any_model.m` / `logLikelihood.m` | Done (branch `chi_processing`); wired into `mod_L2_tile_scans.m` (branch `epsilon_processing`, 2026-09-08) now that `modProcess_L2_calc_epsilon.m` supplies epsilon; grid-search zoom split into shared `toolbox/mod_scan_mle_grid_search.m` at the same time - see `docs/workflow/L2_calc_chi.md`, `docs/workflow/L2_calc_eps.md` |
 | `mod_scan_fpo7_transfer_function.m` | FP07 thermal time-constant deconvolution filter, `tau0`/`exponent` exposed as overridable parameters for a tau sensitivity comparison | `get_filters_MADRE.m`/`h_fp07.m` (formula unchanged; the deconvolution step itself was silently dropped from `MOD_fish_lib`'s live `mod_efe_scan_chi.m` on 2025-10-06 — see Section 9) | Done (branch `chi_processing`) |
 | `mod_scan_fpo7_cutoff.m` | Noise-floor cutoff (kc) for chi_obs/chi_mle's wavenumber range - fixes two indexing bugs found in the original | `FPO7_cutoff.m` | Done (branch `chi_processing`) |
 | `mod_scan_thermal_diffusivity.m` | ktemp for chi_obs/chi_mle, via already-vendored `sw_dens`/`sw_cp` + a ported thermal-conductivity term | `kt.m`/`thermometric_cond.m` (units corrected - see `docs/workflow/L2_calc_chi.md`) | Done (branch `chi_processing`) |
@@ -693,6 +694,115 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 ## 12. Session Log
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
+
+### 2026-09-08 - Phase B: built the epsilon module, wired chi_mle in (branch `epsilon_processing`)
+
+Followed directly from Phase A (below) on the same branch: with profile extraction decoupled from
+L1→L2 conversion, the next blocker for the July 2026 DeepSolo deployment's L1→L2 step was that
+nothing in this repo computes epsilon - `mod_scan_calc_chi_mle.m` has been fully implemented since
+`chi_processing` but was never wired in for exactly that reason (Section 6.4's own table, and the
+2026-09-02 session log entry below, both flagged this). Ported the full legacy chain from
+`MOD_fish_lib`'s `EPSILOMETER/EPSILON/mod_efe_scan_epsilon.m`/`eps1_mmp.m`/`epsilon2_correct.m`/
+`nasmyth.m`/`mod_efe_scan_coherence.m`, following the same 8-step pipeline order already
+established for chi and confirmed with Nicole before implementation: scan tiling → per-channel
+spectra (already built) → filters/cutoff → wavenumber conversion → coherence → direct-integration
+chi/epsilon → MLE chi/epsilon → figure of merit.
+
+**New files**: `mod_scan_shear_transfer_function.m` (Oakey 1982 probe response, mirrors
+`mod_scan_fpo7_transfer_function.m`), `mod_scan_nasmyth_spectrum.m` (mirrors
+`mod_scan_batchelor_spectrum.m`), `mod_scan_shear_volts_to_shear_spectrum.m` (mirrors
+`mod_scan_fpo7_volts_to_Tg_spectrum.m` - no noise-floor-cutoff search exists for shear the way
+FPO7 has one; contamination is instead capped directly as an integration bound, see below),
+`mod_scan_shear_accel_coherence.m` (vs. accelerometer channel `a3`, hardcoded per legacy's own
+choice), `mod_scan_calc_epsilon_obs.m` (the `eps1_mmp.m`/`epsilon2_correct.m` port, computing both
+`epsilon_obs` and `epsilon_obs_co` from the raw and coherence-cleaned spectra), `mod_scan_calc_epsilon_mle.m`
+(Nasmyth-fit MLE, always against the cleaned spectrum, seeded by `epsilon_obs_co`),
+`mod_scan_calc_fom.m` (generic figure of merit, ported from the inline formula in
+`mod_efe_scan_epsilon.m`), `processing/L2/modProcess_L2_calc_epsilon.m` (per-channel orchestrator,
+the function this section's table already named as the target), and `toolbox/mod_scan_mle_grid_search.m`
+(new - see refactor note below).
+
+**Refactored `mod_scan_calc_chi_mle.m`**: its local `mle_search_chi` grid-search zoom (4-pass,
+200-point log-spaced, widen-on-edge-hit) was extracted into the new shared
+`toolbox/mod_scan_mle_grid_search.m`, parameterized by a model-function handle, once
+`mod_scan_calc_epsilon_mle.m` needed the identical machinery fitting a different model
+(`mod_scan_nasmyth_spectrum.m`, epsilon searched directly, vs. `mod_scan_batchelor_spectrum.m`,
+chi searched as a pure amplitude) - so the two MLE searches can't silently drift apart. Verified
+behavior-preserving: a synthetic-data regression check (known chi, noiseless Batchelor spectrum)
+recovered the same chi to numerical precision after the refactor as the design intends before it.
+
+**Wired into `mod_L2_tile_scans.m`**: epsilon is computed for every shear channel with a resolved
+`metadata.AFE.(ch).cal`, gated on the same `have_ctd_ts` condition chi_obs uses (kinematic
+viscosity `nu`, `toolbox/seawater/sw_visc.m`, needs real CTD T/S the same way thermal diffusivity
+does - so DeepSolo's P-only external CTD still can't get epsilon *or* chi, a hardware limit no
+amount of code can work around). `chi_mle` is then called per fpo7 channel for every scan with a
+finite epsilon available - the mean, omitting NaN, across this deployment's shear channels of
+whichever variant `metadata.PROCESS.EPSILON.epsilon_final_source` selects. **This is a deliberate
+per-scan simplification**, not MOD_fish_lib's full profile-level ratio-based channel selection
+(comparing s1 vs. s2 across a whole profile, gated by a figure-of-merit threshold) - that needs
+`modProcess_L2_qc.m` (Section 6.4, still "Not started"), which is genuinely profile-level (RMS/STD
+of accelerometer power aggregated across a whole profile's scans) and needs pitch/roll (vnav data,
+outside `mod_L2_tile_scans.m`'s current epsi/ctd-only scope) for the fuller legacy QC array -
+deliberately not half-built this round, flagged in `docs/workflow/L2_calc_eps.md`'s "Known
+limitations" instead.
+
+**Registry**: 7 new `MODsetup_metadata_field_registry.m` entries under a new `epsilon` yaml
+section (`epsilon_kmin_obs`, `contam_freq_hz_shear`, `oakey_lc_m`, `coherence_fmin_hz`,
+`coherence_fmax_hz`, `mle_start_search`, `mle_end_search` - registry `name`s deliberately distinct
+from chi's identically-shaped `kmin_obs`/`contam_freq_hz` entries, since `MODsetup_validate_metadata.m`
+looks entries up by that flat `name`, not by `yaml_key` - a real bug caught and fixed during this
+session before it shipped: the scan-level functions' `validate_metadata` calls initially requested
+the plain `'kmin_obs'`/`'contam_freq_hz'` names, which would have silently validated *chi's*
+fields and left epsilon's own never validated). `epsilon_final_source`'s registered default
+changed from the legacy `'epsilon_co'` to `'epsilon_mle'`, adopting Jen's 2026-09-02 ASTRAL finding
+now that a real epsilon module exists to act on it.
+
+**Verified** via a MATLAB sandbox (deleted when done): `mod_scan_nasmyth_spectrum.m`'s shape/
+positivity; `toolbox/mod_scan_mle_grid_search.m` recovering a known epsilon exactly from a
+noiseless synthetic Nasmyth spectrum and within a factor of ~2 from one chi-squared-noised
+(dof≈5.7) realization, and recovering a known chi exactly from a noiseless synthetic Batchelor
+spectrum (the chi_mle refactor regression check); `mod_scan_shear_transfer_function.m`'s monotonic
+rolloff; `mod_scan_calc_epsilon_obs.m` recovering a known epsilon to ~4% on a noiseless synthetic
+spectrum; `mod_scan_calc_epsilon_mle.m` recovering it near-exactly when seeded from that estimate;
+`mod_scan_calc_fom.m` scoring a deliberately-wrong model worse than a correct one; and the full
+`modProcess_L2_calc_epsilon.m`/`mod_L2_tile_scans.m` chain (chi_obs → epsilon → chi_mle wiring
+included) running end to end on synthetic time-domain data with no errors and the documented
+"bare empty struct when no channel qualifies" convention preserved. `checkcode` clean on every
+new/touched file. **Not yet run against a real deployment's shear data** - see
+`docs/workflow/L2_calc_eps.md`'s "Known limitations" for this and every other open item
+(profile-level QC/selection not built, coherence-band values still placeholders, `calib_volt`/
+`calib_vel` diagnostic not ported).
+
+**Code review pass (same day)** caught two real bugs before this landed: `metadata.PROCESS.EPSILON.epsilon_final_source`
+was read directly in `mod_L2_tile_scans.m` without ever being validated (no call site anywhere
+requested it via `MODsetup_validate_metadata.m`), and `MODsetup_read_yaml.m` had no `epsilon:`
+yaml-section reader at all (only `chi:`) - together these meant every one of the 8 new
+`PROCESS.EPSILON.*` fields could never actually be supplied through `setup.yml`, and the very
+first deployment with a real onboard CTD and a resolved shear calibration would have hit a raw
+"Reference to non-existent field" crash instead of the intended validate-and-prompt flow. Both
+fixed: `MODsetup_read_yaml.m` gained an `epsilon:` block mirroring `chi:` exactly, and
+`mod_L2_tile_scans.m` now validates `epsilon_final_source` once, right after `epsilon_channels` is
+determined non-empty, before the per-scan loop reads it. Also fixed: `MODprocess_all_L1_to_L2_profiles.m`'s
+conversion-phase staleness check used `>=`, which could silently skip reconverting a profile whose
+raw extraction and stale L2 output land on the same filesystem-mtime tick (a coarse-mtime-filesystem
+edge case, more reachable now that extraction and conversion are two separate phases with their own
+mtimes to compare) - changed to `>`, erring toward an extra reprocess rather than a silently stale
+result. The chi_mle-recomputes-fpo7-deconvolution-twice finding (see `docs/workflow/L2_calc_eps.md`'s
+"Known limitations") was deliberately left unfixed - a real efficiency cost, not a correctness bug,
+and properly fixing it means changing `mod_scan_calc_chi_mle.m`'s own contract, which deserves a
+dedicated pass rather than a rushed edit here.
+
+### 2026-09-08 - Phase A: decoupled profile extraction from L1→L2 conversion (branch `epsilon_processing`)
+
+Prompted by starting work on the July 2026 DeepSolo deployment's L1→L2 step (`deepsolo` repo): `MODprocess_single_L1_to_L2_profile.m` called `modProcess_extract_profile.m` itself, doing its own file I/O and requiring a `TimeIndex` argument - it couldn't accept "any type of L1 file, whether or not it's already broken into a profile" the way `MODprocess_single_L1_to_L2.m`'s realtime mode already could (that one is just `mod_L2_tile_scans(data.epsi, data.ctd, metadata, PressureTimeseries)`, no extraction). Needed to fix this before building the epsilon module (Section 6.4), which reuses the same conversion entry point regardless of how its input data was assembled.
+
+**Extraction is now its own explicit, disk-persisted phase:**
+- New `metadata.paths.profiles_raw` (`data_root/profiles_raw`, `MODsetup_read_yaml.m`) - a sibling of `metadata.paths.profiles`/`.L2`, so the two pipeline stages never collide on the same `Profile####.mat` filename.
+- New `MODprocess_all_extract_profiles.m` (`processing/L1/`) - near-identical structure to the pre-refactor `MODprocess_all_L1_to_L2_profiles.m` (same skip-if-up-to-date logic keyed off `time_index.mat`, same retry-on-`yamlUpdated` loop), but calls `modProcess_extract_profile.m` only, saving the stitched-but-not-yet-converted raw record to `profiles_raw/Profile####.mat`.
+- `MODprocess_single_L1_to_L2_profile.m`'s signature changed from `(profile, TimeIndex, metadata)` to `(profile_data, metadata)` - no file I/O left in this function at all, takes an already-extracted `profile_data` struct directly (whatever produced it).
+- `MODprocess_all_L1_to_L2_profiles.m` rewritten to call `MODprocess_all_extract_profiles.m` first, then loop loading each `profiles_raw/Profile####.mat` and converting it - staleness for the conversion phase is now checked one link at a time (converted output's mtime vs. its own raw-extraction input's mtime) rather than reaching back to L1 file mtimes directly; a profile whose raw extraction was just redone (e.g. because it touched the newest L1 file) gets reconverted automatically as a result, with no separate "touches newest" case needed at this phase. Signature gained a `profiles_raw_dir` argument between `profiles_dir` and `reprocess_all`.
+
+No other call site of `modProcess_extract_profile.m` existed anywhere in the repo (confirmed by grep) - this was a clean, single-call-site refactor. Updated `docs/workflow/profile_detection.md` (two-phase pipeline description, `Profile####.mat` output section split into `profiles_raw`/`profiles`) and `docs/workflow/pipeline_overview.md` (postprocess diagram/table). Section 6.3's table below still reads "Done" for the pre-refactor shape of these functions - status unchanged, since the functions still do the same job, just split across two files now.
 
 ### 2026-09-02 — Reviewed Jen's ASTRAL reprocess fork against `MOD_fish_lib` master; registered epsilon/QC/gridding parameters (branch `main`)
 

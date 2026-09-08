@@ -209,6 +209,22 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     search_hi = chi_seed*chi_mle_end_search),
 %                                     from setup.yml's chi.chi_mle_start_search/
 %                                     .chi_mle_end_search. NOT set if absent.
+%     PROCESS.EPSILON.epsilon_final_source, .kmin_obs, .contam_freq_hz,
+%              .oakey_lc_m, .coherence_fmin_hz, .coherence_fmax_hz,
+%              .kmin_mle, .mle_start_search, .mle_end_search,
+%              .qc_accel_method, .qc_accel_threshold, .qc_accel_nstd
+%                                   - epsilon processing parameters
+%                                     (mod_scan_shear_volts_to_shear_spectrum.m,
+%                                     mod_scan_shear_accel_coherence.m,
+%                                     mod_scan_calc_epsilon_obs.m,
+%                                     mod_scan_calc_epsilon_mle.m,
+%                                     mod_L2_tile_scans.m's epsilon_final_source
+%                                     selection - qc_accel_* registered for a
+%                                     future modProcess_L2_qc.m, not consumed
+%                                     yet), from setup.yml's epsilon: block,
+%                                     same key names. NOT set if the block or
+%                                     the specific key is absent - see
+%                                     docs/workflow/L2_calc_eps.md.
 %     AFE.(channel).full_range     - volts, for counts->volts conversion,
 %                                     from setup.yml's afe.channels.(channel)
 %     AFE.(channel).ADCconf        - 'Bipolar' or 'Unipolar', from
@@ -391,6 +407,24 @@ if isfield(yml, 'chi')
         field = chi_fields{iF};
         if isfield(yml.chi, field)
             metadata.PROCESS.CHI.(field) = yml.chi.(field);
+        end
+    end
+end
+
+%% Epsilon processing parameters (mod_scan_shear_volts_to_shear_spectrum.m,
+% mod_scan_shear_accel_coherence.m, mod_scan_calc_epsilon_obs.m,
+% mod_scan_calc_epsilon_mle.m, mod_L2_tile_scans.m's epsilon_final_source
+% selection). Mirrors the chi: block immediately above - see
+% MODsetup_metadata_field_registry.m for each field's yaml_key (identical
+% to its metadata_path leaf name here) and historical default.
+if isfield(yml, 'epsilon')
+    epsilon_fields = {'epsilon_final_source', 'kmin_obs', 'contam_freq_hz', 'oakey_lc_m', ...
+        'coherence_fmin_hz', 'coherence_fmax_hz', 'kmin_mle', 'mle_start_search', 'mle_end_search', ...
+        'qc_accel_method', 'qc_accel_threshold', 'qc_accel_nstd'};
+    for iF = 1:numel(epsilon_fields)
+        field = epsilon_fields{iF};
+        if isfield(yml.epsilon, field)
+            metadata.PROCESS.EPSILON.(field) = yml.epsilon.(field);
         end
     end
 end
