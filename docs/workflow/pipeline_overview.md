@@ -184,7 +184,7 @@ flowchart LR
   EPSOBS --> EPSMLE
   EPSMLE --> EPSMLEOUT[("scan.epsilon_mle")]
 
-  EPSOBS -.->|"mean across shear<br/>channels (epsilon_final_source)"| EPSFINAL["L2data.epsilon"]
+  EPSOBS -.->|"mean across shear<br/>channels (epsilon_final_source)"| EPSFINAL["L2data.epsilon_final"]
   EPSMLEOUT -.-> EPSFINAL
   EPSFINAL --> CHIMLE["mod_scan_calc_<br/>chi_mle.m"]
   CHIOBSOUT --> CHIMLE
@@ -199,7 +199,7 @@ flowchart LR
 | `mod_scan_fpo7_volts_to_Tg_spectrum.m` | scan, metadata, channel → scan | Raw FP07 volts spectrum → tau-deconvolved temperature-gradient spectrum |
 | `mod_scan_fpo7_transfer_function.m` | f, w, tau0, exponent → H | Thermal time-constant deconvolution filter, fall-speed dependent |
 | `mod_scan_fpo7_cutoff.m` | scan, metadata, noise_coefs → scan | Noise-floor cutoff wavenumber (kc) for the integration range |
-| `mod_scan_thermal_diffusivity.m` | S, T, P → ktemp | Thermal diffusivity via `sw_dens`/`sw_cp` |
+| `toolbox/seawater/ktemp.m` | SP, SR, T, P → ktemp | Thermal diffusivity via `gsw_rho`/`gsw_cp_t_exact` |
 | `mod_scan_calc_chi_obs.m` | scan, metadata, channel, noise_coefs → scan | Direct-integration chi - needs real onboard CTD T |
 | `toolbox/theoretical_spectra/batchelor_spectrum.m` | epsilon, chi, nu, ktemp, k → Psg | Theoretical Batchelor (1959) temperature-gradient spectrum |
 | `mod_scan_calc_chi_mle.m` | scan, metadata, channel, noise_coefs → scan | Batchelor-spectrum MLE fit - now wired in, fed by epsilon below |
@@ -211,4 +211,4 @@ flowchart LR
 | `mod_scan_calc_epsilon_mle.m` | scan, metadata → scan | Nasmyth-spectrum MLE fit epsilon |
 | `mod_scan_calc_fom.m` | k, Pobs, Pmodel, klim, dof → fom | Generic figure of merit, used by epsilon (chi's own FOM still not built) |
 | `modProcess_L2_calc_epsilon.m` | scan, metadata, channel → scan | Per-channel epsilon orchestrator, called once per shear channel per scan |
-| `toolbox/mod_scan_mle_grid_search.m` | Pobs, dof, model_fn, seed, ... → best_val | Generic MLE grid search, shared by chi_mle and epsilon_mle |
+| `processing/scans/mod_scan_mle_grid_search.m` | Pobs, dof, model_fn, seed, ... → best_val | Generic MLE grid search, shared by chi_mle and epsilon_mle |

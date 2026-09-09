@@ -126,9 +126,9 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     from setup.yml's spectral.fft_length/
 %                                     .fft_segments_per_scan/.scan_overlap.
 %                                     scan_length is derived from the first
-%                                     two (toolbox/mod_scan_length_from_segments.m),
+%                                     two (processing/scans/mod_scan_length_from_segments.m),
 %                                     dof from fft_segments_per_scan alone
-%                                     (toolbox/mod_scan_dof.m) - neither is a
+%                                     (processing/scans/mod_scan_dof.m) - neither is a
 %                                     yaml-configurable field of its own -
 %                                     see mod_scan_calc_chi_mle.m. NOT set
 %                                     if the spectral: block or the

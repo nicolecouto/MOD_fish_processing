@@ -7,7 +7,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %   Tiles one continuous epsi record into N_epsi-sample scans overlapping
 %   by scan_overlap (scan_step = (1-scan_overlap)*N_epsi) - N_epsi
 %   (scan_length) is derived from fft_length/fft_segments_per_scan
-%   (toolbox/mod_scan_length_from_segments.m), not itself a yaml-
+%   (processing/scans/mod_scan_length_from_segments.m), not itself a yaml-
 %   configurable field. Computes spectra
 %   (mod_scan_get_spectra.m) and chi_obs (mod_scan_calc_chi_obs.m, when a
 %   real onboard CTD/volts_to_C is available) per kept scan, and assembles
@@ -60,7 +60,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %   lookup) - gated on the same have_ctd_ts condition as chi_obs, since
 %   kinematic viscosity (nu, needed by the epsilon calculation the same
 %   way ktemp is needed by chi) also depends on real CTD T/S
-%   (toolbox/seawater/sw_visc.m). modProcess_L2_calc_epsilon.m does the
+%   (toolbox/seawater/visc.m). modProcess_L2_calc_epsilon.m does the
 %   per-channel work (transfer function, coherence, direct-integration and
 %   MLE epsilon estimates, figure of merit); see docs/workflow/L2_calc_eps.md
 %   for the full chain.
@@ -125,8 +125,21 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   populated if ctd has both T and S (real onboard CTD,
 %                   e.g. Mako - never true for DeepSolo's P-only external
 %                   CTD) - stays NaN otherwise.
-%     salinity    - CTD salinity at scan center [psu], same conditions as
-%                   temperature, nbscan x 1.
+%     salinity    - CTD Practical Salinity (ctd.SP) at scan center [psu],
+%                   same conditions as temperature, nbscan x 1.
+%     SR          - Reference Salinity at scan center [g/kg]
+%                   (gsw_SR_from_SP(salinity), interpolated from ctd.SR the
+%                   same way), same conditions as temperature, nbscan x 1 -
+%                   see docs/concepts/units_and_seawater.md for why SR
+%                   (not exact SA) is used throughout this repo's GSW calls.
+%     nu          - kinematic viscosity at scan center [m^2/s]
+%                   (toolbox/seawater/visc.m), same conditions as
+%                   temperature, nbscan x 1. Feeds epsilon (via
+%                   modProcess_L2_calc_epsilon.m) and chi_mle.
+%     ktemp       - thermal diffusivity at scan center [m^2/s]
+%                   (toolbox/seawater/ktemp.m), nbscan x 1. Only
+%                   populated when chi_obs_channels is non-empty (see
+%                   below) - stays NaN otherwise, same as spectra.k.
 %     spectra.f              - frequency vector [Hz], shared across all
 %                   scans and channels, 1 x nfreq
 %     spectra.(channel)_f    - power spectrum matrix, nbscan x nfreq, one
@@ -162,19 +175,28 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   mod_scan_calc_chi_obs.m's OUTPUTS. Same values as
 %                   spectra.k(:, spectra.(channel)_fc_index), just
 %                   pre-indexed for convenience.
-%     epsilon     - the per-scan epsilon value actually fed to chi_mle
+%     epsilon_final - the per-scan epsilon value actually fed to chi_mle
 %                   below [W/kg], nbscan x 1 - mean, omitting NaN, across
 %                   this deployment's epsilon_channels of whichever
-%                   variant metadata.PROCESS.EPSILON.epsilon_final_source
-%                   selects. A per-scan simplification, not the full
-%                   profile-level ratio-based per-channel selection
-%                   MOD_fish_lib's legacy pipeline does - see
-%                   docs/workflow/L2_calc_eps.md's "Known limitations."
+%                   variant epsilon_final_source (below) selects. A
+%                   per-scan simplification, not the full profile-level
+%                   ratio-based per-channel selection MOD_fish_lib's
+%                   legacy pipeline does - see docs/workflow/L2_calc_eps.md's
+%                   "Known limitations."
+%     epsilon_final_source - which variant epsilon_final actually is this
+%                   run, resolved once from
+%                   metadata.PROCESS.EPSILON.epsilon_final_source: the
+%                   scalar string 'epsilon_mle' or 'epsilon_co' (an
+%                   unrecognized/invalid metadata value falls back to
+%                   'epsilon_co', same as it always has - this field makes
+%                   that fallback visible in the output instead of
+%                   silent), or '' if epsilon_channels was empty for this
+%                   whole call (epsilon never computed at all).
 %     chi_mle.(channel)    - Batchelor-spectrum MLE-fit thermal variance
 %                   dissipation rate [degC^2/s], nbscan x 1, one field per
 %                   fpo7 channel in chi_obs_channels (see chi_obs above) -
-%                   computed only for scans where L2data.epsilon (above)
-%                   is finite. NaN for every scan otherwise.
+%                   computed only for scans where L2data.epsilon_final
+%                   (above) is finite. NaN for every scan otherwise.
 %     epsilon_obs.(channel), .epsilon_obs_kc.(channel),
 %     epsilon_obs_co.(channel), .epsilon_obs_co_kc.(channel),
 %     epsilon_mle.(channel), .fom.(channel), .fom_mle.(channel),
@@ -201,8 +223,8 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   provenance. fft_segments_per_scan is the actual
 %                   yaml-configurable input; N_epsi (scan_length) is
 %                   derived from it and fft_length
-%                   (toolbox/mod_scan_length_from_segments.m), and dof
-%                   from fft_segments_per_scan alone (toolbox/mod_scan_dof.m)
+%                   (processing/scans/mod_scan_length_from_segments.m), and dof
+%                   from fft_segments_per_scan alone (processing/scans/mod_scan_dof.m)
 %                   - see mod_scan_calc_chi_mle.m for the other consumer
 %                   of that same dof derivation.
 %   nbscan is 0 (all fields empty) if epsi has no data, is too short for
@@ -213,13 +235,13 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %   MODprocess_single_L1_to_L2.m, MODprocess_single_L1_to_L2_profile.m
 %
 % CALLS
-%   mod_scan_get_spectra.m, mod_scan_thermal_diffusivity.m,
-%   toolbox/seawater/sw_visc.m, mod_scan_calc_chi_obs.m (only for fpo7
+%   mod_scan_get_spectra.m, toolbox/seawater/ktemp.m,
+%   toolbox/seawater/visc.m, mod_scan_calc_chi_obs.m (only for fpo7
 %   channels with a resolved volts_to_C calibration), mod_scan_calc_chi_mle.m
 %   (only for scans with a finite epsilon estimate),
 %   modProcess_L2_calc_epsilon.m (only for shear channels with a resolved
-%   Sv calibration), toolbox/mod_scan_dof.m,
-%   toolbox/mod_scan_length_from_segments.m
+%   Sv calibration), processing/scans/mod_scan_dof.m,
+%   processing/scans/mod_scan_length_from_segments.m
 %
 % NOTES
 %   File-boundary/segment-boundary coverage gaps (a partial window at the
@@ -276,8 +298,8 @@ have_ctd = ~isempty(ctd) && isfield(ctd, 'dnum') && isfield(ctd, 'P') ...
 % Needed for both chi's thermal diffusivity (ktemp) and, upstream, ever
 % having a metadata.AFE.(ch).volts_to_C in the first place
 % (MODprocess_L1_apply_fpo7_calibration.m).
-have_ctd_ts = have_ctd && isfield(ctd, 'T') && isfield(ctd, 'S') ...
-    && ~isempty(ctd.T) && ~isempty(ctd.S);
+have_ctd_ts = have_ctd && isfield(ctd, 'T') && isfield(ctd, 'SP') ...
+    && ~isempty(ctd.T) && ~isempty(ctd.SP);
 
 % Which fpo7 channels can get chi_obs computed: only those with a resolved
 % in-situ calibration, and only if this deployment has the CTD T/S/P chi's
@@ -312,6 +334,7 @@ end
 % T/S/P kinematic viscosity (nu) needs - same have_ctd_ts gate chi_obs
 % uses, for the same reason (nu depends on T/S the same way ktemp does).
 epsilon_channels = {};
+epsilon_final_source_resolved = ''; % stays empty if epsilon_channels never ends up non-empty
 if have_ctd_ts
     for iC = 1:numel(metadata.PROCESS.channels)
         ch = metadata.PROCESS.channels{iC};
@@ -326,6 +349,20 @@ if have_ctd_ts
         % variant feeds chi_mle - validate it here, once, rather than at
         % point of use inside the loop.
         metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsilon_final_source'});
+
+        % Resolved once here, not re-switched every scan: also what
+        % L2data.epsilon_final_source records, so the output data itself
+        % is traceable to which variant was actually used, independent of
+        % whatever the yaml/metadata value literally was (e.g. a typo or
+        % unrecognized string falls through to 'epsilon_co' below, same as
+        % it always has - this just makes that fallback visible in the
+        % output instead of silent).
+        switch metadata.PROCESS.EPSILON.epsilon_final_source
+            case 'epsilon_mle'
+                epsilon_final_source_resolved = 'epsilon_mle';
+            otherwise
+                epsilon_final_source_resolved = 'epsilon_co';
+        end
     end
 end
 
@@ -333,7 +370,10 @@ dnum_all = nan(nbscan_candidate, 1);
 pressure_all = nan(nbscan_candidate, 1);
 w_all = nan(nbscan_candidate, 1);
 temperature_all = nan(nbscan_candidate, 1);
-salinity_all = nan(nbscan_candidate, 1);
+SP_all = nan(nbscan_candidate, 1);
+SR_all = nan(nbscan_candidate, 1);
+nu_all = nan(nbscan_candidate, 1);
+ktemp_all = nan(nbscan_candidate, 1);
 epsilon_all = nan(nbscan_candidate, 1); % per-scan value actually fed to chi_mle - see below
 chi_obs_all = struct();
 chi_obs_kc_all = struct();
@@ -397,16 +437,26 @@ for iScan = 1:nbscan_candidate
     end
     if have_ctd_ts
         temperature_all(iScan) = interp1(ctd.dnum, ctd.T, center_dnum, 'linear', 'extrap');
-        salinity_all(iScan) = interp1(ctd.dnum, ctd.S, center_dnum, 'linear', 'extrap');
+        SP_all(iScan) = interp1(ctd.dnum, ctd.SP, center_dnum, 'linear', 'extrap');
+        SR_all(iScan) = interp1(ctd.dnum, ctd.SR, center_dnum, 'linear', 'extrap');
 
         % nu (kinematic viscosity) is needed by epsilon the same way ktemp
         % is needed by chi - computed once per scan, shared across every
-        % shear channel and (via chi_mle) every fpo7 channel too.
-        nu = sw_visc(salinity_all(iScan), temperature_all(iScan), pressure_all(iScan));
+        % shear channel and (via chi_mle) every fpo7 channel too. visc.m
+        % (not a GSW function, but GSW-backed internally - see
+        % toolbox/seawater/visc.m) takes Reference Salinity.
+        nu = visc(SR_all(iScan), temperature_all(iScan), pressure_all(iScan));
+        nu_all(iScan) = nu;
 
         if ~isempty(chi_obs_channels)
-            ktemp = mod_scan_thermal_diffusivity( ...
-                salinity_all(iScan), temperature_all(iScan), pressure_all(iScan));
+            % Local variable deliberately NOT named "ktemp" - it would
+            % shadow the toolbox/seawater/ktemp.m function itself once
+            % assigned, breaking the call on every scan after the first
+            % (MATLAB treats a name as a variable, not a function, for the
+            % rest of a function's scope once it's been assigned anywhere
+            % in that scope).
+            ktemp_scan = ktemp(SP_all(iScan), SR_all(iScan), temperature_all(iScan), pressure_all(iScan));
+            ktemp_all(iScan) = ktemp_scan;
             for iC = 1:numel(chi_obs_channels)
                 ch = chi_obs_channels{iC};
                 volt_field = [ch '_volt_f'];
@@ -414,7 +464,7 @@ for iScan = 1:nbscan_candidate
                 chan_scan.spectra.f = scan_results{iScan}.spectra.f;
                 chan_scan.spectra.Pt_volt_f = scan_results{iScan}.spectra.(volt_field);
                 chan_scan.w = w_all(iScan);
-                chan_scan.ktemp = ktemp;
+                chan_scan.ktemp = ktemp_scan;
                 scan_results{iScan}.chi.(ch) = mod_scan_calc_chi_obs(chan_scan, metadata, ch, noise_coefs);
                 chi_obs_all.(ch)(iScan) = scan_results{iScan}.chi.(ch).chi_obs;
                 chi_obs_kc_all.(ch)(iScan) = scan_results{iScan}.chi.(ch).chi_obs_kc;
@@ -451,7 +501,8 @@ for iScan = 1:nbscan_candidate
             % of whichever epsilon_final_source selects, omitting NaN -
             % see this file's DESCRIPTION for why this is a per-scan
             % simplification, not the full profile-level selection.
-            switch metadata.PROCESS.EPSILON.epsilon_final_source
+            % epsilon_final_source_resolved was resolved once, above.
+            switch epsilon_final_source_resolved
                 case 'epsilon_mle'
                     epsi_vals = cellfun(@(ch) epsilon_all_by_field.epsilon_mle.(ch)(iScan), epsilon_channels);
                 otherwise % 'epsilon_co'
@@ -483,8 +534,12 @@ L2data.dnum = dnum_all(keep);
 L2data.pressure = pressure_all(keep);
 L2data.w = w_all(keep);
 L2data.temperature = temperature_all(keep);
-L2data.salinity = salinity_all(keep);
-L2data.epsilon = epsilon_all(keep); % per-scan value fed to chi_mle below - see DESCRIPTION
+L2data.salinity = SP_all(keep);
+L2data.SR = SR_all(keep);
+L2data.nu = nu_all(keep);
+L2data.ktemp = ktemp_all(keep);
+L2data.epsilon_final = epsilon_all(keep); % per-scan value fed to chi_mle below - see DESCRIPTION
+L2data.epsilon_final_source = epsilon_final_source_resolved; % which variant epsilon_final actually is - 'epsilon_mle', 'epsilon_co', or '' if epsilon was never computed at all
 for iC = 1:numel(chi_obs_channels)
     ch = chi_obs_channels{iC};
     L2data.chi_obs.(ch) = chi_obs_all.(ch)(keep);
@@ -589,7 +644,11 @@ L2data.pressure = [];
 L2data.w = [];
 L2data.temperature = [];
 L2data.salinity = [];
-L2data.epsilon = [];
+L2data.SR = [];
+L2data.nu = [];
+L2data.ktemp = [];
+L2data.epsilon_final = [];
+L2data.epsilon_final_source = '';
 L2data.spectra = struct('f', []);
 L2data.chi_obs = struct();
 L2data.chi_obs_kc = struct();

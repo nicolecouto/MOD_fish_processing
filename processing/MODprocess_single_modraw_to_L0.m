@@ -449,7 +449,7 @@ else
                         if length(data_split)==3
                             ctd.P(n_rec)      = str2double(data_split{1});
                             ctd.T(n_rec)      = str2double(data_split{2});
-                            ctd.S(n_rec)      = str2double(data_split{3});
+                            ctd.SP(n_rec)     = str2double(data_split{3});
                             ctd.C(n_rec)      = NaN;
                         else
                             bad_SB41sample_flag=1;

@@ -59,8 +59,8 @@ function Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)
 %             be a vector (e.g. a grid of candidate chi values to
 %             evaluate during an MLE search) - Psg comes out with chi's
 %             shape outer-producted against k (see OUTPUTS).
-%   nu      - kinematic viscosity [m^2/s] (toolbox/seawater/sw_visc.m)
-%   ktemp   - thermal diffusivity [m^2/s] (mod_scan_thermal_diffusivity.m)
+%   nu      - kinematic viscosity [m^2/s] (toolbox/seawater/visc.m)
+%   ktemp   - thermal diffusivity [m^2/s] (toolbox/seawater/ktemp.m)
 %   k       - wavenumber [cpm], any shape - the observed scan's own
 %             wavenumber bins; not resampled or interpolated anywhere in
 %             this function or by its caller.

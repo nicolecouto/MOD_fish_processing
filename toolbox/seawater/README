@@ -1,7 +1,31 @@
-% README file  $Revision: 1.1 $  $Date: 1994/10/11 02:54:21 $
-%
-%    SEAWATER is a toolkit of MATLAB routines for calculating the
-%    properties of sea water. They are a self contained library and
-%    are extremely easy to use.  
-%
-% See the file sw_info.m for info on installation and usage
+toolbox/seawater/
+=================
+
+visc.m
+------
+The original CSIRO SEAWATER Library v2.0.1 (EOS-80/PSS-78) used to be
+vendored here in full. As of the sw_->gsw_/TEOS-10 migration (branch
+epsilon_processing), everything from that library has been removed except
+visc.m (kinematic viscosity - restored to its original, pre-CSIRO name;
+see visc.m's own header), which itself no longer calls any CSIRO code -
+its density term was switched to the vendored gsw_rho.m below, so its
+former sw_dens.m/sw_dens0.m/sw_seck.m/sw_smow.m dependency chain is gone
+too. Nothing in this repo calls into the CSIRO toolbox anymore - see
+docs/concepts/units_and_seawater.md.
+
+ktemp.m
+-------
+Thermal diffusivity (GSW-backed density/heat capacity, plus a ported
+Caldwell 1974 thermal-conductivity term with no GSW equivalent) - same
+"pure seawater-property math, no metadata argument" shape as visc.m, so
+it lives here too. Originally processing/scans/mod_scan_thermal_diffusivity.m;
+moved and renamed here 2026-09-08.
+
+gsw/
+----
+The full vendored GSW (Gibbs SeaWater) Oceanographic Toolbox, TEOS-10,
+v3.06.16 - unmodified third-party code (https://www.teos-10.org/). This
+is the toolbox every other seawater-property calculation in this repo
+uses. See gsw/Contents.m for the toolbox's own index, and this
+directory's Contents.m for addpath requirements and a known upstream bug
+in gsw_deltaSA_atlas.m/gsw_SAAR.m.

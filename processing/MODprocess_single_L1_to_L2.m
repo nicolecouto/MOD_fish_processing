@@ -28,7 +28,7 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %
 %   See mod_L2_tile_scans.m for the full chi_obs computation chain
 %   (mod_scan_get_spectra.m, mod_scan_fpo7_transfer_function.m,
-%   mod_scan_fpo7_cutoff.m, mod_scan_thermal_diffusivity.m,
+%   mod_scan_fpo7_cutoff.m, toolbox/seawater/ktemp.m,
 %   mod_scan_calc_chi_obs.m) and docs/workflow/L2_calc_chi.md for the
 %   full writeup.
 %

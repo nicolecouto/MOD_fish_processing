@@ -38,14 +38,13 @@ function ctd = MODprocess_read_external_ctd(metadata)
 %                  process_ctd_fields tolerates this and skips S/th/sgth
 %                  derivation when T/C are absent
 %           C    - conductivity [S/m] - NOT mS/cm; see process_ctd_fields's
-%                  ctd.C*10./c3515 ratio in MODprocess_single_L0_to_L1.m,
-%                  which requires C in S/m to match the c3515 = 42.914
-%                  mS/cm standard (1 S/m = 10 mS/cm). NOT present for
-%                  DeepSolo.
-%           S    - salinity [psu, PSS-78] - optional even when T/C are
-%                  present; if the source file doesn't report it,
+%                  ctd.C*10 conversion in MODprocess_single_L0_to_L1.m,
+%                  which requires C in S/m so that *10 gives mS/cm for
+%                  gsw_SP_from_C. NOT present for DeepSolo.
+%           SP   - Practical Salinity [psu, PSS-78] - optional even when
+%                  T/C are present; if the source file doesn't report it,
 %                  MODprocess_single_L0_to_L1.m derives it the same way the
-%                  SBE49 path does (sw_salt on the C/T/P above)
+%                  SBE49 path does (gsw_SP_from_C on the C/T/P above)
 %         DeepSolo's fallrise file has no fixed sample rate (irregular,
 %         ~60-120 s) - chunking works off dnum spacing directly rather than
 %         an assumed rate.

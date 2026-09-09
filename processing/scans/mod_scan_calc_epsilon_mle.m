@@ -9,7 +9,7 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %   spectrum (nasmyth_spectrum.m) to the coherence-cleaned shear
 %   spectrum via Maximum Likelihood Estimation - the shear-channel analog
 %   of mod_scan_calc_chi_mle.m, sharing its grid-search machinery
-%   (toolbox/mod_scan_mle_grid_search.m). Unlike chi_mle, which searches a
+%   (processing/scans/mod_scan_mle_grid_search.m). Unlike chi_mle, which searches a
 %   pure amplitude parameter (chi) with the Batchelor spectrum's shape
 %   fixed by an externally-supplied epsilon, this search is over epsilon
 %   itself - the Nasmyth spectrum's shape and amplitude are both set by
@@ -53,7 +53,7 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated up
 %                front via MODsetup_validate_metadata.m. Uses:
 %                  metadata.PROCESS.fft_segments_per_scan - fed to
-%                    toolbox/mod_scan_dof.m to derive the power spectrum
+%                    processing/scans/mod_scan_dof.m to derive the power spectrum
 %                    estimate's degrees of freedom, exactly the same dof
 %                    mod_scan_calc_chi_mle.m computes - a single shared
 %                    definition (Nuttall 1971), not the different, un-
@@ -95,7 +95,7 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %
 % CALLS
 %   MODsetup_validate_metadata.m, nasmyth_spectrum.m,
-%   toolbox/mod_scan_dof.m, toolbox/mod_scan_mle_grid_search.m
+%   processing/scans/mod_scan_dof.m, processing/scans/mod_scan_mle_grid_search.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 

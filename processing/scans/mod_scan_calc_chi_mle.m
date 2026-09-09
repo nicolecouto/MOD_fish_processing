@@ -45,7 +45,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %   port. Two simplifications from that code, both deliberate:
 %     - The grid-search zoom itself (4-pass, 200-point log-spaced,
 %       widen-on-edge-hit) is shared with mod_scan_calc_epsilon_mle.m via
-%       toolbox/mod_scan_mle_grid_search.m - see that function's own
+%       processing/scans/mod_scan_mle_grid_search.m - see that function's own
 %       DESCRIPTION for the full design rationale (bounded widen/narrow
 %       passes, why the starting search range is kept wide despite
 %       widening being "free" of the pass budget - chi2pdf underflow
@@ -72,10 +72,10 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                            scalar - see mod_scan_fpo7_transfer_function.m
 %                            for why w=0 is not a meaningful input here.
 %                  ktemp   - thermal diffusivity of the water at this scan
-%                            [m^2/s] (mod_scan_thermal_diffusivity.m, from
+%                            [m^2/s] (toolbox/seawater/ktemp.m, from
 %                            scan-center S/T/P)
 %                  nu      - kinematic viscosity of the water at this scan
-%                            [m^2/s] (toolbox/seawater/sw_visc.m, from
+%                            [m^2/s] (toolbox/seawater/visc.m, from
 %                            scan-center S/T/P)
 %                  epsilon - turbulent kinetic energy dissipation rate at
 %                            this scan [W/kg], scalar. NOT computed by
@@ -102,7 +102,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                see those functions for exact fields). Also used directly
 %                here:
 %                  metadata.PROCESS.fft_segments_per_scan - fed to
-%                    toolbox/mod_scan_dof.m to derive the power spectrum
+%                    processing/scans/mod_scan_dof.m to derive the power spectrum
 %                    estimate's degrees of freedom, which sets how
 %                    tightly the MLE trusts each spectral bin against the
 %                    model. dof itself is not a yaml-configurable field -
@@ -156,8 +156,8 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_fpo7_volts_to_Tg_spectrum.m,
-%   mod_scan_fpo7_cutoff.m, batchelor_spectrum.m, toolbox/mod_scan_dof.m,
-%   toolbox/mod_scan_mle_grid_search.m
+%   mod_scan_fpo7_cutoff.m, batchelor_spectrum.m, processing/scans/mod_scan_dof.m,
+%   processing/scans/mod_scan_mle_grid_search.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 

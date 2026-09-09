@@ -64,7 +64,7 @@ function scan = modProcess_L2_calc_epsilon(scan, metadata, channel)
 %   mod_scan_shear_volts_to_shear_spectrum.m,
 %   mod_scan_shear_accel_coherence.m, mod_scan_calc_epsilon_obs.m,
 %   mod_scan_calc_epsilon_mle.m, mod_scan_calc_fom.m,
-%   nasmyth_spectrum.m, toolbox/mod_scan_dof.m,
+%   nasmyth_spectrum.m, processing/scans/mod_scan_dof.m,
 %   MODsetup_validate_metadata.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography

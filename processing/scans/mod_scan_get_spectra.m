@@ -89,7 +89,7 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   do not support the linear detrending of each segment before calling
 %   the fft... which can leave undesirable low-frequency artifacts").
 %   Segment count matches Rockland's own num_of_ffts formula
-%   (get_diss_odas.m) and feeds toolbox/mod_scan_dof.m's dof calculation
+%   (get_diss_odas.m) and feeds processing/scans/mod_scan_dof.m's dof calculation
 %   (1.9*fft_segments_per_scan, Nuttall 1971) - see mod_L2_tile_scans.m and
 %   mod_scan_calc_chi_mle.m for where that dof is actually used. The 1.9
 %   factor is only valid at exactly 50% overlap, which is why overlap is

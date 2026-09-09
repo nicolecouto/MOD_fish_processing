@@ -41,7 +41,7 @@ function fom = mod_scan_calc_fom(k, Pobs, Pmodel, klim, dof)
 %            typically the same range the model was fit/integrated over
 %            (e.g. mod_scan_calc_epsilon_obs.m's [kmin_obs, kc])
 %   dof    - degrees of freedom of the spectral estimate, scalar
-%            (toolbox/mod_scan_dof.m)
+%            (processing/scans/mod_scan_dof.m)
 %
 % OUTPUTS
 %   fom - figure of merit, scalar. NaN if fewer than 2 bins fall in klim

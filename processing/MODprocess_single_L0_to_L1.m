@@ -7,9 +7,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   Converts one file's L0 struct (raw counts/hex, from
 %   MODprocess_single_modraw_to_L0.m) into physical units:
 %     epsi   - AFE counts -> volts (t*/s*) or g (a*), by manifest channel
-%     ctd    - raw hex -> P/T/C/S (SBE49 only - SBE41 arrives from L0
+%     ctd    - raw hex -> P/T/C/SP (SBE49 only - SBE41 arrives from L0
 %              already in physical units), plus derived dPdt, z, dzdt
-%              (always) and th, sgth, S (only when T/C are actually
+%              (always) and SP, SR, CT, sigma0 (only when T/C are actually
 %              present - see process_ctd_fields below). For vehicles with
 %              no $SB49/$SB41 blocks at all (DeepSolo, Wirewalker),
 %              external_ctd substitutes for L0_data.ctd instead - see
@@ -54,7 +54,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   MODprocess_all_L0_to_L1.m
 %
 % CALLS
-%   toolbox/seawater/sw_salt.m, sw_ptmp.m, sw_pden.m, sw_dpth.m
+%   toolbox/seawater/gsw/gsw_SP_from_C.m, gsw_SR_from_SP.m, gsw_CT_from_t.m,
+%   gsw_sigma0.m, gsw_z_from_p.m
 %   mod_L1_add_twist.m
 %   (local subfunctions: convert_efe_channels, process_ctd_fields, calibrate_altimeter_hab)
 %
@@ -80,6 +81,10 @@ end
 
 toolbox_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', 'seawater');
 addpath(toolbox_dir);
+gsw_dir = fullfile(toolbox_dir, 'gsw');
+addpath(gsw_dir);
+addpath(fullfile(gsw_dir, 'library'));
+addpath(fullfile(gsw_dir, 'thermodynamics_from_t'));
 
 data = L0_data;
 
@@ -176,8 +181,6 @@ end
 % units, this function does no calibration at all - only derivation.
 function ctd = process_ctd_fields(ctd, gps, metadata)
 
-c3515 = 42.914; % conductivity standard, mS/cm - ctd.C must be in S/m (C*10 -> mS/cm) for the ratio below to be right
-
 % External CTD chunks (DeepSolo/Wirewalker - see MODprocess_read_external_ctd.m)
 % arrive with only dnum, not time_s. time_s is just dnum in seconds on
 % MATLAB's day-zero epoch (matches convert_timestamp.m in
@@ -210,21 +213,29 @@ if isfield(ctd, 'T_raw')
 end
 
 if isfield(ctd, 'T') && isfield(ctd, 'C')
-    if ~isfield(ctd, 'S') || isempty(ctd.S)
+    if ~isfield(ctd, 'SP') || isempty(ctd.SP)
         % Not reported by the source (SBE41 "PTS" and external CTD files
-        % normally do report S already, and skip this) - derive it the same
-        % way the SBE49 "eng" path does.
-        ctd.S = real(sw_salt(ctd.C*10./c3515, ctd.T, ctd.P));
+        % normally do report SP already, and skip this) - derive it the
+        % same way the SBE49 "eng" path does. ctd.C is S/m; gsw_SP_from_C
+        % wants conductivity in mS/cm.
+        ctd.SP = gsw_SP_from_C(ctd.C*10, ctd.T, ctd.P);
     end
 
-    ctd.th   = sw_ptmp(ctd.S, ctd.T, ctd.P, 0);
-    ctd.sgth = sw_pden(ctd.S, ctd.T, ctd.P, 0);
+    % Reference Salinity (SR ~= SA, the shortcut used throughout this repo
+    % for GSW's Absolute-Salinity-family inputs - see
+    % docs/concepts/units_and_seawater.md) is computed once here and
+    % persisted, not re-derived ad hoc by every downstream consumer.
+    ctd.SR = gsw_SR_from_SP(ctd.SP);
+
+    ctd.CT     = gsw_CT_from_t(ctd.SR, ctd.T, ctd.P);
+    ctd.sigma0 = gsw_sigma0(ctd.SR, ctd.CT);
 else
     % No T/C at all - e.g. DeepSolo's fallrise pressure file
-    % (MODprocess_read_external_ctd.m), which reports only P. S/th/sgth
-    % genuinely can't be computed without temperature and conductivity, so
-    % they're left unset rather than guessed. dPdt/z/dzdt below only need
-    % P (and latitude for z), so they still get computed either way.
+    % (MODprocess_read_external_ctd.m), which reports only P. SP/SR/CT/
+    % sigma0 genuinely can't be computed without temperature and
+    % conductivity, so they're left unset rather than guessed. dPdt/z/dzdt
+    % below only need P (and latitude for z), so they still get computed
+    % either way.
 end
 
 ctd.dPdt = [0; diff(ctd.P)./diff(ctd.time_s)];
@@ -242,7 +253,10 @@ if ~isempty(gps) && isfield(gps, 'latitude') && any(~isnan(gps.latitude))
 else
     lat = metadata.PROCESS.latitude;
 end
-ctd.z = sw_dpth(ctd.P, lat);
+% gsw_z_from_p returns height (negative down); this repo's z/dzdt
+% convention is positive down (dzdt > 0 during descent) - negate to
+% preserve it exactly.
+ctd.z = -gsw_z_from_p(ctd.P, lat);
 ctd.dzdt = [0; diff(ctd.z)./diff(ctd.time_s)];
 
 end

@@ -26,7 +26,7 @@ function Pxx = panchev_spectrum(epsilon, kvis, k)
 %
 % INPUTS
 %   epsilon - turbulent kinetic energy dissipation rate [W/kg], scalar.
-%   kvis    - kinematic viscosity [m^2/s] (toolbox/seawater/sw_visc.m, or
+%   kvis    - kinematic viscosity [m^2/s] (toolbox/seawater/visc.m, or
 %             Profile.kvis for an already-computed legacy value).
 %   k       - wavenumber [cpm], any shape.
 %

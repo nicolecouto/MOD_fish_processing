@@ -5,15 +5,15 @@ Three `setup.yml` `spectral:` values control every spectrum this pipeline comput
 - **`fft_length` and `fft_segments_per_scan`** decide how many Welch segments get averaged into *one* scan's spectrum - this is what sets the spectrum's statistical reliability (its degrees of freedom, `dof`), and, through `fft_length` alone, its frequency/wavenumber resolution.
 - **`scan_overlap`** decides how many scans you get per profile and how much they overlap each other - this is a vertical-resolution/smoothing choice. It has no effect on any individual scan's `dof` or resolution.
 
-See `mod_scan_get_spectra.m` (the first pair) and `mod_L2_tile_scans.m` (`scan_overlap`, and where `scan_length` actually gets used). `scan_length` and `dof` are never set directly - both are derived: `scan_length` from `fft_length`/`fft_segments_per_scan` (`toolbox/mod_scan_length_from_segments.m`), `dof` from `fft_segments_per_scan` alone (`toolbox/mod_scan_dof.m`) - the same way Rockland ODAS's `get_diss_odas.m` reports `dof_spec` as an output, never an input.
+See `mod_scan_get_spectra.m` (the first pair) and `mod_L2_tile_scans.m` (`scan_overlap`, and where `scan_length` actually gets used). `scan_length` and `dof` are never set directly - both are derived: `scan_length` from `fft_length`/`fft_segments_per_scan` (`processing/scans/mod_scan_length_from_segments.m`), `dof` from `fft_segments_per_scan` alone (`processing/scans/mod_scan_dof.m`) - the same way Rockland ODAS's `get_diss_odas.m` reports `dof_spec` as an output, never an input.
 
 The Welch-segment overlap itself is hardcoded at 50% in code (`mod_scan_get_spectra.m`'s `FFT_OVERLAP` constant) - not yaml-configurable at all. It used to be a tunable `fft_overlap` fraction, but the only value its `dof` formula is actually valid for is 0.5 (see below), so exposing it as "tunable" was misleading more than useful.
 
 ## The formulas
 
 ```
-scan_length = fft_length * (fft_segments_per_scan + 1) / 2   (toolbox/mod_scan_length_from_segments.m)
-dof         = 1.9 * fft_segments_per_scan                     (Nuttall 1971, toolbox/mod_scan_dof.m)
+scan_length = fft_length * (fft_segments_per_scan + 1) / 2   (processing/scans/mod_scan_length_from_segments.m)
+dof         = 1.9 * fft_segments_per_scan                     (Nuttall 1971, processing/scans/mod_scan_dof.m)
 
 scan_step   = (1 - scan_overlap) * scan_length                (mod_L2_tile_scans.m)
 ```

@@ -41,7 +41,7 @@ function Psg = nasmyth_spectrum(epsilon, nu, k)
 %             vector (e.g. a grid of candidate epsilon values to evaluate
 %             during an MLE search) - Psg comes out with epsilon's shape
 %             outer-producted against k (see OUTPUTS).
-%   nu      - kinematic viscosity [m^2/s] (toolbox/seawater/sw_visc.m)
+%   nu      - kinematic viscosity [m^2/s] (toolbox/seawater/visc.m)
 %   k       - wavenumber [cpm], any shape
 %
 % OUTPUTS

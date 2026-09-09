@@ -43,6 +43,7 @@ nav:
   - Concepts:
       - Overview: concepts/index.md
       - "Choosing fft_length, fft_segments_per_scan, and scan_overlap": concepts/spectral_windowing.md
+      - "Units and the sw_->gsw_ migration": concepts/units_and_seawater.md
   - References: references.md
 
 markdown_extensions:

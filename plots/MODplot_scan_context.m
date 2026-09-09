@@ -66,7 +66,7 @@ function fig = MODplot_scan_context(data, metadata, target_pressure, channel, op
 %   (interactive/diagnostic use only)
 %
 % CALLS
-%   toolbox/mod_scan_length_from_segments.m
+%   processing/scans/mod_scan_length_from_segments.m
 %   (MATLAB's Signal Processing Toolbox periodogram, detrend, hamming;
 %   aguFigure, subtightplot)
 %
