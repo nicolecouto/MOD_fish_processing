@@ -80,7 +80,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                  epsilon - turbulent kinetic energy dissipation rate at
 %                            this scan [W/kg], scalar. NOT computed by
 %                            this repo yet (PLAN.md's
-%                            modProcess_L2_calc_epsilon.m, shear-channel
+%                            mod_scan_calc_epsilon.m, shear-channel
 %                            Nasmyth fit, is not started) - callers must
 %                            supply it from elsewhere. For the
 %                            chi_obs-vs-chi_mle/tau comparison this
@@ -149,7 +149,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %   mod_L2_tile_scans.m - wired in for every scan where an epsilon
 %   estimate is available (metadata.PROCESS.EPSILON.epsilon_final_source-
 %   selected mean across this deployment's shear channels - see that
-%   function's DESCRIPTION), now that modProcess_L2_calc_epsilon.m
+%   function's DESCRIPTION), now that mod_scan_calc_epsilon.m
 %   produces one. Still fully callable standalone wherever an epsilon
 %   estimate already exists from elsewhere - see
 %   docs/workflow/L2_calc_chi.md's chi_obs-vs-chi_mle comparison.

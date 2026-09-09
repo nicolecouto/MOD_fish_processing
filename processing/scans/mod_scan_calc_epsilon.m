@@ -1,7 +1,7 @@
-function scan = modProcess_L2_calc_epsilon(scan, metadata, channel)
-% modProcess_L2_calc_epsilon        Part of MOD_fish_processing
+function scan = mod_scan_calc_epsilon(scan, metadata, channel)
+% mod_scan_calc_epsilon        Part of MOD_fish_processing
 %
-% scan = modProcess_L2_calc_epsilon(scan, metadata, channel)
+% scan = mod_scan_calc_epsilon(scan, metadata, channel)
 %
 % DESCRIPTION
 %   Orchestrates the full per-channel epsilon (turbulent kinetic energy
@@ -27,8 +27,8 @@ function scan = modProcess_L2_calc_epsilon(scan, metadata, channel)
 %        both the raw and coherence-cleaned spectra.
 %     5. mod_scan_calc_epsilon_mle.m - Nasmyth-spectrum MLE fit epsilon,
 %        from the coherence-cleaned spectrum, seeded by step 4's
-%        epsilon_obs_co.
-%     6. mod_scan_calc_fom.m - figure of merit for both epsilon_obs_co and
+%        epsilon_obs_coh_corr.
+%     6. mod_scan_calc_fom.m - figure of merit for both epsilon_obs_coh_corr and
 %        epsilon_mle, comparing the coherence-cleaned spectrum against a
 %        Nasmyth model spectrum evaluated at each.
 %
@@ -53,7 +53,7 @@ function scan = modProcess_L2_calc_epsilon(scan, metadata, channel)
 %     spectra.Ps_shear_k, spectra.Ps_shear_co_k (absent if this
 %     scan/channel had no usable coherence - see
 %     mod_scan_shear_accel_coherence.m), spectra.(channel)_coh_a3(_sum),
-%     epsilon_obs, epsilon_obs_kc, epsilon_obs_co, epsilon_obs_co_kc,
+%     epsilon_obs, epsilon_obs_kc, epsilon_obs_coh_corr, epsilon_obs_coh_corr_kc,
 %     epsilon_mle, fom, fom_mle. fom/fom_mle are NaN when their underlying
 %     epsilon estimate is NaN or spectra.Ps_shear_co_k is absent.
 %
@@ -96,9 +96,9 @@ k = scan.spectra.k;
 scan.fom = NaN;
 scan.fom_mle = NaN;
 if isfield(scan.spectra, 'Ps_shear_co_k') && ~isempty(scan.spectra.Ps_shear_co_k) ...
-        && isfinite(scan.epsilon_obs_co) && isfinite(scan.epsilon_obs_co_kc)
-    klim = [kmin, scan.epsilon_obs_co_kc];
-    Pmodel_co = nasmyth_spectrum(scan.epsilon_obs_co, scan.nu, k);
+        && isfinite(scan.epsilon_obs_coh_corr) && isfinite(scan.epsilon_obs_coh_corr_kc)
+    klim = [kmin, scan.epsilon_obs_coh_corr_kc];
+    Pmodel_co = nasmyth_spectrum(scan.epsilon_obs_coh_corr, scan.nu, k);
     scan.fom = mod_scan_calc_fom(k, scan.spectra.Ps_shear_co_k, Pmodel_co, klim, dof);
 
     if isfinite(scan.epsilon_mle)

@@ -7,7 +7,7 @@ function scan = mod_scan_shear_accel_coherence(scan, metadata, channel)
 %   Magnitude-squared coherence between one shear channel and the
 %   vertical-axis accelerometer channel 'a3', over this scan's raw time
 %   series - a vibration-contamination diagnostic used to clean the shear
-%   spectrum before integrating it for epsilon (modProcess_L2_calc_epsilon.m
+%   spectrum before integrating it for epsilon (mod_scan_calc_epsilon.m
 %   subtracts the coherent fraction of shear variance: Ps_velocity_co_f =
 %   Ps_velocity_f .* (1 - Cxy), see that function). 'a3' is hardcoded as
 %   the reference channel, not looped over all three accelerometer axes -
@@ -59,7 +59,7 @@ function scan = mod_scan_shear_accel_coherence(scan, metadata, channel)
 %                              coherence vector.
 %
 % CALLED BY
-%   modProcess_L2_calc_epsilon.m
+%   mod_scan_calc_epsilon.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m

@@ -29,7 +29,7 @@ function scan = mod_scan_shear_volts_to_shear_spectrum(scan, metadata, channel)
 %
 %   Also leaves the intermediate Ps_velocity_f on the returned scan (not
 %   discarded) - mod_scan_shear_accel_coherence.m's caller
-%   (modProcess_L2_calc_epsilon.m) needs it to build the coherence-cleaned
+%   (mod_scan_calc_epsilon.m) needs it to build the coherence-cleaned
 %   spectrum Ps_shear_co_k, which this function does not itself compute
 %   (unlike the FP07 chain, shear's spectrum has two variants - raw and
 %   coherence-cleaned - built from the same Ps_velocity_f by a step
@@ -82,7 +82,7 @@ function scan = mod_scan_shear_volts_to_shear_spectrum(scan, metadata, channel)
 %                              spectra.k
 %
 % CALLED BY
-%   modProcess_L2_calc_epsilon.m
+%   mod_scan_calc_epsilon.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_shear_transfer_function.m

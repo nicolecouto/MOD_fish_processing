@@ -94,5 +94,5 @@ end %end function
 function k = thermal_conductivity(SP, T, P)
 SP_frac = SP / 1000; % psu -> mass fraction, matches thermometric_cond.m's expected scale
 P_MPa = P / 100;    % dbar -> MPa
-k = 0.001365 * 418.55 .* (1.0 + 0.003.*T - 1.025e-5.*T.^2 + 6.53e-4.*P_MPa - 0.29.*SP_frac);
+k = 0.001365 * 418.55 .* (1.0 + 0.003.*T - 1.025e-5.*T.^2 + 6.53e-4.*P_MPa - 0.29.*SP_frac); %copied from Mike Gregg's thermometric_cond.m
 end

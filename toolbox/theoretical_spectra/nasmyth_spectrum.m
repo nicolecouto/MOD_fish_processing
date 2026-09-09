@@ -53,7 +53,7 @@ function Psg = nasmyth_spectrum(epsilon, nu, k)
 %
 % CALLED BY
 %   mod_scan_calc_epsilon_obs.m, mod_scan_calc_epsilon_mle.m,
-%   mod_scan_calc_fom.m (via modProcess_L2_calc_epsilon.m)
+%   mod_scan_calc_fom.m (via mod_scan_calc_epsilon.m)
 %
 % CALLS
 %   (none)

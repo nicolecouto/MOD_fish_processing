@@ -50,8 +50,8 @@ function Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)
 %
 % INPUTS
 %   epsilon - turbulent kinetic energy dissipation rate [W/kg], scalar.
-%             Computed by modProcess_L2_calc_epsilon.m (epsilon_obs/
-%             epsilon_obs_co/epsilon_mle) or supplied by the caller from
+%             Computed by mod_scan_calc_epsilon.m (epsilon_obs/
+%             epsilon_obs_coh_corr/epsilon_mle) or supplied by the caller from
 %             elsewhere (e.g. an existing epsilon_final field from an
 %             old-format MOD_fish_lib Profile####.mat, as used for the
 %             chi_obs vs. chi_mle comparison in docs/workflow/L2_calc_chi.md).

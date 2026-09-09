@@ -60,7 +60,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %   lookup) - gated on the same have_ctd_ts condition as chi_obs, since
 %   kinematic viscosity (nu, needed by the epsilon calculation the same
 %   way ktemp is needed by chi) also depends on real CTD T/S
-%   (toolbox/seawater/visc.m). modProcess_L2_calc_epsilon.m does the
+%   (toolbox/seawater/visc.m). mod_scan_calc_epsilon.m does the
 %   per-channel work (transfer function, coherence, direct-integration and
 %   MLE epsilon estimates, figure of merit); see docs/workflow/L2_calc_eps.md
 %   for the full chain.
@@ -135,7 +135,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %     nu          - kinematic viscosity at scan center [m^2/s]
 %                   (toolbox/seawater/visc.m), same conditions as
 %                   temperature, nbscan x 1. Feeds epsilon (via
-%                   modProcess_L2_calc_epsilon.m) and chi_mle.
+%                   mod_scan_calc_epsilon.m) and chi_mle.
 %     ktemp       - thermal diffusivity at scan center [m^2/s]
 %                   (toolbox/seawater/ktemp.m), nbscan x 1. Only
 %                   populated when chi_obs_channels is non-empty (see
@@ -198,7 +198,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   computed only for scans where L2data.epsilon_final
 %                   (above) is finite. NaN for every scan otherwise.
 %     epsilon_obs.(channel), .epsilon_obs_kc.(channel),
-%     epsilon_obs_co.(channel), .epsilon_obs_co_kc.(channel),
+%     epsilon_obs_coh_corr.(channel), .epsilon_obs_coh_corr_kc.(channel),
 %     epsilon_mle.(channel), .fom.(channel), .fom_mle.(channel),
 %     coherence_sum.(channel) - direct-integration, MLE, and figure-of-
 %                   merit epsilon products, nbscan x 1 each, one field per
@@ -207,7 +207,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %                   have_ctd_ts gate as chi_obs, since kinematic viscosity
 %                   nu needs T/S the same way ktemp does) - these structs
 %                   simply have no fields at all otherwise. See
-%                   modProcess_L2_calc_epsilon.m's OUTPUTS for what each
+%                   mod_scan_calc_epsilon.m's OUTPUTS for what each
 %                   one means; coherence_sum is that function's
 %                   spectra.(channel)_coh_a3_sum, pulled up to a top-level
 %                   field for the same "kept rather than discarded"
@@ -239,7 +239,7 @@ function L2data = mod_L2_tile_scans(epsi, ctd, metadata, PressureTimeseries)
 %   toolbox/seawater/visc.m, mod_scan_calc_chi_obs.m (only for fpo7
 %   channels with a resolved volts_to_C calibration), mod_scan_calc_chi_mle.m
 %   (only for scans with a finite epsilon estimate),
-%   modProcess_L2_calc_epsilon.m (only for shear channels with a resolved
+%   mod_scan_calc_epsilon.m (only for shear channels with a resolved
 %   Sv calibration), processing/scans/mod_scan_dof.m,
 %   processing/scans/mod_scan_length_from_segments.m
 %
@@ -385,7 +385,7 @@ chi_mle_all = struct();
 for iC = 1:numel(chi_obs_channels)
     chi_mle_all.(chi_obs_channels{iC}) = nan(nbscan_candidate, 1);
 end
-epsilon_fields = {'epsilon_obs', 'epsilon_obs_kc', 'epsilon_obs_co', 'epsilon_obs_co_kc', ...
+epsilon_fields = {'epsilon_obs', 'epsilon_obs_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_coh_corr_kc', ...
     'epsilon_mle', 'fom', 'fom_mle', 'coherence_sum'};
 epsilon_all_by_field = struct();
 for iF = 1:numel(epsilon_fields)
@@ -481,7 +481,7 @@ for iScan = 1:nbscan_candidate
                 eps_scan.epsi = scan.epsi;
                 eps_scan.w = w_all(iScan);
                 eps_scan.nu = nu;
-                scan_results{iScan}.epsilon.(ch) = modProcess_L2_calc_epsilon(eps_scan, metadata, ch);
+                scan_results{iScan}.epsilon.(ch) = mod_scan_calc_epsilon(eps_scan, metadata, ch);
 
                 for iF = 1:numel(epsilon_fields)
                     field = epsilon_fields{iF};
@@ -506,7 +506,7 @@ for iScan = 1:nbscan_candidate
                 case 'epsilon_mle'
                     epsi_vals = cellfun(@(ch) epsilon_all_by_field.epsilon_mle.(ch)(iScan), epsilon_channels);
                 otherwise % 'epsilon_co'
-                    epsi_vals = cellfun(@(ch) epsilon_all_by_field.epsilon_obs_co.(ch)(iScan), epsilon_channels);
+                    epsi_vals = cellfun(@(ch) epsilon_all_by_field.epsilon_obs_coh_corr.(ch)(iScan), epsilon_channels);
             end
             epsilon_all(iScan) = mean(epsi_vals, 'omitnan');
 
@@ -655,8 +655,8 @@ L2data.chi_obs_kc = struct();
 L2data.chi_mle = struct();
 L2data.epsilon_obs = struct();
 L2data.epsilon_obs_kc = struct();
-L2data.epsilon_obs_co = struct();
-L2data.epsilon_obs_co_kc = struct();
+L2data.epsilon_obs_coh_corr = struct();
+L2data.epsilon_obs_coh_corr_kc = struct();
 L2data.epsilon_mle = struct();
 L2data.fom = struct();
 L2data.fom_mle = struct();

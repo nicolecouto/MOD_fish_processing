@@ -31,7 +31,7 @@ function fom = mod_scan_calc_fom(k, Pobs, Pmodel, klim, dof)
 %   included), matching how spectral_loglikelihood.m is similarly kept
 %   model-agnostic. That generality is why this lives alongside the
 %   generic MLE/model machinery in processing/scans/ rather than being a
-%   private local function inside modProcess_L2_calc_epsilon.m.
+%   private local function inside mod_scan_calc_epsilon.m.
 %
 % INPUTS
 %   k      - wavenumber vector [cpm], any shape, matching Pobs/Pmodel
@@ -48,7 +48,7 @@ function fom = mod_scan_calc_fom(k, Pobs, Pmodel, klim, dof)
 %         (mad of a single value, or of nothing, is not meaningful).
 %
 % CALLED BY
-%   modProcess_L2_calc_epsilon.m
+%   mod_scan_calc_epsilon.m
 %
 % CALLS
 %   (none)

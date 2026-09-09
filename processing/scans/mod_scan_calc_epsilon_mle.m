@@ -19,11 +19,11 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %   spectrum) - matches MOD_fish_lib's mod_efe_scan_epsilon.m, which only
 %   ever computes epsilon_mle inside its "coherence available" branch,
 %   seeded by that same branch's epsilon_co. Reuses
-%   mod_scan_calc_epsilon_obs.m's own epsilon_obs_co/epsilon_obs_co_kc as
+%   mod_scan_calc_epsilon_obs.m's own epsilon_obs_coh_corr/epsilon_obs_coh_corr_kc as
 %   the search seed and upper wavenumber fit bound respectively, rather
 %   than recomputing either - this function must therefore run after
 %   mod_scan_calc_epsilon_obs.m on the same scan (see
-%   modProcess_L2_calc_epsilon.m's call order).
+%   mod_scan_calc_epsilon.m's call order).
 %
 %   The fit range's lower bound is metadata.PROCESS.EPSILON.kmin_mle - a
 %   DIFFERENT, separately-tunable field from kmin_obs (mod_scan_calc_epsilon_obs.m's
@@ -45,10 +45,10 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %                        scan/channel).
 %                  nu                    - kinematic viscosity of the
 %                        water at this scan [m^2/s]
-%                  epsilon_obs_co        - direct-integration coherence-
+%                  epsilon_obs_coh_corr        - direct-integration coherence-
 %                        cleaned epsilon estimate (mod_scan_calc_epsilon_obs.m),
 %                        used as the MLE search's seed
-%                  epsilon_obs_co_kc     - same function's cutoff
+%                  epsilon_obs_coh_corr_kc     - same function's cutoff
 %                        wavenumber, used as this fit's upper bound
 %   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated up
 %                front via MODsetup_validate_metadata.m. Uses:
@@ -67,7 +67,7 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %                  metadata.PROCESS.EPSILON.kmin_mle - low-wavenumber fit
 %                    bound [cpm] (see DESCRIPTION)
 %                  metadata.PROCESS.EPSILON.mle_start_search,
-%                    .mle_end_search - multipliers on the epsilon_obs_co-
+%                    .mle_end_search - multipliers on the epsilon_obs_coh_corr-
 %                    seeded starting value bounding
 %                    mod_scan_mle_grid_search.m's grid search. Registered
 %                    separately from chi's own chi_mle_start_search/
@@ -83,15 +83,15 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %   scan - same struct, with added:
 %     epsilon_mle - TKE dissipation rate [W/kg] from the Nasmyth-spectrum
 %                   MLE fit. NaN if spectra.Ps_shear_co_k is absent, if
-%                   epsilon_obs_co_kc does not exceed kmin_mle (no valid
+%                   epsilon_obs_coh_corr_kc does not exceed kmin_mle (no valid
 %                   wavenumber range to fit over), if the seed
-%                   (epsilon_obs_co) is non-positive or non-finite, or if
+%                   (epsilon_obs_coh_corr) is non-positive or non-finite, or if
 %                   every candidate in the search range is equally unable
 %                   to explain the data (mod_scan_mle_grid_search.m's
 %                   all-underflowed case).
 %
 % CALLED BY
-%   modProcess_L2_calc_epsilon.m
+%   mod_scan_calc_epsilon.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m, nasmyth_spectrum.m,
@@ -113,12 +113,12 @@ if ~isfield(scan.spectra, 'Ps_shear_co_k') || isempty(scan.spectra.Ps_shear_co_k
 end
 
 kmin_mle = metadata.PROCESS.EPSILON.kmin_mle;
-kc = scan.epsilon_obs_co_kc;
+kc = scan.epsilon_obs_coh_corr_kc;
 if ~isfinite(kc) || kc <= kmin_mle
     return
 end
 
-epsilon_seed = scan.epsilon_obs_co;
+epsilon_seed = scan.epsilon_obs_coh_corr;
 if ~isfinite(epsilon_seed) || epsilon_seed <= 0
     return
 end

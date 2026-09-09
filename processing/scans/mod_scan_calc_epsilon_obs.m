@@ -11,7 +11,7 @@ function scan = mod_scan_calc_epsilon_obs(scan, metadata)
 %   mod_scan_calc_chi_obs.m. Computed twice per call, from the two shear
 %   spectra mod_scan_shear_volts_to_shear_spectrum.m/
 %   mod_scan_shear_accel_coherence.m produce: epsilon_obs (the raw
-%   spectrum) and epsilon_obs_co (the coherence-cleaned spectrum, when
+%   spectrum) and epsilon_obs_coh_corr (the coherence-cleaned spectrum, when
 %   available) - matching MOD_fish_lib's mod_efe_scan_epsilon.m computing
 %   both epsilon/epsilon_co from the same eps1_mmp.m routine.
 %
@@ -48,9 +48,9 @@ function scan = mod_scan_calc_epsilon_obs(scan, metadata)
 %                        [s^-2/cpm], same shape as spectra.k
 %                  spectra.Ps_shear_co_k - (optional) coherence-cleaned
 %                        shear wavenumber spectrum, same shape as
-%                        spectra.k - set by modProcess_L2_calc_epsilon.m
+%                        spectra.k - set by mod_scan_calc_epsilon.m
 %                        from mod_scan_shear_accel_coherence.m's output.
-%                        epsilon_obs_co comes back NaN if absent.
+%                        epsilon_obs_coh_corr comes back NaN if absent.
 %                  w                  - fall speed at this scan's center
 %                        [m/s], scalar - sign does not matter (abs'd
 %                        internally).
@@ -85,17 +85,17 @@ function scan = mod_scan_calc_epsilon_obs(scan, metadata)
 %     epsilon_obs_kc    - the final-stage integration cutoff wavenumber
 %                          used [cpm] (snapped to the nearest actual k
 %                          bin), or NaN alongside a NaN epsilon_obs.
-%     epsilon_obs_co    - TKE dissipation rate [W/kg] from the coherence-
+%     epsilon_obs_coh_corr    - TKE dissipation rate [W/kg] from the coherence-
 %                          cleaned shear spectrum. NaN if
 %                          spectra.Ps_shear_co_k is absent (no coherence
 %                          computed for this scan/channel) or, same as
 %                          epsilon_obs, too few stage-1 bins.
-%     epsilon_obs_co_kc - same as epsilon_obs_kc, for the cleaned-spectrum
+%     epsilon_obs_coh_corr_kc - same as epsilon_obs_kc, for the cleaned-spectrum
 %                          estimate. This is the kc mod_scan_calc_epsilon_mle.m
 %                          reuses as its own fit's upper wavenumber bound.
 %
 % CALLED BY
-%   modProcess_L2_calc_epsilon.m
+%   mod_scan_calc_epsilon.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m, nasmyth_spectrum.m
@@ -138,10 +138,10 @@ k = scan.spectra.k;
 [scan.epsilon_obs, scan.epsilon_obs_kc] = calc_epsilon_direct(k, scan.spectra.Ps_shear_k, scan.nu, kmin, kmax, stage1_kmin, stage1_kmax);
 
 if isfield(scan.spectra, 'Ps_shear_co_k') && ~isempty(scan.spectra.Ps_shear_co_k)
-    [scan.epsilon_obs_co, scan.epsilon_obs_co_kc] = calc_epsilon_direct(k, scan.spectra.Ps_shear_co_k, scan.nu, kmin, kmax, stage1_kmin, stage1_kmax);
+    [scan.epsilon_obs_coh_corr, scan.epsilon_obs_coh_corr_kc] = calc_epsilon_direct(k, scan.spectra.Ps_shear_co_k, scan.nu, kmin, kmax, stage1_kmin, stage1_kmax);
 else
-    scan.epsilon_obs_co = NaN;
-    scan.epsilon_obs_co_kc = NaN;
+    scan.epsilon_obs_coh_corr = NaN;
+    scan.epsilon_obs_coh_corr_kc = NaN;
 end
 
 end %end function

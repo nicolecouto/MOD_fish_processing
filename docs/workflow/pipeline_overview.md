@@ -179,7 +179,7 @@ flowchart LR
   SPECIN --> EPSPROC["modProcess_L2_<br/>calc_epsilon.m"]
   COH["mod_scan_shear_<br/>accel_coherence.m"] --> EPSPROC
   SHXFER["mod_scan_shear_<br/>transfer_function.m"] -.-> EPSPROC
-  EPSPROC --> EPSOBS[("scan.epsilon_obs,<br/>.epsilon_obs_co")]
+  EPSPROC --> EPSOBS[("scan.epsilon_obs,<br/>.epsilon_obs_coh_corr")]
   NASM["mod_scan_nasmyth_<br/>spectrum.m"] --> EPSMLE["mod_scan_calc_<br/>epsilon_mle.m"]
   EPSOBS --> EPSMLE
   EPSMLE --> EPSMLEOUT[("scan.epsilon_mle")]
@@ -210,5 +210,5 @@ flowchart LR
 | `toolbox/theoretical_spectra/nasmyth_spectrum.m` | epsilon, nu, k → Psg | Theoretical Nasmyth shear spectrum |
 | `mod_scan_calc_epsilon_mle.m` | scan, metadata → scan | Nasmyth-spectrum MLE fit epsilon |
 | `mod_scan_calc_fom.m` | k, Pobs, Pmodel, klim, dof → fom | Generic figure of merit, used by epsilon (chi's own FOM still not built) |
-| `modProcess_L2_calc_epsilon.m` | scan, metadata, channel → scan | Per-channel epsilon orchestrator, called once per shear channel per scan |
+| `mod_scan_calc_epsilon.m` | scan, metadata, channel → scan | Per-channel epsilon orchestrator, called once per shear channel per scan |
 | `processing/scans/mod_scan_mle_grid_search.m` | Pobs, dof, model_fn, seed, ... → best_val | Generic MLE grid search, shared by chi_mle and epsilon_mle |
