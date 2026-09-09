@@ -6,14 +6,14 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 % DESCRIPTION
 %   Computes epsilon_mle (turbulent kinetic energy dissipation rate, W/kg)
 %   for one scan of one shear channel by fitting the theoretical Nasmyth
-%   spectrum (mod_scan_nasmyth_spectrum.m) to the coherence-cleaned shear
+%   spectrum (nasmyth_spectrum.m) to the coherence-cleaned shear
 %   spectrum via Maximum Likelihood Estimation - the shear-channel analog
 %   of mod_scan_calc_chi_mle.m, sharing its grid-search machinery
 %   (toolbox/mod_scan_mle_grid_search.m). Unlike chi_mle, which searches a
 %   pure amplitude parameter (chi) with the Batchelor spectrum's shape
 %   fixed by an externally-supplied epsilon, this search is over epsilon
 %   itself - the Nasmyth spectrum's shape and amplitude are both set by
-%   epsilon (see mod_scan_nasmyth_spectrum.m).
+%   epsilon (see nasmyth_spectrum.m).
 %
 %   Always fit against the coherence-cleaned spectrum (never the raw
 %   spectrum) - matches MOD_fish_lib's mod_efe_scan_epsilon.m, which only
@@ -94,7 +94,7 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %   modProcess_L2_calc_epsilon.m
 %
 % CALLS
-%   MODsetup_validate_metadata.m, mod_scan_nasmyth_spectrum.m,
+%   MODsetup_validate_metadata.m, nasmyth_spectrum.m,
 %   toolbox/mod_scan_dof.m, toolbox/mod_scan_mle_grid_search.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
@@ -134,7 +134,7 @@ mle_start_search = metadata.PROCESS.EPSILON.mle_start_search;
 mle_end_search = metadata.PROCESS.EPSILON.mle_end_search;
 
 scan.epsilon_mle = mod_scan_mle_grid_search(Pk_fit, dof, ...
-    @(epsi_grid) mod_scan_nasmyth_spectrum(epsi_grid, scan.nu, k_fit), ...
+    @(epsi_grid) nasmyth_spectrum(epsi_grid, scan.nu, k_fit), ...
     epsilon_seed, mle_start_search, mle_end_search);
 
 end %end function

@@ -2461,7 +2461,7 @@ classdef MODvis_spectra < handle
                 app.WavLines.(ch) = h;
 
                 if startsWith(base, 's') && isfinite(epsilon) && isfinite(kvis)
-                    Pan = mod_scan_panchev_spectrum(epsilon, kvis, k(keep));
+                    Pan = panchev_spectrum(epsilon, kvis, k(keep));
                     ht = loglog(app.WavAxes, k(keep), Pan, '--', 'Color', clr, 'LineWidth', 1);
                     ht.Visible = app.ChannelOn.(ch);
                     app.WavTheoryLines.(ch) = ht;
@@ -2538,7 +2538,7 @@ classdef MODvis_spectra < handle
                     continue
                 end
                 clr = app.getSignalColor(base);
-                Psg = mod_scan_batchelor_spectrum(epsilon, chi, kvis, ktemp, k(keep));
+                Psg = batchelor_spectrum(epsilon, chi, kvis, ktemp, k(keep));
                 ht = loglog(app.WavAxes, k(keep), Psg, style, 'Color', clr, 'LineWidth', 1);
                 ht.Visible = app.ChannelOn.(ch);
                 app.WavTheoryLines.(ch) = ht;

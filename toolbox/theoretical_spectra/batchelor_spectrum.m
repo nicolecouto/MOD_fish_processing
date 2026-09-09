@@ -1,7 +1,7 @@
-function Psg = mod_scan_batchelor_spectrum(epsilon, chi, nu, ktemp, k)
-% mod_scan_batchelor_spectrum        Part of MOD_fish_processing
+function Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)
+% batchelor_spectrum        Part of MOD_fish_processing
 %
-% Psg = mod_scan_batchelor_spectrum(epsilon, chi, nu, ktemp, k)
+% Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)
 %
 % DESCRIPTION
 %   Theoretical one-dimensional Batchelor (1959) temperature-gradient
@@ -22,29 +22,48 @@ function Psg = mod_scan_batchelor_spectrum(epsilon, chi, nu, ktemp, k)
 %   mod_scan_calc_chi_mle.m a 1-D search over a single amplitude
 %   parameter rather than a nonlinear multi-parameter fit.
 %
-%   Ported from the local `batchelor` subfunction inside MOD_fish_lib's
-%   mod_efe_scan_chi.m (itself Ren-Chieh Lien 1992, after Oakey 1981) -
-%   the "evaluate at given k" variant, not the "generate a full-range k
-%   grid" variant in EPSILOMETER/EPSILON/process/batchelor.m (that one is
-%   used elsewhere, e.g. SpectraExplorerApp.m, purely for plotting a model
-%   curve over a wide wavenumber range - not needed here since the fit
-%   only ever evaluates the model at the observed scan's own k).
+% PROVENANCE - why this is a distinct function from MOD_fish_lib's batchelor.m
+%   MOD_fish_lib actually has *two* Batchelor-spectrum implementations, and
+%   this function ports the one the legacy chi_mle fit actually used, not
+%   the more commonly-referenced one:
+%     1. EPSILOMETER/EPSILON/process/batchelor.m - [k,Psg]=batchelor(epsilon,
+%        chi,nu,D,q) - self-generates its own k grid from eta (k is only
+%        ever an OUTPUT, never an input); used elsewhere purely for
+%        plotting a model curve over a wide range, e.g. SpectraExplorerApp.m.
+%     2. A local `batchelor` subfunction defined inside
+%        EPSILOMETER/EPSILON/mod_efe_scan_chi.m (which shadows #1 for every
+%        call inside that file) - Psg=batchelor(epsilon,chi,nu,D,k) - takes
+%        k as an INPUT and evaluates the spectrum only at those points.
+%        This is the one mle_any_model.m's grid search actually calls (via
+%        a closure, tmpModel = @(chi) batchelor(...,k) with k =
+%        SpecObs.k, the observed scan's own wavenumber array), and it's
+%        why no interpolation between model and observed spectra was ever
+%        needed in the legacy MLE fit - both were computed on the identical
+%        k array by construction, not resampled onto a common grid
+%        afterward. logLikelihood.m simply does elementwise/matrix
+%        arithmetic between Pk (observed) and Pt (model), which only works
+%        because they already share a wavenumber axis.
+%   This function is a direct, unchanged-math port of variant #2 (Ren-Chieh
+%   Lien 1992, after Oakey 1981) - not variant #1. See the 2026-09-08
+%   session log entry in PLAN.md (Section 12) for how this was confirmed
+%   by reading both source files side by side.
 %
 % INPUTS
 %   epsilon - turbulent kinetic energy dissipation rate [W/kg], scalar.
-%             Not yet computed anywhere in this repo (PLAN.md's
-%             modProcess_L2_calc_epsilon.m is not started) - callers must
-%             supply it from elsewhere (e.g. a shear-probe Nasmyth fit, or
-%             an existing epsilon_final field from an old-format
-%             MOD_fish_lib Profile####.mat, as used for the chi_obs vs.
-%             chi_mle comparison in docs/workflow/L2_calc_chi.md).
+%             Computed by modProcess_L2_calc_epsilon.m (epsilon_obs/
+%             epsilon_obs_co/epsilon_mle) or supplied by the caller from
+%             elsewhere (e.g. an existing epsilon_final field from an
+%             old-format MOD_fish_lib Profile####.mat, as used for the
+%             chi_obs vs. chi_mle comparison in docs/workflow/L2_calc_chi.md).
 %   chi     - scalar (thermal) variance dissipation rate [degC^2/s]. May
 %             be a vector (e.g. a grid of candidate chi values to
 %             evaluate during an MLE search) - Psg comes out with chi's
 %             shape outer-producted against k (see OUTPUTS).
 %   nu      - kinematic viscosity [m^2/s] (toolbox/seawater/sw_visc.m)
 %   ktemp   - thermal diffusivity [m^2/s] (mod_scan_thermal_diffusivity.m)
-%   k       - wavenumber [cpm], any shape
+%   k       - wavenumber [cpm], any shape - the observed scan's own
+%             wavenumber bins; not resampled or interpolated anywhere in
+%             this function or by its caller.
 %
 % OUTPUTS
 %   Psg - theoretical temperature-gradient power spectrum [degC^2/m /cpm],

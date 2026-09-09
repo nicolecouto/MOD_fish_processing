@@ -64,7 +64,7 @@ function scan = modProcess_L2_calc_epsilon(scan, metadata, channel)
 %   mod_scan_shear_volts_to_shear_spectrum.m,
 %   mod_scan_shear_accel_coherence.m, mod_scan_calc_epsilon_obs.m,
 %   mod_scan_calc_epsilon_mle.m, mod_scan_calc_fom.m,
-%   mod_scan_nasmyth_spectrum.m, toolbox/mod_scan_dof.m,
+%   nasmyth_spectrum.m, toolbox/mod_scan_dof.m,
 %   MODsetup_validate_metadata.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
@@ -98,11 +98,11 @@ scan.fom_mle = NaN;
 if isfield(scan.spectra, 'Ps_shear_co_k') && ~isempty(scan.spectra.Ps_shear_co_k) ...
         && isfinite(scan.epsilon_obs_co) && isfinite(scan.epsilon_obs_co_kc)
     klim = [kmin, scan.epsilon_obs_co_kc];
-    Pmodel_co = mod_scan_nasmyth_spectrum(scan.epsilon_obs_co, scan.nu, k);
+    Pmodel_co = nasmyth_spectrum(scan.epsilon_obs_co, scan.nu, k);
     scan.fom = mod_scan_calc_fom(k, scan.spectra.Ps_shear_co_k, Pmodel_co, klim, dof);
 
     if isfinite(scan.epsilon_mle)
-        Pmodel_mle = mod_scan_nasmyth_spectrum(scan.epsilon_mle, scan.nu, k);
+        Pmodel_mle = nasmyth_spectrum(scan.epsilon_mle, scan.nu, k);
         scan.fom_mle = mod_scan_calc_fom(k, scan.spectra.Ps_shear_co_k, Pmodel_mle, klim, dof);
     end
 end

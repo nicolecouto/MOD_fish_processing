@@ -142,10 +142,10 @@ Calls Module 5, then integrates from `kmin = metadata.PROCESS.CHI.kmin_obs` (his
 
 Wired into `MODprocess_single_L1_to_L2.m`: scan-center `temperature`/`salinity` are interpolated the same way `pressure`/`w` already were, and `chi_obs.(channel)`/`chi_obs_kc.(channel)` get computed automatically for every fpo7 channel with a resolved `volts_to_C`, whenever the bench noise file (see below) is present - no changes needed to `MODprocess_all_L1_to_L2.m` itself, since it already calls through to the per-file function.
 
-### 7. `mod_scan_batchelor_spectrum.m` — chi_mle's spectral model
+### 7. `toolbox/theoretical_spectra/batchelor_spectrum.m` — chi_mle's spectral model
 
 ```matlab
-Psg = mod_scan_batchelor_spectrum(epsilon, chi, nu, ktemp, k)   % theoretical spectrum, evaluated at k
+Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)   % theoretical spectrum, evaluated at k
 ```
 
 The theoretical Batchelor (1959) temperature-gradient spectrum, ported from the "evaluate at a given k" local subfunction inside `mod_efe_scan_chi.m` (not the self-gridding `EPSILOMETER/EPSILON/process/batchelor.m` variant used elsewhere purely for plotting). Physically: turbulence at rate `epsilon` stirs water past the FP07 down to the Kolmogorov scale, and molecular diffusion (`ktemp`) smooths structure below the Batchelor wavenumber `kb = (epsilon/nu/ktemp^2)^(1/4)` - `kb` sets the spectrum's *shape* and depends only on `epsilon`/`nu`/`ktemp`, while `chi` is a pure multiplicative *amplitude*: `Psg(k) = chi * shape(k; epsilon,nu,ktemp)`. This linearity is exactly what makes Module 8's MLE fit a 1-D amplitude search rather than a nonlinear multi-parameter one.

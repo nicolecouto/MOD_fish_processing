@@ -1,24 +1,28 @@
-function Pxx = mod_scan_panchev_spectrum(epsilon, kvis, k)
-% mod_scan_panchev_spectrum        Part of MOD_fish_processing
+function Pxx = panchev_spectrum(epsilon, kvis, k)
+% panchev_spectrum        Part of MOD_fish_processing
 %
-% Pxx = mod_scan_panchev_spectrum(epsilon, kvis, k)
+% Pxx = panchev_spectrum(epsilon, kvis, k)
 %
 % DESCRIPTION
 %   Theoretical one-dimensional Panchev universal turbulent shear
 %   wavenumber spectrum, evaluated at a caller-supplied wavenumber vector
-%   k - the shear-probe analog of mod_scan_batchelor_spectrum.m, evaluated
+%   k - the shear-probe analog of batchelor_spectrum.m, evaluated
 %   at exactly an observed scan's own wavenumber bins rather than
 %   generating its own range.
 %
+% PROVENANCE
 %   Ported from MOD_fish_lib's EPSILOMETER/EPSILON/process/panchev.m
 %   (originally in function form by kw 8/5/94, revised mg 1995). That
-%   original also (a) generates its own wavenumber grid spanning
-%   1/(1000*eta) to 1/(5*eta) when no k is supplied, and (b) returns k as
-%   a first output. Both dropped here: this function's only caller always
-%   supplies k explicitly (an observed scan's own wavenumber bins, for
-%   direct overlay against Ps_shear_k), matching
-%   mod_scan_batchelor_spectrum.m's same "evaluate at given k" pattern -
-%   no numeric change to the spectrum itself.
+%   original's k input (its 3rd argument, `kin`) was already optional -
+%   unlike batchelor.m, it was never mandatory-self-generating - so this
+%   port just makes the caller-supplied-k path the only path: dropped (a)
+%   the self-generated wavenumber grid spanning 1/(1000*eta) to 1/(5*eta)
+%   used when kin was omitted, and (b) the first output k (redundant once
+%   k is always supplied by the caller). This function's only caller
+%   always supplies k explicitly (an observed scan's own wavenumber bins,
+%   for direct overlay against Ps_shear_k), matching
+%   batchelor_spectrum.m's same "evaluate at given k" pattern - no
+%   numeric change to the spectrum itself.
 %
 % INPUTS
 %   epsilon - turbulent kinetic energy dissipation rate [W/kg], scalar.

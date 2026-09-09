@@ -31,7 +31,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %        already-computed chi).
 %     4. Grid-search MLE for the chi that best explains the observed
 %        spectrum, given the Batchelor spectrum SHAPE fixed by epsilon/nu/
-%        ktemp (mod_scan_batchelor_spectrum.m - the spectrum is
+%        ktemp (batchelor_spectrum.m - the spectrum is
 %        exactly linear in chi for fixed epsilon/nu/ktemp, so this is a
 %        1-D amplitude search, not a nonlinear multi-parameter fit): at
 %        each candidate chi, the log-likelihood of the observed/model
@@ -131,7 +131,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                  no usable spectral power to seed a log-spaced search
 %                  from), or if every candidate in the search range is
 %                  equally unable to explain the data (all bins clamped
-%                  to zero by mod_scan_batchelor_spectrum.m - typically
+%                  to zero by batchelor_spectrum.m - typically
 %                  kc sitting far past the Batchelor rolloff kb).
 %     chi_mle_kc - the noise-floor cutoff wavenumber used [cpm], or NaN
 %                  alongside a NaN chi_mle (only in the kc<=kmin case -
@@ -156,7 +156,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_fpo7_volts_to_Tg_spectrum.m,
-%   mod_scan_fpo7_cutoff.m, mod_scan_batchelor_spectrum.m, toolbox/mod_scan_dof.m,
+%   mod_scan_fpo7_cutoff.m, batchelor_spectrum.m, toolbox/mod_scan_dof.m,
 %   toolbox/mod_scan_mle_grid_search.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
@@ -206,7 +206,7 @@ if ~isfinite(chi_seed) || chi_seed <= 0
 end
 
 scan.chi_mle = mod_scan_mle_grid_search(Pk_fit, dof, ...
-    @(chi_grid) mod_scan_batchelor_spectrum(scan.epsilon, chi_grid, scan.nu, scan.ktemp, k_fit), ...
+    @(chi_grid) batchelor_spectrum(scan.epsilon, chi_grid, scan.nu, scan.ktemp, k_fit), ...
     chi_seed, chi_mle_start_search, chi_mle_end_search);
 scan.chi_mle_kc = kc;
 

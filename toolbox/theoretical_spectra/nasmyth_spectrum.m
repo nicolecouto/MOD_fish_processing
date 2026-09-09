@@ -1,15 +1,15 @@
-function Psg = mod_scan_nasmyth_spectrum(epsilon, nu, k)
-% mod_scan_nasmyth_spectrum        Part of MOD_fish_processing
+function Psg = nasmyth_spectrum(epsilon, nu, k)
+% nasmyth_spectrum        Part of MOD_fish_processing
 %
-% Psg = mod_scan_nasmyth_spectrum(epsilon, nu, k)
+% Psg = nasmyth_spectrum(epsilon, nu, k)
 %
 % DESCRIPTION
 %   Theoretical Nasmyth universal shear wavenumber spectrum (Oakey 1982,
 %   Lueck's fit as documented in McMillan et al. 2016), evaluated at a
 %   caller-supplied wavenumber vector k - the same "evaluate at given k"
-%   shape mod_scan_batchelor_spectrum.m already uses for chi, so this is
+%   shape batchelor_spectrum.m already uses for chi, so this is
 %   directly usable as the model spectrum in an epsilon MLE grid search
-%   (mod_scan_calc_epsilon_mle.m) the same way mod_scan_batchelor_spectrum.m
+%   (mod_scan_calc_epsilon_mle.m) the same way batchelor_spectrum.m
 %   is for chi_mle.
 %
 %   Unlike the Batchelor spectrum, epsilon is not a pure multiplicative
@@ -19,14 +19,22 @@ function Psg = mod_scan_nasmyth_spectrum(epsilon, nu, k)
 %   parameter the way chi_mle searches over chi with epsilon/nu/ktemp held
 %   fixed.
 %
+% PROVENANCE
 %   Ported from the "form 2" branch of MOD_fish_lib's nasmyth.m (also
 %   vendored in two places there - EPSILOMETER/EPSILON/process/nasmyth.m
-%   and toolboxes/fitting_tools/nasmyth.m - byte-identical in both).  This
-%   port only implements the scaled, evaluate-at-k form (that repo's forms
-%   1/2 combined, with a caller-supplied k always required) - the
-%   non-dimensional and self-generated-k-grid forms (3/4, and 1 without a
-%   k argument) are not needed by anything in this repo and are not
-%   ported.
+%   and toolboxes/fitting_tools/nasmyth.m - byte-identical in both). That
+%   original supports 4 calling forms via varargin (scaled vs.
+%   non-dimensional, with or without a caller-supplied k); form 2
+%   (`phi = nasmyth(e, nu, k)`) already took k as a genuine input and
+%   evaluated the spectrum only at those points - unlike batchelor.m,
+%   there was no separate self-generating-k variant standing in the way,
+%   so this is a straightforward extraction of that one form, not a
+%   fix for any shadowing/ambiguity the way batchelor_spectrum.m was.
+%   This port only implements the scaled, evaluate-at-k form (that
+%   repo's forms 1/2 combined, with a caller-supplied k always required)
+%   - the non-dimensional and self-generated-k-grid forms (3/4, and 1
+%   without a k argument) are not needed by anything in this repo and
+%   are not ported. No numeric change to the spectrum formula itself.
 %
 % INPUTS
 %   epsilon - turbulent kinetic energy dissipation rate [W/kg], scalar or

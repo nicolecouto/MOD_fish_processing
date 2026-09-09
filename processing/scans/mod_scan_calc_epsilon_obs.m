@@ -92,7 +92,7 @@ function scan = mod_scan_calc_epsilon_obs(scan, metadata)
 %   modProcess_L2_calc_epsilon.m
 %
 % CALLS
-%   MODsetup_validate_metadata.m, mod_scan_nasmyth_spectrum.m
+%   MODsetup_validate_metadata.m, nasmyth_spectrum.m
 %
 % NOTES
 %   Stage 1's 2-10 cpm integration band is a fixed literal in the ported
@@ -181,7 +181,7 @@ end
 if eps3 < 1e-11
     epsilon = 1e-11;
 else
-    Ppan3 = mod_scan_nasmyth_spectrum(eps3, kvis, k);
+    Ppan3 = nasmyth_spectrum(eps3, kvis, k);
     idx1 = find(k >= kmin, 1, 'first');
     idx2 = find(k >= kc, 1, 'first');
     idx_range = idx1:idx2;

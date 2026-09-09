@@ -27,7 +27,7 @@ function fom = mod_scan_calc_fom(k, Pobs, Pmodel, klim, dof)
 %
 %   Not specific to epsilon or to a Nasmyth model - Pobs/Pmodel can be any
 %   spectral observation/model pair on the same wavenumber axis (this
-%   repo's own mod_scan_batchelor_spectrum.m for a future chi FOM
+%   repo's own batchelor_spectrum.m for a future chi FOM
 %   included), matching how spectral_loglikelihood.m is similarly kept
 %   model-agnostic. That generality is why this lives alongside the
 %   generic MLE/model machinery in processing/scans/ rather than being a
