@@ -14,7 +14,7 @@ function scan_length = mod_scan_length_from_segments(fft_length, fft_segments_pe
 %   Single place that turns fft_length/fft_segments_per_scan into a scan
 %   sample count, so mod_L2_tile_scans.m and MODplot_scan_context.m can't
 %   disagree on it - same "single source of truth" rationale as
-%   toolbox/mod_scan_dof.m.
+%   processing/scans/mod_scan_dof.m.
 %
 % INPUTS
 %   fft_length             - FFT segment length [samples]

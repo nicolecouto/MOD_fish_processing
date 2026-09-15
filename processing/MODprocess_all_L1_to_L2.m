@@ -4,19 +4,29 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 % L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_all)
 %
 % DESCRIPTION
-%   Converts every L1 .mat file in L1_dir to a per-scan-spectra .mat file
-%   in L2_dir, using MODprocess_single_L1_to_L2.m. Mirrors
-%   MODprocess_all_L0_to_L1.m's shape exactly: skips files that already
-%   have an up-to-date L2 .mat, except the most recently modified L1 file
-%   (always redone, in case it was still being written), with a
-%   reprocess_all override.
+%   Converts every .mat file in L1_dir to a per-scan-spectra .mat file in
+%   L2_dir, using MODprocess_single_L1_to_L2.m. This is the ONE driver for
+%   both processing modes - it doesn't care whether L1_dir holds raw L1
+%   files (realtime mode - one file per .modraw, possibly spanning both
+%   profiling directions) or already-extracted Profile####.mat files
+%   (post-processing mode - built first by MODprocess_all_extract_profiles.m,
+%   each one direction-pure by construction). Both shapes carry epsi/ctd;
+%   MODprocess_single_L1_to_L2.m processes whichever it's handed
+%   identically and just carries through whatever extra bookkeeping fields
+%   (profile_number, direction, filenames, ...) happen to be present - see
+%   that function's DESCRIPTION. Mirrors MODprocess_all_L0_to_L1.m's shape
+%   exactly: skips files that already have an up-to-date L2 .mat, except
+%   the most recently modified input file (always redone, in case it was
+%   still being written), with a reprocess_all override.
 %
 %   Loads meta/pressure_time_series.mat once (built by
 %   MODprocess_all_L0_to_L1.m via MODprocess_L1_make_pressure_timeseries.m
 %   + mod_L1_detect_profiling_direction.m) and passes it into every
 %   MODprocess_single_L1_to_L2.m call, so the per-file work stays a pure
 %   function while the file-I/O cost is paid once per batch run rather than
-%   once per file.
+%   once per file. Passing it even for an already direction-pure profile
+%   is harmless - per-scan direction gating just becomes a no-op confirm
+%   in that case (mod_L2_tile_scans.m).
 %
 %   Each file's MODprocess_single_L1_to_L2.m call is wrapped in a
 %   retry-on-metadata-update loop: since metadata is constant across every
@@ -32,7 +42,10 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   propagates normally.
 %
 % INPUTS
-%   L1_dir        - full path to a folder of L1 .mat files
+%   L1_dir        - full path to a folder of .mat files: either raw L1
+%                    files (realtime mode) or extracted Profile####.mat
+%                    files (post-processing mode, from
+%                    MODprocess_all_extract_profiles.m) - see DESCRIPTION.
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
 %                    per session and passed through - see PLAN.md Section 2.
 %                    Uses metadata.paths.meta to find pressure_time_series.mat.
@@ -40,7 +53,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %                    a sibling 'L2' folder next to L1_dir
 %                    (fullfile(fileparts(L1_dir),'L2')), created if missing.
 %   reprocess_all - (optional) logical, default false. If true, ignores
-%                    the up-to-date check and reconverts every L1 file.
+%                    the up-to-date check and reconverts every input file.
 %
 % OUTPUTS
 %   L2_files  - cell array of full paths to all .mat files in L2_dir
@@ -60,16 +73,11 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   MODprocess_all_L0_to_L1.m, so that must have run (with CTD data
 %   present) before this function can do anything useful.
 %
-%   Skips entirely (no L2 files written or expected) when
-%   metadata.manifest.has_epsi is false - this whole path exists to
-%   produce per-scan spectra, which a CTD-only deployment (no AFE/epsi
-%   board - MODsetup_read_yaml.m) has no raw data for. Without this check,
-%   every L1 file would still get "converted" to an L2 .mat with every
-%   field empty (mod_L2_tile_scans.m's own empty-input behavior) - a
-%   real, if mostly harmless, waste of a write per file rather than a
-%   clean no-op. CTD-only deployments still get profile-level output with
-%   real CTD data from MODprocess_all_L1_to_L2_profiles.m, which is not
-%   gated the same way - see that function's DESCRIPTION.
+%   Does NOT skip a deployment with metadata.manifest.has_epsi false
+%   (no AFE/epsi board): MODprocess_single_L1_to_L2.m still returns real
+%   ctd/profile-bookkeeping output for a CTD-only deployment (empty
+%   spectra, since there's no epsi to tile), so this driver still writes
+%   one L2 file per input file rather than producing nothing.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -78,13 +86,6 @@ if nargin < 3 || isempty(L2_dir)
 end
 if nargin < 4 || isempty(reprocess_all)
     reprocess_all = false;
-end
-
-if ~metadata.manifest.has_epsi
-    disp(['MODprocess_all_L1_to_L2: this deployment has no AFE/epsi board ' ...
-        '(instrument_manifest.afe absent from setup.yml) - nothing to do.'])
-    L2_files = {};
-    return
 end
 
 if ~exist(L2_dir, 'dir')

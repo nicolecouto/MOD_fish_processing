@@ -14,9 +14,9 @@ function best_val = mod_scan_mle_grid_search(Pobs, dof, model_fn, seed, start_mu
 %   the caller supplies everything else the model shape needs (fixed
 %   parameters, wavenumber axis) already bound into that closure. Shared
 %   by mod_scan_calc_chi_mle.m (searching chi, model =
-%   mod_scan_batchelor_spectrum.m with epsilon/nu/ktemp/k fixed) and
+%   batchelor_spectrum.m with epsilon/nu/ktemp/k fixed) and
 %   mod_scan_calc_epsilon_mle.m (searching epsilon, model =
-%   mod_scan_nasmyth_spectrum.m with nu/k fixed) - split out of what was
+%   nasmyth_spectrum.m with nu/k fixed) - split out of what was
 %   originally chi_mle's own local mle_search_chi function once epsilon
 %   needed the identical search machinery, so the two searches can't
 %   silently drift apart.
@@ -48,7 +48,7 @@ function best_val = mod_scan_mle_grid_search(Pobs, dof, model_fn, seed, start_mu
 % INPUTS
 %   Pobs       - observed spectrum, 1-D vector [M]
 %   dof        - degrees of freedom of the spectral estimate, scalar
-%                (toolbox/mod_scan_dof.m)
+%                (processing/scans/mod_scan_dof.m)
 %   model_fn   - function handle, model_fn(candidate_grid) -> [M x N]
 %                model spectra, one column per candidate value in
 %                candidate_grid [1 x N]

@@ -46,13 +46,14 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     unconditionally like the other paths,
 %                                     whether or not data_root/ctd/ exists.
 %                                     .profiles is where
-%                                     MODprocess_all_L1_to_L2_profiles.m
-%                                     saves the converted (spectra/chi/
-%                                     epsilon) Profile####.mat, deliberately
-%                                     a sibling of .L2 (not inside it) so
-%                                     the per-file realtime output and the
-%                                     per-cast final output never share a
-%                                     directory. .profiles_raw is where
+%                                     MODprocess_all_L1_to_L2.m saves the
+%                                     converted (spectra/chi/epsilon)
+%                                     Profile####.mat when pointed at
+%                                     .profiles_raw (post-processing mode),
+%                                     deliberately a sibling of .L2 (not
+%                                     inside it) so the per-file realtime
+%                                     output and the per-cast final output
+%                                     never share a directory. .profiles_raw is where
 %                                     MODprocess_all_extract_profiles.m
 %                                     saves the stitched-but-not-yet-
 %                                     converted raw epsi/ctd record for each
@@ -99,13 +100,11 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     so this comes back false rather than
 %                                     erroring - see PROCESS.channels/AFE.*
 %                                     below. Consumed by
-%                                     MODprocess_all_L1_to_L2.m (skips
-%                                     spectra processing entirely when
-%                                     false) and
-%                                     MODprocess_single_L1_to_L2_profile.m
-%                                     (still builds a profile - CTD data is
-%                                     saved regardless - but never computes
-%                                     spectra when false).
+%                                     MODprocess_single_L1_to_L2.m (skips
+%                                     epsi tiling entirely when false - CTD
+%                                     data is still returned regardless,
+%                                     spectra/chi/epsilon just never get
+%                                     computed).
 %     PROCESS.latitude             - for ctd.z when no GPS fix
 %     PROCESS.channels             - AFE sensor names in ADC slot order,
 %                                     e.g. {'t1','t2','s1','s2','a1','a2','a3'}

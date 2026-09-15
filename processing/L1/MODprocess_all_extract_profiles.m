@@ -10,13 +10,13 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %   raw epsi/ctd record across L1 file boundaries
 %   (modProcess_extract_profile.m) and saves it as Profile####.mat - the
 %   stitched-but-not-yet-converted record, no spectra/chi/epsilon. This
-%   used to happen inline inside MODprocess_single_L1_to_L2_profile.m;
-%   pulling it out here lets that function (and
-%   MODprocess_all_L1_to_L2_profiles.m, which calls both this function and
-%   that one in sequence) accept any already-extracted epsi/ctd record -
-%   not necessarily one produced by profile detection at all - matching
-%   MODprocess_single_L1_to_L2.m's realtime per-file mode, which was
-%   already extraction-free.
+%   used to happen inline inside a dedicated per-profile conversion
+%   wrapper; pulling it out here means the resulting Profile####.mat files
+%   are just another directory of epsi/ctd-shaped .mat files -
+%   MODprocess_all_L1_to_L2.m (the same driver realtime mode uses,
+%   pointed at this function's output directory instead of an L1
+%   directory) converts them via MODprocess_single_L1_to_L2.m with no
+%   profile-specific code path at all - see that driver's DESCRIPTION.
 %
 %   Saves into its own profiles_dir (default metadata.paths.profiles_raw),
 %   a sibling of metadata.paths.profiles (the L2/converted output
@@ -53,7 +53,8 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %               pre-existing)
 %
 % CALLED BY
-%   MODprocess_all_L1_to_L2_profiles.m, (top-level scripts / notebooks)
+%   (top-level scripts / notebooks - typically followed by
+%   MODprocess_all_L1_to_L2.m pointed at this function's output directory)
 %
 % CALLS
 %   modProcess_detect_profiles.m, modProcess_extract_profile.m,

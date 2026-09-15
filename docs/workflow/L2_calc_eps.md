@@ -110,7 +110,7 @@ All validated via `MODsetup_validate_metadata.m` at point of use (prompted for, 
 
 ## How to run it
 
-Epsilon is computed automatically as part of `mod_L2_tile_scans.m`, the same shared windowing core both the realtime (`MODprocess_single_L1_to_L2.m`) and postprocess (`MODprocess_single_L1_to_L2_profile.m` → `MODprocess_all_L1_to_L2_profiles.m`) paths already call - nothing extra to invoke. To exercise just the epsilon chain by hand on one scan (e.g. while debugging):
+Epsilon is computed automatically as part of `MODprocess_single_L1_to_L2.m`, the one conversion function both the realtime and postprocess paths call via the shared `MODprocess_all_L1_to_L2.m` driver (pointed at an L1 directory or an extracted-profiles directory respectively) - nothing extra to invoke. To exercise just the epsilon chain by hand on one scan (e.g. while debugging):
 
 ```matlab
 addpath('/path/to/MOD_fish_processing/processing/L2');
