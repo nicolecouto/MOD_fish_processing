@@ -18,8 +18,8 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %   directory) converts them via MODprocess_single_L1_to_L2.m with no
 %   profile-specific code path at all - see that driver's DESCRIPTION.
 %
-%   Saves into its own profiles_dir (default metadata.paths.profiles_raw),
-%   a sibling of metadata.paths.profiles (the L2/converted output
+%   Saves into its own profiles_dir (default metadata.paths.profiles_L1),
+%   a sibling of metadata.paths.profiles_L2 (the L2/converted output
 %   directory, unchanged) and metadata.paths.L2.
 %
 %   Skips a profile if its Profile####.mat already exists and none of the
@@ -40,10 +40,10 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %   metadata      - metadata struct (from MODsetup_read_yaml.m). Uses
 %                    metadata.paths.meta to find pressure_time_series.mat
 %                    and time_index.mat, metadata.paths.L1 to load
-%                    contributing L1 files, metadata.paths.profiles_raw as
+%                    contributing L1 files, metadata.paths.profiles_L1 as
 %                    the default output directory.
 %   profiles_dir  - (optional) full path to save Profile####.mat files to.
-%                    Default: metadata.paths.profiles_raw.
+%                    Default: metadata.paths.profiles_L1.
 %   reprocess_all - (optional) logical, default false. If true, ignores
 %                    the up-to-date check and re-extracts every profile.
 %
@@ -69,7 +69,7 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 if nargin < 2 || isempty(profiles_dir)
-    profiles_dir = metadata.paths.profiles_raw;
+    profiles_dir = metadata.paths.profiles_L1;
 end
 if nargin < 3 || isempty(reprocess_all)
     reprocess_all = false;

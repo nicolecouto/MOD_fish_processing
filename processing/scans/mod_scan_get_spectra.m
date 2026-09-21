@@ -51,8 +51,9 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %                metadata.PROCESS.channels, metadata.PROCESS.fft_length (also
 %                the Hamming taper length - no separate zero-padding),
 %                metadata.PROCESS.fft_segments_per_scan,
-%                metadata.PROCESS.Fs_epsi, metadata.PROCESS.Fs_ctd,
-%                metadata.AFE.(channel).type
+%                metadata.PROCESS.Fs_epsi, metadata.PROCESS.compute_ctd_spectra
+%                (gates whether metadata.PROCESS.Fs_ctd is even asked for -
+%                see OUTPUTS/NOTES), metadata.AFE.(channel).type
 %                (to know each channel's field suffix - '_g' for acc,
 %                '_volt' for everything else - same acc-vs-everything-else
 %                split MODprocess_single_L0_to_L1.m's convert_efe_channels
@@ -77,7 +78,12 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %                    every ctd channel below - a DIFFERENT vector from
 %                    spectra.f (different rate, different method - see
 %                    DESCRIPTION/NOTES). Present only if scan.ctd has at
-%                    least one of P/T/C.
+%                    least one of P/T/C AND metadata.PROCESS.compute_ctd_spectra
+%                    is true - absent entirely (no Fs_ctd asked for) whenever
+%                    setup.yml declares compute_ctd_spectra false, e.g. a
+%                    deployment whose CTD telemetry has no fixed, scan-
+%                    duration-relative sample rate (DeepSolo), even though
+%                    scan.ctd.P is populated there.
 %     spectra.P_f, spectra.T_f, spectra.C_f - single-periodogram power
 %                    spectrum for whichever of ctd.P/.T/.C is present and
 %                    non-empty in scan.ctd, 1 x nfreq_ctd each.
@@ -147,7 +153,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'fft_length', 'fft_segments_per_scan', 'Fs_epsi', 'Fs_ctd'});
+    {'fft_length', 'fft_segments_per_scan', 'Fs_epsi'});
 
 fft_length = metadata.PROCESS.fft_length;
 fft_segments_per_scan = metadata.PROCESS.fft_segments_per_scan;
@@ -188,23 +194,37 @@ end
 scan.spectra.f = f(:)';
 
 %% ctd.P/T/C: single periodogram at native Fs_ctd - see NOTES above
+% compute_ctd_spectra is an explicit per-deployment setup.yml flag (not
+% inferred from vehicle_name/fish_flag - see
+% MODsetup_metadata_field_registry.m's compute_ctd_spectra entry), only
+% ever asked for when there's actual ctd data on this scan to consider.
+% False for a deployment whose CTD telemetry has no fixed, scan-duration-
+% relative sample rate (e.g. DeepSolo's sparse ~60-120s external pressure
+% telemetry - a scan window there holds 0-1 native samples, not "a
+% handful," so Fs_ctd/N_ctd would have no meaning) - Fs_ctd is then never
+% even asked for, rather than prompting/erroring for a value that
+% wouldn't be usable anyway.
 if isfield(scan, 'ctd') && ~isempty(scan.ctd)
-    Fs_ctd = metadata.PROCESS.Fs_ctd;
-    N_epsi = mod_scan_length_from_segments(fft_length, fft_segments_per_scan);
-    N_ctd = round(N_epsi / Fs_epsi * Fs_ctd);
+    metadata = MODsetup_validate_metadata(metadata, yaml_file, {'compute_ctd_spectra'});
+    if metadata.PROCESS.compute_ctd_spectra
+        metadata = MODsetup_validate_metadata(metadata, yaml_file, {'Fs_ctd'});
+        Fs_ctd = metadata.PROCESS.Fs_ctd;
+        N_epsi = mod_scan_length_from_segments(fft_length, fft_segments_per_scan);
+        N_ctd = round(N_epsi / Fs_epsi * Fs_ctd);
 
-    f_ctd = [];
-    ctd_channels = {'P', 'T', 'C'};
-    for iC = 1:numel(ctd_channels)
-        ch = ctd_channels{iC};
-        if ~isfield(scan.ctd, ch) || isempty(scan.ctd.(ch))
-            continue
+        f_ctd = [];
+        ctd_channels = {'P', 'T', 'C'};
+        for iC = 1:numel(ctd_channels)
+            ch = ctd_channels{iC};
+            if ~isfield(scan.ctd, ch) || isempty(scan.ctd.(ch))
+                continue
+            end
+            [Pxx, f_ctd] = periodogram(detrend(scan.ctd.(ch)(:)), [], N_ctd, Fs_ctd, 'psd');
+            scan.spectra.([ch '_f']) = Pxx(:)';
         end
-        [Pxx, f_ctd] = periodogram(detrend(scan.ctd.(ch)(:)), [], N_ctd, Fs_ctd, 'psd');
-        scan.spectra.([ch '_f']) = Pxx(:)';
-    end
-    if ~isempty(f_ctd)
-        scan.spectra.f_ctd = f_ctd(:)';
+        if ~isempty(f_ctd)
+            scan.spectra.f_ctd = f_ctd(:)';
+        end
     end
 end
 

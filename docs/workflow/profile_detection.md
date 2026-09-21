@@ -10,7 +10,7 @@ This step is the final, science-quality counterpart: it cuts the deployment into
 
 It runs as two explicit phases (PLAN.md Phase A refactor), not one combined pass:
 
-1. **Extraction** - `modProcess_detect_profiles.m` → `modProcess_extract_profile.m` → `MODprocess_all_extract_profiles.m`, saving each profile's stitched-but-not-yet-converted raw epsi/ctd record to `profiles_raw/Profile####.mat`.
+1. **Extraction** - `modProcess_detect_profiles.m` → `modProcess_extract_profile.m` → `MODprocess_all_extract_profiles.m`, saving each profile's stitched-but-not-yet-converted raw epsi/ctd record to `profiles_L1/Profile####.mat`.
 2. **Conversion** - `MODprocess_single_L1_to_L2_profile.m` (loads one already-extracted profile) → `mod_L2_tile_scans.m` (shared with the realtime path) → `MODprocess_all_L1_to_L2_profiles.m`, saving the converted spectra/chi/epsilon output to `profiles/Profile####.mat`.
 
 Splitting these means `MODprocess_single_L1_to_L2_profile.m` no longer does any file I/O itself and no longer needs a `TimeIndex` argument - it accepts any already-extracted epsi/ctd record with the right shape, not necessarily one produced by `modProcess_extract_profile.m` at all, matching `MODprocess_single_L1_to_L2.m`'s realtime mode, which was already extraction-free.
@@ -48,10 +48,10 @@ Loads only `epsi.dnum` (min/max) per L1 file - not full file contents - sorted b
 
 ```matlab
 profile_data = modProcess_extract_profile(profile, TimeIndex, metadata)
-raw_files = MODprocess_all_extract_profiles(metadata, profiles_raw_dir, reprocess_all)
+raw_files = MODprocess_all_extract_profiles(metadata, profiles_L1_dir, reprocess_all)
 ```
 
-Given one detected profile, `modProcess_extract_profile.m` finds every L1 file overlapping its `[dnum_start, dnum_end]` (via `TimeIndex`), loads and concatenates their `epsi`/`ctd` fields in time order, and crops to the exact range. This is the piece that actually removes the realtime path's file-boundary coverage gap - the raw record is one continuous array before any windowing happens, not tiled per file. `MODprocess_all_extract_profiles.m` is the batch orchestrator: detects every profile, calls `modProcess_extract_profile.m` per profile, and saves each result to `profiles_raw_dir/Profile####.mat` (default `metadata.paths.profiles_raw`) - the same skip-if-up-to-date and retry-on-metadata-update pattern `MODprocess_all_L1_to_L2.m` uses, just producing a raw stitched record rather than converted spectra.
+Given one detected profile, `modProcess_extract_profile.m` finds every L1 file overlapping its `[dnum_start, dnum_end]` (via `TimeIndex`), loads and concatenates their `epsi`/`ctd` fields in time order, and crops to the exact range. This is the piece that actually removes the realtime path's file-boundary coverage gap - the raw record is one continuous array before any windowing happens, not tiled per file. `MODprocess_all_extract_profiles.m` is the batch orchestrator: detects every profile, calls `modProcess_extract_profile.m` per profile, and saves each result to `profiles_L1_dir/Profile####.mat` (default `metadata.paths.profiles_L1`) - the same skip-if-up-to-date and retry-on-metadata-update pattern `MODprocess_all_L1_to_L2.m` uses, just producing a raw stitched record rather than converted spectra.
 
 **Exact gap-detection mechanism:** across the *whole* stitched epsi record (not just at file seams - a real discontinuity can occur mid-file too, e.g. the known regex block-drop artifact, PLAN.md Section 9), the sample-to-sample interval `dt` is compared against the deployment's *nominal* epsi sample interval, `1/Fs_epsi` - epsi is uniformly clocked hardware, so unlike the sparse/irregular ctd record there is one fixed expected spacing, not a local median. A gap is flagged where `dt > epsi_gap_factor * (1/Fs_epsi)`: with the suggested default `epsi_gap_factor = 3`, any gap wider than 3 sample periods (missing more than ~2 samples' worth of time) counts as real, not just ordinary clock jitter. Every sample gets a running `segment_id`, incrementing at each flagged gap.
 
@@ -118,8 +118,8 @@ All of these are validated via `MODsetup_validate_metadata.m` at point of use (p
 
 `Profile####.mat` is produced twice, once per phase, into two different directories - they never collide on the same filename:
 
-- **`metadata.paths.profiles_raw`** (`data_root/profiles_raw`) - `MODprocess_all_extract_profiles.m`'s output: the stitched-but-not-yet-converted raw epsi/ctd record for every detected profile (`.profile_number`, `.direction`, `.dnum_start`/`.dnum_end`, `.filenames`, `.epsi`, `.ctd`). Skip-if-up-to-date is decided per profile from `time_index.mat` alone (cheap - no epsi/ctd data loaded just to check): a profile is re-extracted if any L1 file it touches is newer than its existing raw file, or if it touches the single most-recently-modified L1 file in the deployment.
-- **`metadata.paths.profiles`** (`data_root/profiles`) - `MODprocess_all_L1_to_L2_profiles.m`'s output: the converted result for **every** detected profile, both directions, regardless of `profile_dir`/`has_epsi`. Same field shape as the realtime path's per-file output (empty when `compute_epsi` was false for that profile) plus provenance (`profile_number`, `direction`, `filenames`, `dnum_start`/`dnum_end`, `profile_gap_fraction`) and `ctd` (the profile's own raw CTD record, always populated - see above). Skip-if-up-to-date here compares a profile's converted-output mtime against its own `profiles_raw` file's mtime (not L1 files directly) - a profile whose raw extraction was just redone gets its mtime advanced past its converted output automatically, so it's reconverted too without a separate "touches newest" check at this phase.
+- **`metadata.paths.profiles_L1`** (`data_root/profiles_L1`) - `MODprocess_all_extract_profiles.m`'s output: the stitched-but-not-yet-converted raw epsi/ctd record for every detected profile (`.profile_number`, `.direction`, `.dnum_start`/`.dnum_end`, `.filenames`, `.epsi`, `.ctd`). Skip-if-up-to-date is decided per profile from `time_index.mat` alone (cheap - no epsi/ctd data loaded just to check): a profile is re-extracted if any L1 file it touches is newer than its existing raw file, or if it touches the single most-recently-modified L1 file in the deployment.
+- **`metadata.paths.profiles_L2`** (`data_root/profiles_L2`) - the converted result for **every** detected profile, both directions, regardless of `profile_dir`/`has_epsi` (produced by `MODprocess_all_L1_to_L2.m` pointed at `.profiles_L1` - see "History" below for the now-removed dedicated profile-conversion functions this replaced). Same field shape as the realtime path's per-file output (empty when `compute_epsi` was false for that profile) plus provenance (`profile_number`, `direction`, `filenames`, `dnum_start`/`dnum_end`, `profile_gap_fraction`) and `ctd` (the profile's own raw CTD record, always populated - see above). Skip-if-up-to-date here compares a profile's converted-output mtime against its own `profiles_L1` file's mtime (not L1 files directly) - a profile whose raw extraction was just redone gets its mtime advanced past its converted output automatically, so it's reconverted too without a separate "touches newest" check at this phase.
 
 Both are deliberately siblings of `metadata.paths.L2` (the realtime path's per-file output directory) - three separate directories, one per pipeline stage/mode.
 
@@ -138,7 +138,8 @@ metadata = MODsetup_read_yaml('/path/to/deployment/meta/setup.yml');
 % meta/time_index.mat as a side effect
 L1_files = MODprocess_all_L0_to_L1(metadata.paths.L0, metadata, metadata.paths.L1);
 
-L2_files = MODprocess_all_L1_to_L2_profiles(metadata);
+profile_files = MODprocess_all_extract_profiles(metadata);
+L2_files = MODprocess_all_L1_to_L2(metadata.paths.profiles_L1, metadata, metadata.paths.profiles_L2);
 ```
 
 ## Known limitations

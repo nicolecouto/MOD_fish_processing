@@ -135,13 +135,13 @@ flowchart LR
   L1OUT --> EXTRACT["modProcess_extract_<br/>profile.m"]
   TIDXOUT --> EXTRACT
   EXTRACTALL -->|per profile| EXTRACT
-  EXTRACT --> RAWOUT[("profiles_raw/Profile####.mat<br/>raw epsi+ctd, not yet converted")]
+  EXTRACT --> RAWOUT[("profiles_L1/Profile####.mat<br/>raw epsi+ctd, not yet converted")]
 
-  RAWOUT --> PROFALL["MODprocess_all_<br/>L1_to_L2_profiles.m"]
-  PROFALL -->|per profile, loads raw file| PROFONE["MODprocess_single_<br/>L1_to_L2_profile.m"]
+  RAWOUT --> PROFALL["MODprocess_all_<br/>L1_to_L2.m"]
+  PROFALL -->|per profile, loads raw file| PROFONE["MODprocess_single_<br/>L1_to_L2.m"]
   PROFONE --> TILE2["mod_L2_tile_<br/>scans.m"]
   TILE2 -->|"if has_epsi & direction matches profile_dir"| SPEC2["mod_scan_get_<br/>spectra.m"]
-  SPEC2 --> PROFOUT[("profiles/Profile####.mat<br/>ctd always, spectra gated")]
+  SPEC2 --> PROFOUT[("profiles_L2/Profile####.mat<br/>ctd always, spectra gated")]
   TILE2 -.->|"direction doesn't match"| PROFOUT
 
   PROFOUT -.-> GRID["modProcess_L3_<br/>grid_profiles.m<br/>(not started)"]
@@ -152,9 +152,9 @@ flowchart LR
 |---|---|---|
 | `modProcess_detect_profiles.m` | PressureTimeseries, metadata → profiles | Speed-limit hysteresis, min-length filter, same-direction merge. Always both directions |
 | `modProcess_extract_profile.m` | profile, TimeIndex, metadata → profile_data | Stitches raw epsi/ctd across L1 file boundaries; real gap detection via `segment_id` |
-| `MODprocess_all_extract_profiles.m` | metadata, profiles_raw_dir → profile_files | Batch orchestrator for extraction only, saves into `metadata.paths.profiles_raw` |
-| `MODprocess_all_L1_to_L2_profiles.m` | metadata, profiles_dir, profiles_raw_dir → profile_files | Batch orchestrator for conversion: calls the extraction orchestrator, then loads+converts each raw file, saves into `metadata.paths.profiles` |
-| `MODprocess_single_L1_to_L2_profile.m` | profile_data, metadata → L2data | No file I/O; CTD always attached; spectra computed only if `has_epsi && direction matches profile_dir` |
+| `MODprocess_all_extract_profiles.m` | metadata, profiles_L1_dir → profile_files | Batch orchestrator for extraction only, saves into `metadata.paths.profiles_L1` |
+| `MODprocess_all_L1_to_L2.m` | L1_dir, metadata, L2_dir → L2_files | Same driver as realtime; pointed at `metadata.paths.profiles_L1` as input, `metadata.paths.profiles_L2` as output |
+| `MODprocess_single_L1_to_L2.m` | data, metadata, PressureTimeseries → L2data | Same function as realtime; carries through profile_number/direction/filenames/dnum_start/dnum_end when present on `data` |
 | `mod_L2_tile_scans.m` | epsi, ctd, metadata → L2data | Same core as realtime; `segment_id` skips any window spanning a real gap |
 | `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Identical function, same as realtime path |
 | `modProcess_L3_grid_profiles.m` | profiles → gridded sections | **Not started** - interpolate onto a standard pressure axis |
