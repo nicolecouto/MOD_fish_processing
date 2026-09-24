@@ -31,7 +31,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %        already-computed chi).
 %     4. Grid-search MLE for the chi that best explains the observed
 %        spectrum, given the Batchelor spectrum SHAPE fixed by epsilon/nu/
-%        ktemp (mod_scan_batchelor_spectrum.m - the spectrum is
+%        ktemp (batchelor_spectrum.m - the spectrum is
 %        exactly linear in chi for fixed epsilon/nu/ktemp, so this is a
 %        1-D amplitude search, not a nonlinear multi-parameter fit): at
 %        each candidate chi, the log-likelihood of the observed/model
@@ -43,39 +43,21 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %   Ruddick et al. (2000) method as MOD_fish_lib's
 %   get_chi_mle.m/mle_any_model.m/logLikelihood.m - not a line-by-line
 %   port. Two simplifications from that code, both deliberate:
-%     - A fixed 4-pass, 200-point log-spaced grid zoom (mle_search_chi)
-%       replaces the original's open-ended while-loops that widen the
-%       search range when the best fit lands on an edge - but the same
-%       idea survives in bounded form: hitting an edge here still widens
-%       (10x on the side that was hit) rather than narrows, and that
-%       widening step does NOT consume one of the 4 narrowing passes.
-%       Widening is capped at max_widen=10, matching mle_any_model.m's
-%       own cc<10 guard - the legacy code budgets that cap separately per
-%       edge (low, high), but since a single search here only ever climbs
-%       in one direction at a time (never needs both budgets on the same
-%       call), one shared cc<10-sized budget mirrors it directly rather
-%       than doubling it. Seeding defaults to three decades wide on each
-%       side (chi_seed * [1e-3, 1e3], metadata.PROCESS.CHI.
-%       chi_mle_start_search/.chi_mle_end_search below), not narrower,
-%       despite widening being free of the pass budget now:
-%       spectral_loglikelihood computes log(chi2pdf(z,dof)), and chi2pdf
-%       underflows to exactly 0 in double precision once a candidate is
-%       many decades from the truth - so a too-narrow starting grid can
-%       end up with EVERY candidate underflowed (all(~isfinite(logL))
-%       true) before the widen logic ever runs, returning NaN having
-%       never gotten to widen at all. The wide starting net keeps at
-%       least one edge candidate close enough to stay numerically finite,
-%       giving widening something to act on. A deployment that narrows
-%       this via metadata.PROCESS.CHI (e.g. the temp_to_chi.ipynb-
-%       documented 0.1/10, one decade each side) trades away some of
-%       that safety margin - widening still recovers if the true chi
-%       lands outside the narrower net, but a scan whose seed is already
-%       many decades from the true chi is more likely to hit the
-%       all-underflowed NaN case before widening gets a chance to run.
+%     - The grid-search zoom itself (4-pass, 200-point log-spaced,
+%       widen-on-edge-hit) is shared with mod_scan_calc_epsilon_mle.m via
+%       processing/scans/mod_scan_mle_grid_search.m - see that function's own
+%       DESCRIPTION for the full design rationale (bounded widen/narrow
+%       passes, why the starting search range is kept wide despite
+%       widening being "free" of the pass budget - chi2pdf underflow
+%       avoidance).
 %     - No figure-of-merit (FOM) QC flag - MOD_fish_lib's mod_efe_scan_chi.m
 %       computes one (compute_fom.m) alongside chi_mle. Left out for now
 %       as a separate, later module, same "no QC flag yet" scoping
-%       mod_scan_calc_chi_obs.m already used for chi_obs.
+%       mod_scan_calc_chi_obs.m already used for chi_obs. (Epsilon's own
+%       MLE fit, mod_scan_calc_epsilon_mle.m, does get a FOM -
+%       mod_scan_calc_fom.m - since it shipped alongside epsilon rather
+%       than being deferred a second time; chi's own FOM remains a
+%       separate follow-up.)
 %
 % INPUTS
 %   scan       - struct with:
@@ -90,15 +72,15 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                            scalar - see mod_scan_fpo7_transfer_function.m
 %                            for why w=0 is not a meaningful input here.
 %                  ktemp   - thermal diffusivity of the water at this scan
-%                            [m^2/s] (mod_scan_thermal_diffusivity.m, from
+%                            [m^2/s] (toolbox/seawater/ktemp.m, from
 %                            scan-center S/T/P)
 %                  nu      - kinematic viscosity of the water at this scan
-%                            [m^2/s] (toolbox/seawater/sw_visc.m, from
+%                            [m^2/s] (toolbox/seawater/visc.m, from
 %                            scan-center S/T/P)
 %                  epsilon - turbulent kinetic energy dissipation rate at
 %                            this scan [W/kg], scalar. NOT computed by
 %                            this repo yet (PLAN.md's
-%                            modProcess_L2_calc_epsilon.m, shear-channel
+%                            mod_scan_calc_epsilon.m, shear-channel
 %                            Nasmyth fit, is not started) - callers must
 %                            supply it from elsewhere. For the
 %                            chi_obs-vs-chi_mle/tau comparison this
@@ -120,7 +102,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                see those functions for exact fields). Also used directly
 %                here:
 %                  metadata.PROCESS.fft_segments_per_scan - fed to
-%                    toolbox/mod_scan_dof.m to derive the power spectrum
+%                    processing/scans/mod_scan_dof.m to derive the power spectrum
 %                    estimate's degrees of freedom, which sets how
 %                    tightly the MLE trusts each spectral bin against the
 %                    model. dof itself is not a yaml-configurable field -
@@ -149,7 +131,7 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                  no usable spectral power to seed a log-spaced search
 %                  from), or if every candidate in the search range is
 %                  equally unable to explain the data (all bins clamped
-%                  to zero by mod_scan_batchelor_spectrum.m - typically
+%                  to zero by batchelor_spectrum.m - typically
 %                  kc sitting far past the Batchelor rolloff kb).
 %     chi_mle_kc - the noise-floor cutoff wavenumber used [cpm], or NaN
 %                  alongside a NaN chi_mle (only in the kc<=kmin case -
@@ -164,15 +146,18 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                  discarded), same as mod_scan_calc_chi_obs.m.
 %
 % CALLED BY
-%   (not yet wired into MODprocess_single_L1_to_L2.m - blocked on
-%   modProcess_L2_calc_epsilon.m for deployment-wide use, since epsilon
-%   isn't computed anywhere in the automatic pipeline yet. Callable
-%   standalone today wherever an epsilon estimate already exists - see
-%   docs/workflow/L2_calc_chi.md's chi_obs-vs-chi_mle comparison.)
+%   mod_L2_tile_scans.m - wired in for every scan where an epsilon
+%   estimate is available (metadata.PROCESS.EPSILON.epsilon_final_source-
+%   selected mean across this deployment's shear channels - see that
+%   function's DESCRIPTION), now that mod_scan_calc_epsilon.m
+%   produces one. Still fully callable standalone wherever an epsilon
+%   estimate already exists from elsewhere - see
+%   docs/workflow/L2_calc_chi.md's chi_obs-vs-chi_mle comparison.
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_fpo7_volts_to_Tg_spectrum.m,
-%   mod_scan_fpo7_cutoff.m, mod_scan_batchelor_spectrum.m, toolbox/mod_scan_dof.m
+%   mod_scan_fpo7_cutoff.m, batchelor_spectrum.m, processing/scans/mod_scan_dof.m,
+%   processing/scans/mod_scan_mle_grid_search.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -220,65 +205,9 @@ if ~isfinite(chi_seed) || chi_seed <= 0
     return
 end
 
-scan.chi_mle = mle_search_chi(k_fit, Pk_fit, dof, scan.epsilon, scan.nu, scan.ktemp, chi_seed, ...
-    chi_mle_start_search, chi_mle_end_search);
+scan.chi_mle = mod_scan_mle_grid_search(Pk_fit, dof, ...
+    @(chi_grid) batchelor_spectrum(scan.epsilon, chi_grid, scan.nu, scan.ktemp, k_fit), ...
+    chi_seed, chi_mle_start_search, chi_mle_end_search);
 scan.chi_mle_kc = kc;
 
 end %end function
-
-%% Grid-search MLE for the chi that best fits Pk (observed) with the
-% Batchelor spectrum SHAPE fixed by epsilon/nu/ktemp - see DESCRIPTION.
-function chi_fit = mle_search_chi(k, Pk, dof, epsilon, nu, ktemp, chi_seed, ...
-    chi_mle_start_search, chi_mle_end_search)
-% Loop n_pass times through a n_grid-point array of possibilities between search_lo and search_hi,
-% narrowing to the best candidate +/- 1 index each time.
-% If a search picks the best option as exactly
-% search_lo, the low bound is divided by 10 and the high bound is set to the 2nd-lowest search value from before (mirror image
-% if it lands at search_hi) - that's a widening step, not a narrowing one, so it does NOT count against
-% n_pass.
-% Widening is capped at max_widen attempts (mirroring MOD_fish_lib's mle_any_model.m cc<10 guard)
-% so a pathological scan can't loop forever.
-
-n_grid = 200;
-n_pass = 4;
-max_widen = 10; % mirrors mle_any_model.m's per-edge cc<10 guard - one shared
-
-search_lo = chi_seed * chi_mle_start_search;
-search_hi = chi_seed * chi_mle_end_search;
-
-pass = 0;
-n_widen = 0;
-while pass < n_pass
-    chi_grid = logspace(log10(search_lo), log10(search_hi), n_grid);
-    Pt = mod_scan_batchelor_spectrum(epsilon, chi_grid, nu, ktemp, k); % nk x n_grid
-    logL = spectral_loglikelihood(Pk, Pt, dof); % constant +N*log(dof) term included but irrelevant here - only the argmax below matters
-
-    if all(~isfinite(logL))
-        chi_fit = NaN;
-        return
-    end
-
-    [~, best] = max(logL);
-    if best == 1 || best == n_grid
-        if n_widen >= max_widen
-            chi_fit = chi_grid(best);
-            return
-        end
-        if best == 1
-            search_lo = search_lo / 10;
-            search_hi = chi_grid(2);
-        else
-            search_hi = search_hi * 10;
-            search_lo = chi_grid(n_grid - 1);
-        end
-        n_widen = n_widen + 1;
-        continue %do not do pass=pass+1, loop through again with this new search range
-    end
-
-    search_lo = chi_grid(best - 1);
-    search_hi = chi_grid(best + 1);
-    pass = pass + 1;
-end
-
-chi_fit = chi_grid(best);
-end

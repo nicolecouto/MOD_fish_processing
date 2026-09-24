@@ -127,7 +127,20 @@ if islogical(value)
         s = 'false';
     end
 elseif isnumeric(value)
-    s = sprintf('%.10g', value);
+    % YAMLMatlab's ReadYaml only recognizes Inf/-Inf spelled with a
+    % leading dot (YAML 1.1's .inf/-.inf) - the bare word "Inf" sprintf
+    % would otherwise produce round-trips back as a char, not a double
+    % (confirmed empirically - see MODsetup_read_yaml.m's chi/epsilon
+    % contam_freq_hz/coherence_fmax_hz fields, which default to Inf).
+    if isinf(value)
+        if value > 0
+            s = '.inf';
+        else
+            s = '-.inf';
+        end
+    else
+        s = sprintf('%.10g', value);
+    end
 elseif ischar(value) || isstring(value)
     s = char(value);
 else

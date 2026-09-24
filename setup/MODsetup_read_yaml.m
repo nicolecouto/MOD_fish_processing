@@ -38,20 +38,36 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % OUTPUTS
 %   metadata  - struct with fields:
-%     paths.data_root, .raw, .L0, .L1, .L2, .profiles, .meta,
+%     paths.data_root, .raw, .L0, .L1, .L2, .profiles_L2, .profiles_L1, .meta,
 %     .calibrations_root, .ctd, .setup_yml
 %                                   - .ctd is only meaningful for vehicles
 %                                     with an independent CTD file (see
 %                                     vehicle_name below) - defined
 %                                     unconditionally like the other paths,
 %                                     whether or not data_root/ctd/ exists.
-%                                     .profiles is where
-%                                     MODprocess_all_L1_to_L2_profiles.m
-%                                     saves Profile####.mat, deliberately a
-%                                     sibling of .L2 (not inside it) so the
-%                                     per-file realtime output and the
-%                                     per-cast final output never share a
-%                                     directory. .setup_yml is this call's
+%                                     .profiles_L2 is where
+%                                     MODprocess_all_L1_to_L2.m saves the
+%                                     converted (spectra/chi/epsilon)
+%                                     Profile####.mat when pointed at
+%                                     .profiles_L1 (post-processing mode),
+%                                     deliberately a sibling of .L2 (not
+%                                     inside it) so the per-file realtime
+%                                     output and the per-cast final output
+%                                     never share a directory. .profiles_L1 is where
+%                                     MODprocess_all_extract_profiles.m
+%                                     saves the stitched-but-not-yet-
+%                                     converted raw epsi/ctd record for each
+%                                     profile - a separate directory from
+%                                     .profiles_L2 so the two pipeline stages
+%                                     (extraction, conversion) never
+%                                     collide on the same Profile####.mat
+%                                     filename (PLAN.md Phase A refactor).
+%                                     Naming mirrors .L1/.L2: profiles_L1 is
+%                                     the profile-cut analog of an L1 file
+%                                     (physical units, not yet windowed),
+%                                     profiles_L2 the analog of an L2 file
+%                                     (per-scan spectra/chi/epsilon).
+%                                     .setup_yml is this call's
 %                                     own input argument, carried along so
 %                                     MODsetup_validate_metadata.m (called
 %                                     from deep inside mod_scan_*.m) can
@@ -89,13 +105,11 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     so this comes back false rather than
 %                                     erroring - see PROCESS.channels/AFE.*
 %                                     below. Consumed by
-%                                     MODprocess_all_L1_to_L2.m (skips
-%                                     spectra processing entirely when
-%                                     false) and
-%                                     MODprocess_single_L1_to_L2_profile.m
-%                                     (still builds a profile - CTD data is
-%                                     saved regardless - but never computes
-%                                     spectra when false).
+%                                     MODprocess_single_L1_to_L2.m (skips
+%                                     epsi tiling entirely when false - CTD
+%                                     data is still returned regardless,
+%                                     spectra/chi/epsilon just never get
+%                                     computed).
 %     PROCESS.latitude             - for ctd.z when no GPS fix
 %     PROCESS.channels             - AFE sensor names in ADC slot order,
 %                                     e.g. {'t1','t2','s1','s2','a1','a2','a3'}
@@ -116,9 +130,9 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     from setup.yml's spectral.fft_length/
 %                                     .fft_segments_per_scan/.scan_overlap.
 %                                     scan_length is derived from the first
-%                                     two (toolbox/mod_scan_length_from_segments.m),
+%                                     two (processing/scans/mod_scan_length_from_segments.m),
 %                                     dof from fft_segments_per_scan alone
-%                                     (toolbox/mod_scan_dof.m) - neither is a
+%                                     (processing/scans/mod_scan_dof.m) - neither is a
 %                                     yaml-configurable field of its own -
 %                                     see mod_scan_calc_chi_mle.m. NOT set
 %                                     if the spectral: block or the
@@ -199,6 +213,22 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     search_hi = chi_seed*chi_mle_end_search),
 %                                     from setup.yml's chi.chi_mle_start_search/
 %                                     .chi_mle_end_search. NOT set if absent.
+%     PROCESS.EPSILON.epsilon_final_source, .kmin_obs, .contam_freq_hz,
+%              .oakey_lc_m, .coherence_fmin_hz, .coherence_fmax_hz,
+%              .kmin_mle, .mle_start_search, .mle_end_search,
+%              .qc_accel_method, .qc_accel_threshold, .qc_accel_nstd
+%                                   - epsilon processing parameters
+%                                     (mod_scan_shear_volts_to_shear_spectrum.m,
+%                                     mod_scan_shear_accel_coherence.m,
+%                                     mod_scan_calc_epsilon_obs.m,
+%                                     mod_scan_calc_epsilon_mle.m,
+%                                     mod_L2_tile_scans.m's epsilon_final_source
+%                                     selection - qc_accel_* registered for a
+%                                     future modProcess_L2_qc.m, not consumed
+%                                     yet), from setup.yml's epsilon: block,
+%                                     same key names. NOT set if the block or
+%                                     the specific key is absent - see
+%                                     docs/workflow/L2_calc_eps.md.
 %     AFE.(channel).full_range     - volts, for counts->volts conversion,
 %                                     from setup.yml's afe.channels.(channel)
 %     AFE.(channel).ADCconf        - 'Bipolar' or 'Unipolar', from
@@ -226,9 +256,13 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     it's fit in-situ per deployment
 %                                     against real CTD temperature data,
 %                                     which is a later L1 step's job.
-%     CTD.name, .sample_per_record - only set when setup.yml has a ctd:
-%                                     block (deployments with no CTD don't
-%                                     need one)
+%     CTD.name, .sample_per_record - only set when setup.yml's ctd: block
+%                                     declares .type/.sample_per_record
+%                                     respectively (independent of each
+%                                     other, and of compute_spectra/
+%                                     sample_rate below, which share the
+%                                     same ctd: block but land under
+%                                     PROCESS.* instead)
 %     CTD.SN, .cal                 - only set when setup.yml's
 %                                     instrument_manifest.ctd.sn is
 %                                     present and non-empty. SN is always
@@ -239,6 +273,20 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     work). .cal is SBE calibration
 %                                     coefficients, read from
 %                                     calibrations_root/SBE/<SN>.CAL
+%     manifest.ctd_som_integrated  - only set when setup.yml's
+%                                     instrument_manifest.ctd.som_integrated
+%                                     is present. True when this
+%                                     deployment's CTD arrives in the same
+%                                     modraw stream as EFE/VNAV (embedded
+%                                     $SB49/$SB41 blocks); false when it's
+%                                     a separate file (e.g. DeepSolo's
+%                                     ctd/DeepSoloFallrise.mat via
+%                                     MODprocess_read_external_ctd.m).
+%                                     Recorded here as manifest metadata
+%                                     only - not yet consumed anywhere;
+%                                     MODprocess_read_external_ctd.m/
+%                                     MODprocess_all_L0_to_L1.m still
+%                                     dispatch on vehicle_name.
 %     GEOMETRY.alt_angle_deg, .alt_dist_from_crashguard_ft,
 %              .alt_probe_dist_from_crashguard_in
 %                                   - from setup.yml's altimeter.fctd or
@@ -295,7 +343,8 @@ metadata.paths.raw               = fullfile(yml.data_root, 'raw');
 metadata.paths.L0                = fullfile(yml.data_root, 'L0');
 metadata.paths.L1                = fullfile(yml.data_root, 'L1');
 metadata.paths.L2                = fullfile(yml.data_root, 'L2');
-metadata.paths.profiles          = fullfile(yml.data_root, 'profiles');
+metadata.paths.profiles_L2       = fullfile(yml.data_root, 'profiles_L2');
+metadata.paths.profiles_L1       = fullfile(yml.data_root, 'profiles_L1');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file
@@ -374,12 +423,31 @@ end
 % mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m)
 if isfield(yml, 'chi')
     chi_fields = {'time_constant_s', 'fall_speed_exponent', 'noise_adjusted_to_f', ...
-        'n_smooth_f_spectrum', 'sn_min', 'n_skip', ...
+        'n_smooth_f_spectrum', 'sn_min', 'n_skip', 'contam_freq_hz', ...
         'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search'};
     for iF = 1:numel(chi_fields)
         field = chi_fields{iF};
         if isfield(yml.chi, field)
             metadata.PROCESS.CHI.(field) = yml.chi.(field);
+        end
+    end
+end
+
+%% Epsilon processing parameters (mod_scan_shear_volts_to_shear_spectrum.m,
+% mod_scan_shear_accel_coherence.m, mod_scan_calc_epsilon_obs.m,
+% mod_scan_calc_epsilon_mle.m, mod_L2_tile_scans.m's epsilon_final_source
+% selection). Mirrors the chi: block immediately above - see
+% MODsetup_metadata_field_registry.m for each field's yaml_key (identical
+% to its metadata_path leaf name here) and historical default.
+if isfield(yml, 'epsilon')
+    epsilon_fields = {'epsilon_final_source', 'kmin_obs', 'contam_freq_hz', 'oakey_lc_m', ...
+        'stage1_kmin', 'stage1_kmax', ...
+        'coherence_fmin_hz', 'coherence_fmax_hz', 'kmin_mle', 'mle_start_search', 'mle_end_search', ...
+        'qc_accel_method', 'qc_accel_threshold', 'qc_accel_nstd'};
+    for iF = 1:numel(epsilon_fields)
+        field = epsilon_fields{iF};
+        if isfield(yml.epsilon, field)
+            metadata.PROCESS.EPSILON.(field) = yml.epsilon.(field);
         end
     end
 end
@@ -475,11 +543,38 @@ if has_epsi
 end
 metadata.PROCESS.channels = channel_names;
 
-%% CTD - optional: not every deployment carries a CTD
-if isfield(yml, 'ctd')
+%% CTD - optional: not every deployment carries a CTD, and (since
+% compute_spectra/sample_rate below share this same yaml block) a
+% deployment can have a ctd: block without type/sample_per_record at all
+% (e.g. DeepSolo, whose only ctd: content is compute_spectra) - each field
+% is read independently rather than assuming the whole block is present.
+if isfield(yml, 'ctd') && isfield(yml.ctd, 'type')
     metadata.CTD.name = yml.ctd.type;
+end
+if isfield(yml, 'ctd') && isfield(yml.ctd, 'sample_per_record')
     metadata.CTD.sample_per_record = yml.ctd.sample_per_record;
 end
+
+%% CTD spectra processing parameters (mod_scan_get_spectra.m) - only set if
+% setup.yml declares them; never silently defaulted here (same prompt-if-
+% missing mechanism as every other field in this file applies downstream).
+if isfield(yml, 'ctd') && isfield(yml.ctd, 'compute_spectra')
+    metadata.PROCESS.compute_ctd_spectra = yml.ctd.compute_spectra;
+end
+if isfield(yml, 'ctd') && isfield(yml.ctd, 'sample_rate')
+    metadata.PROCESS.Fs_ctd = yml.ctd.sample_rate;
+end
+
+%% Instrument manifest ctd sub-block - whether this deployment's CTD
+% arrives in the same modraw stream as EFE/VNAV (SOM-integrated, embedded
+% $SB49/$SB41 blocks) or via a separate file (e.g. DeepSolo's
+% ctd/DeepSoloFallrise.mat, MODprocess_read_external_ctd.m). Recorded here
+% as manifest metadata only - MODprocess_read_external_ctd.m/
+% MODprocess_all_L0_to_L1.m still dispatch on vehicle_name, not this flag.
+if has_manifest && isfield(yml.instrument_manifest, 'ctd') && isfield(yml.instrument_manifest.ctd, 'som_integrated')
+    metadata.manifest.ctd_som_integrated = logical(yml.instrument_manifest.ctd.som_integrated);
+end
+
 if has_manifest && isfield(yml.instrument_manifest, 'ctd') && isfield(yml.instrument_manifest.ctd, 'sn') && ~isempty(yml.instrument_manifest.ctd.sn)
     % SBE .CAL filenames are always 4-digit zero-padded (e.g. 0537.CAL),
     % unlike shear/fpo7 probe folders which use the bare number - so

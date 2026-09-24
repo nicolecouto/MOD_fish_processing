@@ -143,11 +143,11 @@ Pure transformation - takes an L0 struct and a `metadata` struct, returns the sa
 The three conversion steps (`convert_efe_channels`, `process_ctd_fields`, `calibrate_altimeter_hab`) live as **local subfunctions inside this file**, not as separate `modProcess_L1_apply_*.m` files - nothing calls them standalone today. Split one out the moment something else needs to call it directly. (`process_ctd_fields` was named `calibrate_ctd` until the DeepSolo work below - renamed because for SBE41/external-CTD sources it does no calibration at all, only derivation of secondary fields.)
 
 Notes on the CTD conversion specifically:
-- SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then salinity via `sw_salt`.
-- SBE41 "PTS" format arrives from L0 already as ASCII-parsed P/T/S (conductivity left `NaN`) - no calibration equations needed, only the derived fields below.
+- SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then Practical Salinity via `gsw_SP_from_C`.
+- SBE41 "PTS" format arrives from L0 already as ASCII-parsed P/T/SP (conductivity left `NaN`) - no calibration equations needed, only the derived fields below.
 - External CTD (DeepSolo/Wirewalker - see below) arrives the same way as SBE41: already physical units, only needs the derived fields - **except DeepSolo's fallrise pressure file, which has no T/C at all** (see below).
-- `dPdt`, `z` (depth), `dzdt` are computed unconditionally for all sources (they only need `P`, and `z` also needs latitude). `th` (potential temperature), `sgth` (potential density), and `S` (if not already reported) are only computed **when both `T` and `C` are present** - `sw_ptmp`/`sw_pden`/`sw_salt` genuinely can't run without them. DeepSolo's fallrise data (P-only) is the one case today that takes this branch and gets `dPdt`/`z`/`dzdt` but not `th`/`sgth`/`S` - this is expected, not a bug.
-- Depth (`z`) needs a latitude: interpolated from `data.gps.latitude` if the file has GPS fixes, otherwise falls back to `metadata.PROCESS.latitude` from `setup.yml`.
+- `dPdt`, `z` (depth), `dzdt` are computed unconditionally for all sources (they only need `P`, and `z` also needs latitude). `SR` (Reference Salinity), `CT` (Conservative Temperature), `sigma0` (potential density anomaly), and `SP` (Practical Salinity, if not already reported) are only computed **when both `T` and `C` are present** - `gsw_SR_from_SP`/`gsw_CT_from_t`/`gsw_sigma0`/`gsw_SP_from_C` genuinely can't run without them. DeepSolo's fallrise data (P-only) is the one case today that takes this branch and gets `dPdt`/`z`/`dzdt` but not `SP`/`SR`/`CT`/`sigma0` - this is expected, not a bug. See [Units and the sw_->gsw_ migration](../concepts/units_and_seawater.md) for why `SR` (not exact Absolute Salinity) is used throughout.
+- Depth (`z`) needs a latitude: interpolated from `data.gps.latitude` if the file has GPS fixes, otherwise falls back to `metadata.PROCESS.latitude` from `setup.yml`. `gsw_z_from_p` returns height (negative down); `process_ctd_fields` negates it to keep this repo's positive-down `z`/`dzdt` convention.
 
 Notes on the EFE channel conversion (`convert_efe_channels`) specifically:
 - Every AFE channel - thermistor (`fpo7`), shear, and accelerometer alike - arrives from L0 as the same thing: raw 24-bit ADC counts, in `epsi.channel1`..`channelN` (ADC slot order, not sensor identity - see `MODsetup_read_yaml.m`'s `PROCESS.channels` note above).
@@ -179,8 +179,8 @@ Whatever instrument produces the file, its reader must normalize into:
 | `dnum` | MATLAB datenum | The master clock - `time_s` and everything else timing-related is derived from this in `process_ctd_fields`, not read from the file |
 | `P` | dbar | Always present |
 | `T` | °C (IPTS-68) | Optional - absent for DeepSolo's fallrise file |
-| `C` | S/m | **not** mS/cm - `process_ctd_fields`'s `ctd.C*10./c3515` ratio requires S/m to match the `c3515 = 42.914` mS/cm standard (1 S/m = 10 mS/cm). Optional - absent for DeepSolo's fallrise file |
-| `S` | psu (PSS-78) | optional - derived from `C`/`T`/`P` via `sw_salt` if not reported, but only when `T`/`C` are both present |
+| `C` | S/m | **not** mS/cm - `process_ctd_fields`'s `ctd.C*10` conversion requires S/m so that `*10` gives mS/cm for `gsw_SP_from_C`. Optional - absent for DeepSolo's fallrise file |
+| `SP` | psu (PSS-78) | optional - derived from `C`/`T`/`P` via `gsw_SP_from_C` if not reported, but only when `T`/`C` are both present |
 
 Sample rate varies by source and isn't enforced by the reader - chunking works off `dnum` spacing directly. DeepSolo's fallrise file is sparse and irregular (~60-120 s between samples, occasional multi-hour gaps - see [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md) for how that sparsity is handled downstream).
 
@@ -294,9 +294,11 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 
 - **The `alt.hab` path** is now verified against real data (`data_for_reorg/epsi_mako/blt2021_0715`) in addition to `isap` - both produce physically plausible `hab` values using the same math (see "Altimeter → probe height-above-bottom (`hab`) math" above).
 - **`isap.dst` pegs at a flat maximum value (120, in the one deployment tested) when the target is out of range** - not a bug, but don't mistake a flatlined `isap.hab` for a real constant range to bottom.
-- **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `sw_salt`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
+- **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-09-08 - Migrated CTD field derivation from the legacy CSIRO `sw_*` (EOS-80) toolbox to GSW/TEOS-10** (branch `epsilon_processing`). `sw_salt`/`sw_ptmp`/`sw_pden`/`sw_dpth` replaced with `gsw_SP_from_C`/`gsw_CT_from_t`/`gsw_sigma0`/`gsw_z_from_p`; `ctd.S`/`.th`/`.sgth` renamed `ctd.SP`/`.CT`/`.sigma0` to match (Practical Salinity, Conservative Temperature, potential density anomaly - their TEOS-10-idiomatic names), and a new `ctd.SR` (Reference Salinity, `gsw_SR_from_SP(ctd.SP)`) persisted for every downstream GSW call that needs it. `gsw_z_from_p` returns height (negative down); `process_ctd_fields` negates it to keep `z`/`dzdt`'s existing positive-down convention. See [Units and the sw_->gsw_ migration](../concepts/units_and_seawater.md) for the full rationale, including why Reference Salinity (not exact Absolute Salinity) is used throughout.
 
 Ported from `mod_som_read_epsi_files_v4.m` in the old `MOD_fish_lib` monolith - specifically the physical-conversion half of that function (the raw-parsing half became `MODprocess_single_modraw_to_L0.m` in the L0 step). Built on branch `l0_to_l1_conversion`:
 

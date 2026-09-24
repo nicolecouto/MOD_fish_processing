@@ -36,11 +36,14 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %   a probe SN resolved to a real calibration file.
 %
 % INPUTS
-%   L1_dir - directory containing L1 .mat files, each with top-level
-%            'epsi' and 'ctd' variables (as saved by
-%            MODprocess_all_L0_to_L1.m). Files missing either one, or
-%            missing ctd.T specifically (e.g. DeepSolo's P-only external
-%            CTD), are skipped when building the fit data, not an error.
+%   L1_dir - directory containing L1-shaped .mat files, each with
+%            top-level 'epsi' and 'ctd' variables. Directory-agnostic, same
+%            as MODprocess_all_L1_to_L2.m: works equally on realtime L1
+%            files (MODprocess_all_L0_to_L1.m) or extracted per-profile
+%            files (modProcess_extract_profile.m) - nothing here depends
+%            on which. Files missing either variable, or missing ctd.T
+%            specifically (e.g. DeepSolo's P-only external CTD), are
+%            skipped when building the fit data, not an error.
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %              metadata.PROCESS.channels, metadata.AFE.(ch).type (to find
 %              which channels are 'fpo7')

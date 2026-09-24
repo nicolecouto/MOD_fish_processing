@@ -31,7 +31,7 @@ function profile_data = modProcess_extract_profile(profile, TimeIndex, metadata)
 %   simply a file that happened to log no epsi samples) still contributes
 %   its ctd data - CTD/pressure coverage is never dropped just because
 %   epsi wasn't recorded. This is what lets
-%   MODprocess_single_L1_to_L2_profile.m save every profile's CTD record
+%   MODprocess_single_L1_to_L2.m save every profile's CTD record
 %   regardless of instrument_manifest/direction, while only computing
 %   epsi spectra when there's real epsi data and the profile's direction
 %   is one the deployment trusts for it (metadata.PROFILES.profile_dir).
@@ -105,7 +105,7 @@ function profile_data = modProcess_extract_profile(profile, TimeIndex, metadata)
 %   filenames is still populated with whichever files were tried.
 %
 % CALLED BY
-%   MODprocess_single_L1_to_L2_profile.m
+%   MODprocess_all_extract_profiles.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m

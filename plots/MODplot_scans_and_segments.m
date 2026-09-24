@@ -32,7 +32,7 @@ function fig = MODplot_scans_and_segments(fft_length, scan_length, fall_speed, o
 %   fft_length  - Welch segment length [samples]
 %   scan_length - scan length [samples] (in real use this is derived from
 %                 fft_length/fft_segments_per_scan - see
-%                 toolbox/mod_scan_length_from_segments.m - but is taken
+%                 processing/scans/mod_scan_length_from_segments.m - but is taken
 %                 directly here so this function can explore combinations
 %                 that aren't necessarily an exact fft_segments_per_scan
 %                 tiling; segment/scan counts are computed by the same

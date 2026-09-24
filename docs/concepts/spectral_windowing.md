@@ -5,15 +5,15 @@ Three `setup.yml` `spectral:` values control every spectrum this pipeline comput
 - **`fft_length` and `fft_segments_per_scan`** decide how many Welch segments get averaged into *one* scan's spectrum - this is what sets the spectrum's statistical reliability (its degrees of freedom, `dof`), and, through `fft_length` alone, its frequency/wavenumber resolution.
 - **`scan_overlap`** decides how many scans you get per profile and how much they overlap each other - this is a vertical-resolution/smoothing choice. It has no effect on any individual scan's `dof` or resolution.
 
-See `mod_scan_get_spectra.m` (the first pair) and `mod_L2_tile_scans.m` (`scan_overlap`, and where `scan_length` actually gets used). `scan_length` and `dof` are never set directly - both are derived: `scan_length` from `fft_length`/`fft_segments_per_scan` (`toolbox/mod_scan_length_from_segments.m`), `dof` from `fft_segments_per_scan` alone (`toolbox/mod_scan_dof.m`) - the same way Rockland ODAS's `get_diss_odas.m` reports `dof_spec` as an output, never an input.
+See `mod_scan_get_spectra.m` (the first pair) and `mod_L2_tile_scans.m` (`scan_overlap`, and where `scan_length` actually gets used). `scan_length` and `dof` are never set directly - both are derived: `scan_length` from `fft_length`/`fft_segments_per_scan` (`processing/scans/mod_scan_length_from_segments.m`), `dof` from `fft_segments_per_scan` alone (`processing/scans/mod_scan_dof.m`) - the same way Rockland ODAS's `get_diss_odas.m` reports `dof_spec` as an output, never an input.
 
 The Welch-segment overlap itself is hardcoded at 50% in code (`mod_scan_get_spectra.m`'s `FFT_OVERLAP` constant) - not yaml-configurable at all. It used to be a tunable `fft_overlap` fraction, but the only value its `dof` formula is actually valid for is 0.5 (see below), so exposing it as "tunable" was misleading more than useful.
 
 ## The formulas
 
 ```
-scan_length = fft_length * (fft_segments_per_scan + 1) / 2   (toolbox/mod_scan_length_from_segments.m)
-dof         = 1.9 * fft_segments_per_scan                     (Nuttall 1971, toolbox/mod_scan_dof.m)
+scan_length = fft_length * (fft_segments_per_scan + 1) / 2   (processing/scans/mod_scan_length_from_segments.m)
+dof         = 1.9 * fft_segments_per_scan                     (Nuttall 1971, processing/scans/mod_scan_dof.m)
 
 scan_step   = (1 - scan_overlap) * scan_length                (mod_L2_tile_scans.m)
 ```
@@ -79,3 +79,12 @@ Top and middle panels use an illustrative `fft_length=512`, `fft_segments_per_sc
 ![Example MODplot_scans_and_segments.m output: five scans tiled at 50% overlap (top), each scan's Welch segments shown in shades of that scan's own color (middle), and the same scans converted to meters via fall_speed with the center scan's physical footprint and kmin printed (bottom)](images/scans_and_segments_example.png)
 
 Same illustrative `fft_length=512`/`scan_length=1024`/`scan_overlap=50%` as above, plus `fall_speed=0.65 m/s` (median for `epsi_mako`'s ASTRAL deployment, see above) - the highlighted (3rd) scan spans 2.08 m, and `kmin = Fs_epsi/(fft_length*fall_speed) = 0.962 cpm`. See `MODplot_scan_context.m` for the equivalent diagnostic run against real data instead of just the parameters.
+
+## CTD spectra: a different method, not just a different rate
+
+Everything above is about `ctd.P`/`ctd.T`/`ctd.C`'s epsi neighbors (shear/fpo7/acc). CTD spectra (`mod_scan_get_spectra.m`) are computed by a genuinely different method, not the same Welch average scaled to a different `Fs`:
+
+- **No interpolation onto the epsi grid, either direction.** Upsampling `ctd.P`/`.T`/`.C` to `Fs_epsi` before windowing would put fabricated spectral content above CTD's own Nyquist into the result - no interpolation method can recover real signal a slower sensor never sampled. Downsampling epsi to CTD's rate would defeat the entire purpose of epsi's high sample rate for the epsi channels. Instead, a scan's CTD spectrum comes from whichever native-rate CTD samples' timestamps actually fall inside that scan's time window - a time-based selection, not a value interpolation.
+- **A single periodogram, not a Welch average.** At a typical `Fs_ctd` (16 Hz for SBE49, this registry's default), a several-second scan only contains on the order of 100 raw CTD samples - far too few to segment into `fft_segments_per_scan` overlapping pieces the way epsi does. So there is no `fft_segments_per_scan`/`dof` concept for CTD spectra at all: one periodogram per scan, no segments, no overlap. Don't assume a `ctd.P`/`.T`/`.C` spectrum carries the same statistical reliability (dof) as an epsi channel's spectrum at the same scan - it doesn't, by construction.
+- **`Fs_ctd`** (`MODsetup_metadata_field_registry.m`) is the only CTD-specific spectral parameter - it sets the expected number of native samples per scan (`N_ctd`, derived from the scan's already-fixed duration), used as a fixed `periodogram` `nfft` so every scan's CTD frequency vector matches exactly, even though the actual raw sample count landing in any given scan's window can vary by a sample or two (CTD sampling doesn't line up with epsi scan boundaries).
+- **`compute_spectra`** (`setup.yml`'s `ctd:` block, registered as `compute_ctd_spectra`) is an explicit, per-deployment boolean - not inferred from `vehicle_name`/`fish_flag`. Set `false` when a deployment's CTD telemetry has no fixed, scan-duration-relative sample rate, e.g. DeepSolo's ~60-120s irregular external pressure telemetry, where a scan window holds 0-1 native samples, not "a handful," so `Fs_ctd`/`N_ctd` would have no meaning. When `false`, this whole feature is skipped, `ctd.P` included, and `Fs_ctd` is never even asked for. A vehicle with a genuinely fixed-rate CTD (e.g. Wirewalker's onboard RBR Concerto) sets this `true` regardless of how its data arrives (onboard `$SB49`/`$SB41` stream vs. an independent CTD file, `MODprocess_read_external_ctd.m`) - the two are unrelated. On a deployment that DOES compute ctd spectra but only reports P (none exist yet, but nothing rules it out), `ctd.T`/`.C` being absent would still skip only those two channels, the same way an epsi channel absent from `scan.epsi` is skipped.

@@ -55,7 +55,7 @@ function profiles = modProcess_detect_profiles(PressureTimeseries, metadata)
 %     (metadata.PROFILES.profile_dir is NOT read here - it no longer
 %     filters which profiles this function returns, see NOTES. It's
 %     validated/used downstream, in
-%     MODprocess_single_L1_to_L2_profile.m, to decide which direction(s)
+%     MODprocess_single_L1_to_L2.m, to decide which direction(s)
 %     get epsi spectra computed.)
 %     Validated via MODsetup_validate_metadata.m as the first executable
 %     line (same point-of-use pattern mod_scan_get_spectra.m uses) -
@@ -82,7 +82,7 @@ function profiles = modProcess_detect_profiles(PressureTimeseries, metadata)
 %   has fewer than 2 samples or nothing passes minLength_m filtering.
 %
 % CALLED BY
-%   MODprocess_all_L1_to_L2_profiles.m
+%   MODprocess_all_extract_profiles.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m
@@ -93,8 +93,8 @@ function profiles = modProcess_detect_profiles(PressureTimeseries, metadata)
 %   version of this branch; changed after review). CTD/pressure data is
 %   collected on every cast a vehicle makes regardless of direction, so
 %   every cast this function finds should get a Profile####.mat with its
-%   CTD record saved (MODprocess_single_L1_to_L2_profile.m always attaches
-%   profile_data.ctd). profile_dir instead governs, downstream, which
+%   CTD record saved (MODprocess_single_L1_to_L2.m always attaches
+%   data.ctd). profile_dir instead governs, downstream, which
 %   direction(s) are trusted enough to compute epsi spectra for - many
 %   epsi platforms only trust downcasts for shear/fpo7 due to vehicle wake
 %   turbulence on the upcast, even though the CTD itself is valid both
@@ -209,7 +209,7 @@ end
 
 %% Every detected profile, both directions - NOT filtered by
 % metadata.PROFILES.profile_dir. That field is a downstream concern (which
-% direction(s) get epsi spectra computed - MODprocess_single_L1_to_L2_profile.m)
+% direction(s) get epsi spectra computed - MODprocess_single_L1_to_L2.m)
 % rather than a profile-existence concern: CTD/pressure data is collected
 % on every cast regardless of direction, so every cast this function finds
 % is returned here and gets a Profile####.mat with its CTD record saved -

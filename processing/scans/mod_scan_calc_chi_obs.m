@@ -46,7 +46,7 @@ function scan = mod_scan_calc_chi_obs(scan, metadata, channel, noise_coefs)
 %                          mod_scan_fpo7_transfer_function.m for why w=0
 %                          is not a meaningful input here.
 %                  ktemp - thermal diffusivity of the water at this scan
-%                          [m^2/s] (mod_scan_thermal_diffusivity.m, from
+%                          [m^2/s] (toolbox/seawater/ktemp.m, from
 %                          scan-center S/T/P)
 %   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated up
 %                front, via MODsetup_validate_metadata.m, against the full
