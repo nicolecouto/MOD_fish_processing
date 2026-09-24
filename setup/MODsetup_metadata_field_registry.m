@@ -25,22 +25,29 @@ function registry = MODsetup_metadata_field_registry()
 %   mod_scan_calc_chi_mle.m - scan_length is derived from the first two,
 %   dof from fft_segments_per_scan alone, neither is its own entry) have
 %   real MODsetup_validate_metadata.m call sites.
-%   PROFILES.lowpass_factor/.ctd_gap_factor/.buffer_bins are populated so
-%   this table stays a complete, accurate record of every yaml-configurable
-%   value, even though wiring their consumer
-%   (mod_L1_detect_profiling_direction.m) is a deferred follow-up - see
-%   PLAN.md. The 14 PROCESS.EPSILON entries and
-%   PROCESS.GRID.dz_m are the same situation, one step further out: no
-%   MODsetup_validate_metadata.m call site exists yet because no epsilon,
-%   profile-QC, or gridding module exists yet either
-%   (mod_scan_calc_epsilon.m/modProcess_L2_qc.m/
-%   modProcess_L3_grid_profiles.m are all "Not started" in PLAN.md Section
-%   6.4/6.5) - registered now from a review of Jen's ASTRAL reprocessing
-%   fork so the parameters those modules will need aren't lost before
-%   they're built. See PLAN.md Session Log, 2026-09-02.
+%   PROFILES.lowpass_factor/.ctd_gap_factor/.buffer_bins have a real call
+%   site too (mod_L1_detect_profiling_direction.m). The 14 PROCESS.EPSILON
+%   entries are mostly wired in as well, now that mod_scan_calc_epsilon.m
+%   and its siblings exist (branch epsilon_processing, 2026-09-08):
+%   epsilon_final_source (MODprocess_single_L1_to_L2.m); epsilon_kmin_obs
+%   (mod_scan_calc_epsilon.m, and again in mod_scan_calc_epsilon_obs.m,
+%   which it calls in turn); contam_freq_hz_shear/epsilon_stage1_kmin/
+%   epsilon_stage1_kmax (mod_scan_calc_epsilon_obs.m); kmin_mle/
+%   mle_start_search/mle_end_search (mod_scan_calc_epsilon_mle.m);
+%   coherence_fmin_hz/coherence_fmax_hz (mod_scan_shear_accel_coherence.m);
+%   oakey_lc_m (mod_scan_shear_volts_to_shear_spectrum.m). Only
+%   qc_accel_method/.qc_accel_threshold/.qc_accel_nstd (profile-QC) and
+%   PROCESS.GRID.dz_m (L2->L3 gridding) are still in the original
+%   situation: no MODsetup_validate_metadata.m call site yet, because
+%   neither consumer exists yet (modProcess_L2_qc.m/
+%   modProcess_L3_grid_profiles.m are both "Not started" in PLAN.md
+%   Section 6.4/6.5) - registered ahead of time, same as the epsilon
+%   entries were, from a review of Jen's ASTRAL reprocessing fork so the
+%   parameters those modules will need aren't lost before they're built.
+%   See PLAN.md Session Log, 2026-09-02 and 2026-09-08.
 %
 % OUTPUTS
-%   registry - struct array (1 x 39), one entry per value:
+%   registry - struct array (1 x 41), one entry per value:
 %     name              - short key used in MODsetup_validate_metadata.m's
 %                          list_of_variables, e.g. 'kmin_obs'
 %     yaml_section       - top-level setup.yml block, e.g. 'chi'
@@ -157,7 +164,7 @@ registry(end+1) = entry('fft_length', 'spectral', 'fft_length', ...
 registry(end+1) = entry('fft_segments_per_scan', 'spectral', 'fft_segments_per_scan', ...
     {'PROCESS', 'fft_segments_per_scan'}, ...
     ['Number of Welch-averaged FFT segments per scan, at a hardcoded 50%% overlap ' ...
-     '(mod_scan_get_spectra.m''s FFT_OVERLAP constant) - directly sets dof = ' ...
+     '(mod_scan_fft_seg_starts.m''s hardcoded overlap) - directly sets dof = ' ...
      '1.9*fft_segments_per_scan (processing/scans/mod_scan_dof.m, Nuttall 1971). scan_length is ' ...
      'DERIVED from this and fft_length (processing/scans/mod_scan_length_from_segments.m: ' ...
      'scan_length = fft_length*(fft_segments_per_scan+1)/2), not set directly - check the ' ...

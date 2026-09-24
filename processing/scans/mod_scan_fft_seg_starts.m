@@ -27,6 +27,9 @@ function fft_seg_starts = mod_scan_fft_seg_starts(fft_length, fft_segments_per_s
 % CALLED BY
 %   mod_L2_tile_scans.m, mod_scan_get_spectra.m
 %
+% CALLS
+%   (none)
+%
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 noverlap = round(0.5 * fft_length);

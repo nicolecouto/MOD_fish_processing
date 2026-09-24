@@ -7,7 +7,7 @@ Three `setup.yml` `spectral:` values control every spectrum this pipeline comput
 
 See `mod_scan_get_spectra.m` (the first pair) and `mod_L2_tile_scans.m` (`scan_overlap`, and where `scan_length` actually gets used). `scan_length` and `dof` are never set directly - both are derived: `scan_length` from `fft_length`/`fft_segments_per_scan` (`processing/scans/mod_scan_length_from_segments.m`), `dof` from `fft_segments_per_scan` alone (`processing/scans/mod_scan_dof.m`) - the same way Rockland ODAS's `get_diss_odas.m` reports `dof_spec` as an output, never an input.
 
-The Welch-segment overlap itself is hardcoded at 50% in code (`mod_scan_get_spectra.m`'s `FFT_OVERLAP` constant) - not yaml-configurable at all. It used to be a tunable `fft_overlap` fraction, but the only value its `dof` formula is actually valid for is 0.5 (see below), so exposing it as "tunable" was misleading more than useful.
+The Welch-segment overlap itself is hardcoded at 50% in code (`mod_scan_fft_seg_starts.m`) - not yaml-configurable at all. It used to be a tunable `fft_overlap` fraction, but the only value its `dof` formula is actually valid for is 0.5 (see below), so exposing it as "tunable" was misleading more than useful.
 
 ## The formulas
 

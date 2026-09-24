@@ -75,7 +75,8 @@ function Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)
 %         to 0, matching the original.
 %
 % CALLED BY
-%   mod_scan_calc_chi_mle.m
+%   mod_scan_calc_chi_mle.m, MODvis_spectra.m (wavenumber-domain Batchelor
+%   obs/MLE theory-overlay checkboxes)
 %
 % CALLS
 %   (none)

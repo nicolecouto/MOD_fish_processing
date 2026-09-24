@@ -89,7 +89,7 @@ if ~isfield(scan.epsi, shear_field) || ~isfield(scan.epsi, accel_field)
     return
 end
 
-noverlap = round(0.5 * fft_length); % matches mod_scan_get_spectra.m's hardcoded 50% overlap
+noverlap = round(0.5 * fft_length); % matches mod_scan_fft_seg_starts.m's hardcoded 50% overlap
 [Cxy, fe] = mscohere(detrend(scan.epsi.(shear_field)), detrend(scan.epsi.(accel_field)), ...
     fft_length, noverlap, fft_length, Fs_epsi);
 

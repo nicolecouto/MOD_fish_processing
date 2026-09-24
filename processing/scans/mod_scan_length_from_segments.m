@@ -7,7 +7,7 @@ function scan_length = mod_scan_length_from_segments(fft_length, fft_segments_pe
 %   scan_length = fft_length*(fft_segments_per_scan+1)/2 - the total
 %   number of samples needed for fft_segments_per_scan Welch segments of
 %   length fft_length to exactly tile a scan at a hardcoded 50% overlap
-%   (matching mod_scan_get_spectra.m's FFT_OVERLAP constant). Exact
+%   (matching mod_scan_fft_seg_starts.m's hardcoded overlap). Exact
 %   integer whenever fft_length is even (true for any power of 2 - see
 %   MODsetup_metadata_field_registry.m's fft_length entry).
 %

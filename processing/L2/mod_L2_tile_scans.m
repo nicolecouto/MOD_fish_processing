@@ -81,7 +81,7 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %   MODprocess_single_L1_to_L2.m
 %
 % CALLS
-%   processing/scans/mod_scan_dof.m,
+%   MODsetup_validate_metadata.m, processing/scans/mod_scan_dof.m,
 %   processing/scans/mod_scan_length_from_segments.m,
 %   processing/scans/mod_scan_fft_seg_starts.m
 %

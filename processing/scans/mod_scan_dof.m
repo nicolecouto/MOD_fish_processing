@@ -6,7 +6,7 @@ function dof = mod_scan_dof(fft_segments_per_scan)
 % DESCRIPTION
 %   Degrees of freedom of a Welch-averaged spectrum built from
 %   fft_segments_per_scan segments overlapping by 50% (the hardcoded
-%   overlap - see mod_scan_get_spectra.m's FFT_OVERLAP constant) -
+%   overlap - see mod_scan_fft_seg_starts.m's hardcoded overlap) -
 %   Nuttall's (1971) correction for a Hamming-windowed, 50%-overlapped
 %   periodogram average:
 %     dof = 1.9 * fft_segments_per_scan
@@ -35,7 +35,8 @@ function dof = mod_scan_dof(fft_segments_per_scan)
 %   dof - degrees of freedom of the resulting Welch-averaged spectrum
 %
 % CALLED BY
-%   mod_L2_tile_scans.m, mod_scan_calc_chi_mle.m
+%   mod_L2_tile_scans.m, mod_scan_calc_chi_mle.m, mod_scan_calc_epsilon.m,
+%   mod_scan_calc_epsilon_mle.m
 %
 % CALLS
 %   (none)

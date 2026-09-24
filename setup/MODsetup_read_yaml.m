@@ -303,7 +303,13 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % CALLED BY
 %   (top-level scripts / notebooks) - called once per session, before
-%   MODprocess_all_L0_to_L1.m or MODprocess_single_L0_to_L1.m, not by them
+%   MODprocess_all_L0_to_L1.m or MODprocess_single_L0_to_L1.m, not by them.
+%   Also called directly by MODprocess_all_L1_to_L2.m and
+%   MODprocess_all_extract_profiles.m, but only inside their
+%   MODsetup_validate_metadata.m:yamlUpdated retry loop, to reload metadata
+%   fresh after a prompted value gets saved to setup.yml mid-run - see that
+%   function's own DESCRIPTION for why a stale in-memory metadata can't
+%   just be patched in place there.
 %
 % CALLS
 %   toolbox/YAMLMatlab_0.4.3/ReadYaml.m

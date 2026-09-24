@@ -78,16 +78,18 @@ function scan = mod_scan_calc_chi_mle(scan, metadata, channel, noise_coefs)
 %                            [m^2/s] (toolbox/seawater/visc.m, from
 %                            scan-center S/T/P)
 %                  epsilon - turbulent kinetic energy dissipation rate at
-%                            this scan [W/kg], scalar. NOT computed by
-%                            this repo yet (PLAN.md's
-%                            mod_scan_calc_epsilon.m, shear-channel
-%                            Nasmyth fit, is not started) - callers must
-%                            supply it from elsewhere. For the
+%                            this scan [W/kg], scalar. mod_L2_tile_scans.m
+%                            supplies this from mod_scan_calc_epsilon.m's
+%                            metadata.PROCESS.EPSILON.epsilon_final_source-
+%                            selected mean across this deployment's shear
+%                            channels (see CALLED BY) - but this function
+%                            stays independently callable with any epsilon
+%                            estimate a caller already has, e.g. an
+%                            old-format MOD_fish_lib Profile####.mat's
+%                            per-scan epsilon_final field, for the
 %                            chi_obs-vs-chi_mle/tau comparison this
-%                            function was built for, an old-format
-%                            MOD_fish_lib Profile####.mat already carries
-%                            a per-scan epsilon_final field that works
-%                            directly - see docs/workflow/L2_calc_chi.md.
+%                            function was originally built for - see
+%                            docs/workflow/L2_calc_chi.md.
 %   metadata   - metadata struct (from MODsetup_read_yaml.m). Validated up
 %                front, via MODsetup_validate_metadata.m, against the full
 %                set of PROCESS values this function AND both sub-calls it

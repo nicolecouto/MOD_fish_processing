@@ -70,8 +70,8 @@ function ktemp = ktemp(SP, SR, T, P)
 %           first.
 %
 % CALLED BY
-%   mod_L2_tile_scans.m (once per scan, from scan-center SP/SR/T/P - the
-%   resulting ktemp is then passed into mod_scan_calc_chi_obs.m /
+%   MODprocess_single_L1_to_L2.m (once per scan, from scan-center SP/SR/T/P -
+%   the resulting ktemp is then passed into mod_scan_calc_chi_obs.m /
 %   mod_scan_calc_chi_mle.m as an argument, not computed inside them)
 %
 % CALLS

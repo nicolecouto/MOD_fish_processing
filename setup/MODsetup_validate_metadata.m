@@ -65,7 +65,12 @@ function metadata = MODsetup_validate_metadata(metadata, yaml_file, list_of_vari
 % CALLED BY
 %   mod_scan_get_spectra.m, mod_scan_fpo7_cutoff.m,
 %   mod_scan_fpo7_volts_to_Tg_spectrum.m, mod_scan_calc_chi_obs.m,
-%   mod_scan_calc_chi_mle.m
+%   mod_scan_calc_chi_mle.m, mod_scan_calc_epsilon.m,
+%   mod_scan_calc_epsilon_obs.m, mod_scan_calc_epsilon_mle.m,
+%   mod_scan_shear_accel_coherence.m, mod_scan_shear_volts_to_shear_spectrum.m,
+%   mod_L1_detect_profiling_direction.m, modProcess_detect_profiles.m,
+%   modProcess_extract_profile.m, MODprocess_single_L1_to_L2.m,
+%   mod_L2_tile_scans.m, MODsetup_define_filters.m
 %
 % CALLS
 %   MODsetup_metadata_field_registry.m, MODsetup_prompt_value.m,

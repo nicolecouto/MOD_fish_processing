@@ -147,7 +147,7 @@ switch opts.window_type
     case 'flattop', win = flattopwin(fft_length);
 end
 
-FFT_OVERLAP = 0.5; % hardcoded - matches mod_scan_get_spectra.m, see its NOTES
+FFT_OVERLAP = 0.5; % hardcoded - matches mod_scan_fft_seg_starts.m's hardcoded overlap
 noverlap = round(FFT_OVERLAP*fft_length);
 step = fft_length - noverlap;
 seg_starts = 1:step:(N_epsi - fft_length + 1);

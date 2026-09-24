@@ -68,7 +68,7 @@ function fig = MODplot_scans_and_segments(fft_length, scan_length, fall_speed, o
 %
 % NOTES
 %   The within-scan segment overlap is hardcoded at 50%% (SEGMENT_OVERLAP
-%   below), matching mod_scan_get_spectra.m's FFT_OVERLAP constant - not
+%   below), matching mod_scan_fft_seg_starts.m's hardcoded overlap - not
 %   an option here either, for the same reason (see
 %   docs/concepts/spectral_windowing.md). opts.scan_overlap is a
 %   different, independent knob (between-scan, not within-scan) - see
@@ -95,7 +95,7 @@ arguments
 end
 
 Fs_epsi = opts.Fs_epsi;
-SEGMENT_OVERLAP = 0.5; % hardcoded - matches mod_scan_get_spectra.m's FFT_OVERLAP, see NOTES
+SEGMENT_OVERLAP = 0.5; % hardcoded - matches mod_scan_fft_seg_starts.m's hardcoded overlap, see NOTES
 
 %% tile scans across the illustrative record (mirrors mod_L2_tile_scans.m)
 scan_noverlap = round(opts.scan_overlap * scan_length);
