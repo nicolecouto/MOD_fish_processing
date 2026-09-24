@@ -144,15 +144,30 @@ classdef MODvis_spectra < handle
         BatchelorObsOrder cell = {'t1_batchelor_obs','t2_batchelor_obs'}
         BatchelorMleOrder cell = {'t1_batchelor_mle','t2_batchelor_mle'}
 
+        % Panchev theory overlay checkboxes - s1/s2 only, decoupled from
+        % the observed s1_shear_co_k/s2_shear_co_k checkbox the same way
+        % Batchelor is decoupled from t1_Tg_k/t2_Tg_k. "Co" pairs
+        % epsilon_co (eps1_mmp direct fit against Ps_shear_co_k) with that
+        % same coherence-corrected spectrum; "Mle" pairs epsilon_mle (fit
+        % the same way, by maximum likelihood instead) with it too. The
+        % raw s1_shear_k/s2_shear_k channel keeps its own separate,
+        % checkbox-tied Panchev(epsilon) curve, untouched by this pair.
+        PanchevCoOrder cell = {'s1_panchev_co','s2_panchev_co'}
+        PanchevMleOrder cell = {'s1_panchev_mle','s2_panchev_mle'}
+
         WavAxes                          % wavenumber-domain panel, below SpecAxes
         WavLines struct = struct()       % _k channel name -> observed line handle
         WavTheoryLines struct = struct() % Batchelor/Panchev theory line handle, keyed by
-                                          % its own checkbox name (_k channel name for
-                                          % Panchev, t{1,2}_batchelor_{obs,mle} for Batchelor)
-        WavCheckPanel    % 2-column checkbox panel next to WavAxes (_k channels+cutoffs | Batchelor obs+MLE)
+                                          % its own checkbox name (_k channel name for the
+                                          % raw-Panchev/s1_shear_k pairing, t{1,2}_batchelor_
+                                          % {obs,mle}/s{1,2}_panchev_{co,mle} for the
+                                          % decoupled overlays)
+        WavCheckPanel    % 2-column checkbox panel next to WavAxes (_k channels+cutoffs | Batchelor obs+MLE | Panchev co+MLE)
         WavDivLbl        % "Wavenumber" divider label, rebuilt per file
         BatchelorObsDivLbl  % "Batchelor (from data)" divider label, rebuilt per file
         BatchelorMleDivLbl  % "Batchelor (MLE)" divider label, rebuilt per file
+        PanchevCoDivLbl     % "Panchev (co)" divider label, rebuilt per file
+        PanchevMleDivLbl    % "Panchev (MLE)" divider label, rebuilt per file
         DynamicWavKeys cell = {}  % currently-built _k/cutoff/Batchelor checkbox field
                                   % names, so they can be torn down before the
                                   % next file's rebuild (see rebuildWavCheckboxes)
@@ -275,6 +290,12 @@ classdef MODvis_spectra < handle
             end
             for i = 1:numel(app.BatchelorMleOrder)
                 app.ChannelOn.(app.BatchelorMleOrder{i}) = true;
+            end
+            for i = 1:numel(app.PanchevCoOrder)
+                app.ChannelOn.(app.PanchevCoOrder{i}) = true;
+            end
+            for i = 1:numel(app.PanchevMleOrder)
+                app.ChannelOn.(app.PanchevMleOrder{i}) = true;
             end
             app.YTickTextHandles = cell(app.NRows,1);
             app.YTickTextHandles2 = cell(app.NRows,1);
@@ -985,8 +1006,10 @@ classdef MODvis_spectra < handle
             % spectra.*_k channel this file has (getWavChannelList) plus
             % the wavenumber cutoffs (WavCutoffOrder) when this file
             % carries them; column 2: Batchelor theory-overlay checkboxes
-            % (BatchelorObsOrder/BatchelorMleOrder), each only offered when
-            % this file actually carries the corresponding chi/chi_mle
+            % (BatchelorObsOrder/BatchelorMleOrder) and Panchev theory-
+            % overlay checkboxes (PanchevCoOrder/PanchevMleOrder), each
+            % only offered when this file actually carries the
+            % corresponding chi/chi_mle or epsilon_co/epsilon_mle
             % channel. Row count varies file to file (legacy Profile files
             % only; new-format files have none), so it's torn down and
             % rebuilt on every onFileSelected rather than built once.
@@ -1003,6 +1026,8 @@ classdef MODvis_spectra < handle
             if isgraphics(app.WavDivLbl); delete(app.WavDivLbl); end
             if isgraphics(app.BatchelorObsDivLbl); delete(app.BatchelorObsDivLbl); end
             if isgraphics(app.BatchelorMleDivLbl); delete(app.BatchelorMleDivLbl); end
+            if isgraphics(app.PanchevCoDivLbl); delete(app.PanchevCoDivLbl); end
+            if isgraphics(app.PanchevMleDivLbl); delete(app.PanchevMleDivLbl); end
 
             wavChannels = app.getWavChannelList();
             availableWavCutoffs = {};
@@ -1039,6 +1064,25 @@ classdef MODvis_spectra < handle
                 end
             end
 
+            epsilonCo  = app.getFieldOr(app.CurrentData, 'epsilonCo', struct());
+            epsilonMle = app.getFieldOr(app.CurrentData, 'epsilonMle', struct());
+            availablePanchevCo = {};
+            for i = 1:numel(app.PanchevCoOrder)
+                ch = app.PanchevCoOrder{i};
+                base = ch(1:2); % 's1'/'s2'
+                if isfield(epsilonCo, base) && ~isempty(epsilonCo.(base))
+                    availablePanchevCo{end+1} = ch; %#ok<AGROW>
+                end
+            end
+            availablePanchevMle = {};
+            for i = 1:numel(app.PanchevMleOrder)
+                ch = app.PanchevMleOrder{i};
+                base = ch(1:2);
+                if isfield(epsilonMle, base) && ~isempty(epsilonMle.(base))
+                    availablePanchevMle{end+1} = ch; %#ok<AGROW>
+                end
+            end
+
             col1Rows = 0;
             if ~isempty(wavChannels) || ~isempty(availableWavCutoffs) || ~isempty(availableModeledWavCutoffs)
                 col1Rows = 1 + numel(wavChannels) + numel(availableWavCutoffs) ...
@@ -1050,6 +1094,12 @@ classdef MODvis_spectra < handle
             end
             if ~isempty(availableBatchelorMle)
                 col2Rows = col2Rows + 1 + numel(availableBatchelorMle); % +1 for "Batchelor (MLE)"
+            end
+            if ~isempty(availablePanchevCo)
+                col2Rows = col2Rows + 1 + numel(availablePanchevCo); % +1 for "Panchev (co)"
+            end
+            if ~isempty(availablePanchevMle)
+                col2Rows = col2Rows + 1 + numel(availablePanchevMle); % +1 for "Panchev (MLE)"
             end
 
             if col1Rows == 0 && col2Rows == 0
@@ -1107,6 +1157,30 @@ classdef MODvis_spectra < handle
                 for i = 1:numel(availableBatchelorMle)
                     row = row + 1;
                     ch = availableBatchelorMle{i};
+                    app.addChannelCheckbox(ch, ch(1:2), app.WavCheckPanel, row, 2);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
+            end
+            if ~isempty(availablePanchevCo)
+                row = row + 1;
+                app.PanchevCoDivLbl = uilabel(app.WavCheckPanel, 'Text', 'Panchev (co)', 'FontWeight', 'bold');
+                app.PanchevCoDivLbl.Layout.Row = row; app.PanchevCoDivLbl.Layout.Column = 2;
+                app.PanchevCoDivLbl.FontSize = 10;
+                for i = 1:numel(availablePanchevCo)
+                    row = row + 1;
+                    ch = availablePanchevCo{i};
+                    app.addChannelCheckbox(ch, ch(1:2), app.WavCheckPanel, row, 2);
+                    app.DynamicWavKeys{end+1} = ch;
+                end
+            end
+            if ~isempty(availablePanchevMle)
+                row = row + 1;
+                app.PanchevMleDivLbl = uilabel(app.WavCheckPanel, 'Text', 'Panchev (MLE)', 'FontWeight', 'bold');
+                app.PanchevMleDivLbl.Layout.Row = row; app.PanchevMleDivLbl.Layout.Column = 2;
+                app.PanchevMleDivLbl.FontSize = 10;
+                for i = 1:numel(availablePanchevMle)
+                    row = row + 1;
+                    ch = availablePanchevMle{i};
                     app.addChannelCheckbox(ch, ch(1:2), app.WavCheckPanel, row, 2);
                     app.DynamicWavKeys{end+1} = ch;
                 end
@@ -1231,6 +1305,18 @@ classdef MODvis_spectra < handle
                     S2.spectra.([ch '_shear_k']) = Profile.Ps_shear_k.(ch);
                 end
             end
+            % Coherence-corrected shear wavenumber spectrum (vibration/
+            % acceleration contamination removed via Cs1a/Cs2a) - same
+            % shape as Ps_shear_k, ends in '_k' so it's picked up by the
+            % same generic *_k checkbox/plotting machinery for free (see
+            % getWavChannelList).
+            if isfield(Profile, 'Ps_shear_co_k') && isstruct(Profile.Ps_shear_co_k)
+                coChans = fieldnames(Profile.Ps_shear_co_k);
+                for iG = 1:numel(coChans)
+                    ch = coChans{iG};
+                    S2.spectra.([ch '_shear_co_k']) = Profile.Ps_shear_co_k.(ch);
+                end
+            end
 
             % --- Scalar-per-scan inputs needed to overlay theoretical
             % Batchelor (temperature channels) / Panchev (shear channels)
@@ -1253,6 +1339,25 @@ classdef MODvis_spectra < handle
             chi_mle = app.getFieldOr(Profile, 'chi_mle', []);
             if ~isempty(chi_mle) && size(chi_mle,2) >= 2
                 S2.chi_mle = struct('t1', chi_mle(:,1), 't2', chi_mle(:,2));
+            end
+            % epsilon_co/epsilon_mle - Panchev's analogue of chi/chi_mle:
+            % both are fit against Ps_shear_co_k (eps1_mmp direct fit vs.
+            % maximum likelihood - see mod_efe_scan_epsilon.m), not the raw
+            % Ps_shear_k plain 'epsilon' already used by the Panchev curve
+            % tied to s1_shear_k/s2_shear_k. Same column order as sh_fc/
+            % sh_kc (column 1 = s1, column 2 = s2 - see cutoffPairs below).
+            % Named distinctly from row1FieldRegistry's raw 'epsilon_co'/
+            % 'epsilon_mle' (that dropdown's scalar-per-scan copies), same
+            % as chi/chi_raw above.
+            S2.epsilonCo = struct();
+            epsilon_co = app.getFieldOr(Profile, 'epsilon_co', []);
+            if ~isempty(epsilon_co) && size(epsilon_co,2) >= 2
+                S2.epsilonCo = struct('s1', epsilon_co(:,1), 's2', epsilon_co(:,2));
+            end
+            S2.epsilonMle = struct();
+            epsilon_mle = app.getFieldOr(Profile, 'epsilon_mle', []);
+            if ~isempty(epsilon_mle) && size(epsilon_mle,2) >= 2
+                S2.epsilonMle = struct('s1', epsilon_mle(:,1), 's2', epsilon_mle(:,2));
             end
             S2.kvis = app.getFieldOr(Profile, 'kvis', []);
             S2.ktemp = app.getFieldOr(Profile, 'ktemp', []);
@@ -2416,16 +2521,21 @@ classdef MODvis_spectra < handle
 
         function plotWavenumberSpectrum(app, idx)
             % Any wavenumber-domain channel this file has (getWavChannelList
-            % - t1_Tg_k/t2_Tg_k/s1_shear_k/s2_shear_k today, generalizes to
-            % whatever *_k field Profile carries), each gated by its own
-            % dynamically-built checkbox (rebuildWavCheckboxes). Shear
-            % channels ('s*') are overlaid with a theoretical Panchev curve
-            % tied to that same checkbox. Temperature channels ('t*') get
-            % their Batchelor theory curves separately below, gated by
-            % their own BatchelorObsOrder/BatchelorMleOrder checkboxes
-            % instead - independent of whether the observed *_Tg_k spectrum
-            % itself is shown. Cutoff wavenumbers (tg_kc/sh_kc) are drawn
-            % as vertical lines the same way as the observed channels.
+            % - t1_Tg_k/t2_Tg_k/s1_shear_k/s2_shear_k/s1_shear_co_k/
+            % s2_shear_co_k today, generalizes to whatever *_k field
+            % Profile carries), each gated by its own dynamically-built
+            % checkbox (rebuildWavCheckboxes). The raw shear channels
+            % (s1_shear_k/s2_shear_k only) are overlaid with a theoretical
+            % Panchev(epsilon) curve tied to that same checkbox. Temperature
+            % channels ('t*') get their Batchelor theory curves separately
+            % below, gated by their own BatchelorObsOrder/BatchelorMleOrder
+            % checkboxes instead - independent of whether the observed
+            % *_Tg_k spectrum itself is shown; the coherence-corrected
+            % shear channels get the same treatment via PanchevCoOrder/
+            % PanchevMleOrder (epsilon_co/epsilon_mle, both fit against
+            % Ps_shear_co_k - see normalizeLegacyProfile). Cutoff
+            % wavenumbers (tg_kc/sh_kc) are drawn as vertical lines the
+            % same way as the observed channels.
             cla(app.WavAxes);
             app.WavLines = struct();
             app.WavTheoryLines = struct();
@@ -2436,6 +2546,26 @@ classdef MODvis_spectra < handle
             kAxis = app.CurrentData.spectra.k;
             if isempty(kAxis) || idx > size(kAxis,1); return; end
             k = kAxis(idx,:);
+
+            % Some deployments (e.g. wirewalker upcasts) save Profile.k = f./w
+            % with a signed, negative fall speed w, so k comes out uniformly
+            % negative and nothing would pass the k>0 filter below - recompute
+            % from f and |w| instead of dropping the whole scan. Epsilon/chi
+            % are unaffected upstream (MOD_fish_lib already fits those against
+            % f./abs(w) internally); only the k array saved for plotting keeps
+            % the sign of w.
+            if ~any(isfinite(k) & k > 0) && isfield(app.CurrentData.spectra, 'f')
+                wScan = NaN;
+                if isfield(app.CurrentData,'w') && numel(app.CurrentData.w) >= idx
+                    wScan = app.CurrentData.w(idx);
+                end
+                if isfinite(wScan) && wScan ~= 0
+                    k = app.CurrentData.spectra.f(:)' ./ abs(wScan);
+                else
+                    k = abs(k);
+                end
+            end
+
             keep = isfinite(k) & k > 0;
             if ~any(keep); return; end
 
@@ -2444,6 +2574,8 @@ classdef MODvis_spectra < handle
             ktemp   = app.scalarOr(app.getFieldOr(app.CurrentData, 'ktemp', []), idx);
             chiObs  = app.getFieldOr(app.CurrentData, 'chi', struct());
             chiMle  = app.getFieldOr(app.CurrentData, 'chi_mle', struct());
+            epsilonCo  = app.getFieldOr(app.CurrentData, 'epsilonCo', struct());
+            epsilonMle = app.getFieldOr(app.CurrentData, 'epsilonMle', struct());
 
             hold(app.WavAxes,'on');
 
@@ -2460,7 +2592,7 @@ classdef MODvis_spectra < handle
                 h.Visible = app.ChannelOn.(ch);
                 app.WavLines.(ch) = h;
 
-                if startsWith(base, 's') && isfinite(epsilon) && isfinite(kvis)
+                if startsWith(base, 's') && endsWith(ch, '_shear_k') && isfinite(epsilon) && isfinite(kvis)
                     Pan = mod_scan_panchev_spectrum(epsilon, kvis, k(keep));
                     ht = loglog(app.WavAxes, k(keep), Pan, '--', 'Color', clr, 'LineWidth', 1);
                     ht.Visible = app.ChannelOn.(ch);
@@ -2468,11 +2600,15 @@ classdef MODvis_spectra < handle
                 end
             end
 
-            % ----- Batchelor theory overlays (t1/t2), each on its own
-            % checkbox - drawn regardless of whether the corresponding
-            % observed t{1,2}_Tg_k spectrum checkbox is on.
+            % ----- Batchelor theory overlays (t1/t2) and Panchev theory
+            % overlays for the coherence-corrected shear channels (s1/s2),
+            % each on its own checkbox - drawn regardless of whether the
+            % corresponding observed t{1,2}_Tg_k/s{1,2}_shear_co_k spectrum
+            % checkbox is on.
             app.plotBatchelorOverlay(app.BatchelorObsOrder, chiObs, epsilon, kvis, ktemp, k, keep, idx, '--');
             app.plotBatchelorOverlay(app.BatchelorMleOrder, chiMle, epsilon, kvis, ktemp, k, keep, idx, ':');
+            app.plotPanchevOverlay(app.PanchevCoOrder,  epsilonCo,  kvis, k, keep, idx, '--');
+            app.plotPanchevOverlay(app.PanchevMleOrder, epsilonMle, kvis, k, keep, idx, ':');
 
             for i = 1:numel(app.WavCutoffOrder)
                 ch = app.WavCutoffOrder{i};
@@ -2540,6 +2676,33 @@ classdef MODvis_spectra < handle
                 clr = app.getSignalColor(base);
                 Psg = mod_scan_batchelor_spectrum(epsilon, chi, kvis, ktemp, k(keep));
                 ht = loglog(app.WavAxes, k(keep), Psg, style, 'Color', clr, 'LineWidth', 1);
+                ht.Visible = app.ChannelOn.(ch);
+                app.WavTheoryLines.(ch) = ht;
+            end
+        end
+
+        function plotPanchevOverlay(app, order, epsilonStruct, kvis, k, keep, idx, style)
+            % Draws one Panchev theory curve per checkbox in `order`
+            % (PanchevCoOrder or PanchevMleOrder) using epsilonStruct.s1/
+            % .s2 (Profile.epsilon_co or .epsilon_mle, both fit against
+            % Ps_shear_co_k - see normalizeLegacyProfile) - shared by both,
+            % only `epsilonStruct` and `style` differ between the two call
+            % sites in plotWavenumberSpectrum, same pattern as
+            % plotBatchelorOverlay.
+            for i = 1:numel(order)
+                ch = order{i};
+                if ~isfield(app.ChannelCheck, ch) || strcmp(app.ChannelCheck.(ch).Visible, 'off')
+                    continue
+                end
+                base = ch(1:2); % 's1'/'s2'
+                if ~isfield(epsilonStruct, base); continue; end
+                epsilonVal = app.scalarOr(epsilonStruct.(base), idx);
+                if ~(isfinite(epsilonVal) && isfinite(kvis))
+                    continue
+                end
+                clr = app.getSignalColor(base);
+                Pan = mod_scan_panchev_spectrum(epsilonVal, kvis, k(keep));
+                ht = loglog(app.WavAxes, k(keep), Pan, style, 'Color', clr, 'LineWidth', 1);
                 ht.Visible = app.ChannelOn.(ch);
                 app.WavTheoryLines.(ch) = ht;
             end
