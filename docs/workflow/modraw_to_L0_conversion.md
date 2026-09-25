@@ -79,7 +79,7 @@ modraw_dir = fullfile(data_root, 'raw');
 L0_files = MODprocess_all_modraw_to_L0(modraw_dir);  % L0/ created automatically next to raw/
 
 % Visualize
-app = MODvis_timeseries(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization/matlab
+app = MODvis_timeseries(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization
 ```
 
 To process a single file directly (e.g. for debugging one file without the folder machinery):
