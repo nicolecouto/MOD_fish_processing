@@ -190,7 +190,7 @@ fprintf('max |manual - periodogram-per-segment| = %.3e (should be ~0)\n', ...
 %% figure
 n_rows = 6;
 gap = [0.05 0.06]; marg_h = [0.05 0.05]; marg_w = [0.07 0.03];
-fig = aguFigure(16, (17/5)*n_rows, 10);
+fig = aguFigure(16, (17/5)*n_rows, 14);
 cmap = lines(max(n_segs,1));   % segment i's color (cmap(i,:)) is reused in every later panel that shows that segment
 
 % 0a. between-scan overlap, epsi domain: this scan (black) and its

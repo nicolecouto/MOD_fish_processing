@@ -137,8 +137,8 @@ scan_hues = scan_hues(:,1);
 
 %% figure
 n_rows = 3;
-gap = [0.13 0.05]; marg_h = [0.06 0.05]; marg_w = [0.09 0.03];
-fig = aguFigure(14, 15, 10);
+gap = [0.13 0.05]; marg_h = [0.06 0.10]; marg_w = [0.09 0.03];
+fig = aguFigure(14, 15, 14);
 
 x_max = scan_ends(end) + 0.02*scan_step;
 
@@ -156,8 +156,9 @@ ylim(ax1, [0.3, n_scans+0.7]);
 xlim(ax1, [0, x_max]);
 ylabel(ax1, 'scan index');
 xlabel(ax1, 'sample #');
-th1 = title(ax1, sprintf('%d scans, scan\\_length=%d, scan\\_step=%d ((1-scan\\_overlap)\\times scan\\_length, scan\\_overlap=%.0f%%) - center scan (black outline) highlighted in panel 3', ...
-    n_scans, scan_length, scan_step, 100*opts.scan_overlap));
+th1 = title(ax1, {sprintf('%d scans, scan\\_length=%d, scan\\_step=%d ((1-scan\\_overlap)\\times scan\\_length, scan\\_overlap=%.0f%%)', ...
+    n_scans, scan_length, scan_step, 100*opts.scan_overlap), ...
+    'center scan (black outline) highlighted in panel 3'});
 set(ax1, 'YTick', 1:n_scans);
 apply_sample_ticks(ax1, fft_length, x_max);
 add_time_axis(ax1, Fs_epsi);
@@ -187,8 +188,9 @@ ylim(ax2, [0.3, n_scans+0.7]);
 xlim(ax2, [0, x_max]);
 ylabel(ax2, 'scan index');
 xlabel(ax2, 'sample #');
-th2 = title(ax2, sprintf('each scan''s %d segment(s), fft\\_length=%d, 50%% within-scan overlap (hardcoded) - shades = same scan', ...
-    n_segs, fft_length));
+th2 = title(ax2, {sprintf('each scan''s %d segment(s), fft\\_length=%d, 50%% within-scan overlap (hardcoded)', ...
+    n_segs, fft_length), ...
+    'shades = same scan'});
 set(ax2, 'YTick', 1:n_scans);
 apply_sample_ticks(ax2, fft_length, x_max);
 add_time_axis(ax2, Fs_epsi);
@@ -208,7 +210,7 @@ end
 footprint_m = scan_length/Fs_epsi*fall_speed;
 kmin = Fs_epsi/(fft_length*fall_speed);
 text(ax3, to_m(scan_starts(i_center)), i_center+0.55, sprintf('scan length = %.2f m', footprint_m), ...
-    'FontWeight','bold', 'HorizontalAlignment','left', 'FontSize', 9);
+    'FontWeight','bold', 'HorizontalAlignment','left', 'FontSize', 12);
 ylim(ax3, [0.3, n_scans+0.7]);
 xlim(ax3, [0, to_m(x_max)]);
 ylabel(ax3, 'scan index');

@@ -81,6 +81,23 @@ function fig = MODplot_chi_deconvolution_steps(scanA, scanB, metadata, channel, 
 %                        chi sweep spans, centered on that scan's own
 %                        real chi. Default: 2 (i.e. real_chi/10 to
 %                        real_chi*10, 5 curves).
+%   panel1_ylim       - y-limits for panel 1 (raw voltage spectrum), [V^2
+%                        Hz^-1]. Default: [1e-15 1e-8] - crops out the
+%                        faint background chi-sweep curves' extreme tails
+%                        so the two real (solid) measured spectra fill the
+%                        panel instead of being squashed into a sliver.
+%   panel6_ylim       - y-limits for panel 6 (wavenumber spectrum +
+%                        Batchelor fit), [degC^2 m^-1 cpm^-1]. Default:
+%                        [1e-7 1e0] - same reasoning as panel1_ylim,
+%                        applied to where the two real spectra's rolloffs
+%                        actually sit rather than the full Batchelor fit's
+%                        underflow tail.
+%   panel6_kmin       - lower x-limit for panel 6, [cpm]. Default: 1
+%                        (upper limit stays auto) - k=f/abs(w) inherits
+%                        f's full range down to a fraction of a Hz, which
+%                        autoscale would otherwise show as several empty
+%                        decades to the left of where either real scan's
+%                        data actually starts.
 %
 % OUTPUTS
 %   fig - the figure handle.
@@ -131,11 +148,21 @@ arguments
     metadata (1,1) struct
     channel (1,:) char
     opts.chi_sweep_decades (1,1) double {mustBePositive} = 2
+    opts.panel1_ylim (1,2) double {mustBePositive} = [1e-15 1e-8]
+    opts.panel6_ylim (1,2) double {mustBePositive} = [1e-7 1e0]
+    opts.panel6_kmin (1,1) double {mustBePositive} = 1e0
 end
 
 fig = aguFigure(7.5, 14, 9);
-g = [0.045 0.05]; v = [0.04 0.045]; h = [0.13 0.03]; % g(1): row gap wide enough for one panel's x-tick labels + the next panel's title; panel 1's own title carries the channel name, so no separate sgtitle is needed (sgtitle's automatic vertical placement doesn't account for subtightplot's custom margins and rendered inside panel 1's axes instead of above it)
+% h(2)=0.30: right margin wide enough to hold every panel's legend without
+% shrinking any axes for it - panels 1/3/4/5/6 all call legend('eastoutside'),
+% which by itself would shrink just their own axes to make room, leaving
+% panel 2 (no legend) wider than the rest. Every axis is instead built at
+% this same uniform width via LEGEND_REF_POS below, and reset back to it
+% right after MATLAB's own auto-shrink, so all 6 panels line up exactly.
+g = [0.045 0.05]; v = [0.04 0.045]; h = [0.13 0.30]; % g(1): row gap wide enough for one panel's x-tick labels + the next panel's title; panel 1's own title carries the channel name, so no separate sgtitle is needed (sgtitle's automatic vertical placement doesn't account for subtightplot's custom margins and rendered inside panel 1's axes instead of above it)
 nPanels = 6;
+LEGEND_GAP = 0.012; % normalized-figure-units gap between an axis's right edge and its outside legend
 
 electronics_filter = metadata.AFE.(channel).electronics_filter(:)';
 volts_to_C1 = metadata.AFE.(channel).volts_to_C(1);
@@ -146,18 +173,21 @@ chainA = deconvolutionChain(scanA, electronics_filter, volts_to_C1, tau0, expone
 chainB = deconvolutionChain(scanB, electronics_filter, volts_to_C1, tau0, exponent);
 
 %% Panel 1: raw spectrum + chi-decade-sweep background curves
-subtightplot(nPanels,1,1,g,v,h);
+ax1 = subtightplot(nPanels,1,1,g,v,h);
+REF_POS = ax1.Position; % captured before any legend touches an axis - every panel's pristine (pre-legend) Position is identical since they share one column, so this is the width/left every axis gets reset to below
 hold on
 plotChiBackground(scanA, electronics_filter, volts_to_C1, tau0, exponent, opts.chi_sweep_decades, 0.35);
 plotChiBackground(scanB, electronics_filter, volts_to_C1, tau0, exponent, opts.chi_sweep_decades, 0.35);
 plot(scanA.f, scanA.Pt_volt_f, 'Color', scanA.color, 'LineWidth', 1.5, 'DisplayName', scanA.label);
 plot(scanB.f, scanB.Pt_volt_f, 'Color', scanB.color, 'LineWidth', 1.5, 'DisplayName', scanB.label);
 xlog; ylog; grid on
+ylim(opts.panel1_ylim); % crop the background chi-sweep curves' tails so the two real (solid) spectra aren't squashed into a sliver - see panel1_ylim's own doc
 xlabel('f [Hz]'); ylabel('P_{volt} [V^2 Hz^{-1}]');
 title(sprintf('1. Raw voltage spectrum (channel %s)', channel));
 text(0.02,0.05,sprintf('\\epsilon_A=%.2e W/kg   \\epsilon_B=%.2e W/kg', scanA.epsilon, scanB.epsilon), ...
     'Units','normalized','FontSize',8);
-legend('location','eastoutside');
+lgd1 = legend('location','eastoutside');
+fixAxisWidthAndLegend(ax1, lgd1, REF_POS, LEGEND_GAP);
 
 %% Panel 2: electronics/ADC filter (shared, deployment-constant)
 subtightplot(nPanels,1,2,g,v,h);
@@ -167,17 +197,18 @@ xlabel('f [Hz]'); ylabel('H_{elec}');
 title('2. Electronics/ADC filter');
 
 %% Panel 3: after calibration + ADC-filter deconvolution
-subtightplot(nPanels,1,3,g,v,h);
+ax3 = subtightplot(nPanels,1,3,g,v,h);
 hold on
 plot(scanA.f, chainA.Pt_T_f_step1, 'Color', scanA.color, 'LineWidth', 1.5, 'DisplayName', scanA.label);
 plot(scanB.f, chainB.Pt_T_f_step1, 'Color', scanB.color, 'LineWidth', 1.5, 'DisplayName', scanB.label);
 xlog; ylog; grid on
 xlabel('f [Hz]'); ylabel('\Phi_T [degC^2 Hz^{-1}]');
 title('3. After calibration + ADC deconvolution');
-legend('location','eastoutside');
+lgd3 = legend('location','eastoutside');
+fixAxisWidthAndLegend(ax3, lgd3, REF_POS, LEGEND_GAP);
 
 %% Panel 4: FP07 thermal-lag filter
-subtightplot(nPanels,1,4,g,v,h);
+ax4 = subtightplot(nPanels,1,4,g,v,h);
 hold on
 plot(scanA.f, chainA.H_thermal, 'Color', scanA.color, 'LineWidth', 1.5, 'DisplayName', scanA.label);
 plot(scanB.f, chainB.H_thermal, 'Color', scanB.color, 'LineWidth', 1.5, 'DisplayName', scanB.label);
@@ -188,20 +219,22 @@ text(0.02,0.15,'H = 1 / (1 + (2\pi\tau f)^2),   \tau = \tau_0 |w|^{exponent}', .
     'Units','normalized','FontSize',8);
 text(0.02,0.05,sprintf('\\tau_0=%.4g s   exponent=%.2f   w_A=%.3f m/s   w_B=%.3f m/s', ...
     tau0, exponent, scanA.w, scanB.w), 'Units','normalized','FontSize',8);
-legend('location','eastoutside');
+lgd4 = legend('location','eastoutside');
+fixAxisWidthAndLegend(ax4, lgd4, REF_POS, LEGEND_GAP);
 
 %% Panel 5: fully deconvolved spectrum
-subtightplot(nPanels,1,5,g,v,h);
+ax5 = subtightplot(nPanels,1,5,g,v,h);
 hold on
 plot(scanA.f, chainA.Pt_T_f_step2, 'Color', scanA.color, 'LineWidth', 1.5, 'DisplayName', scanA.label);
 plot(scanB.f, chainB.Pt_T_f_step2, 'Color', scanB.color, 'LineWidth', 1.5, 'DisplayName', scanB.label);
 xlog; ylog; grid on
 xlabel('f [Hz]'); ylabel('\Phi_T [degC^2 Hz^{-1}]');
 title('5. Fully deconvolved spectrum');
-legend('location','eastoutside');
+lgd5 = legend('location','eastoutside');
+fixAxisWidthAndLegend(ax5, lgd5, REF_POS, LEGEND_GAP);
 
 %% Panel 6: wavenumber spectrum + exact Batchelor overlay
-subtightplot(nPanels,1,6,g,v,h);
+ax6 = subtightplot(nPanels,1,6,g,v,h);
 hold on
 plot(chainA.k, chainA.Pt_Tg_k, 'Color', scanA.color, 'LineWidth', 1.5, 'DisplayName', [scanA.label ' (observed)']);
 plot(chainB.k, chainB.Pt_Tg_k, 'Color', scanB.color, 'LineWidth', 1.5, 'DisplayName', [scanB.label ' (observed)']);
@@ -210,15 +243,33 @@ PsgB = batchelor_spectrum(scanB.epsilon, scanB.chi, scanB.nu, scanB.ktemp, chain
 plot(chainA.k, reshape(PsgA,size(chainA.k)), '--', 'Color', scanA.color, 'LineWidth', 1, 'DisplayName', 'Batchelor fit A');
 plot(chainB.k, reshape(PsgB,size(chainB.k)), '--', 'Color', scanB.color, 'LineWidth', 1, 'DisplayName', 'Batchelor fit B');
 xlog; ylog; grid on
+ylim(opts.panel6_ylim); % crop the Batchelor fits' underflow tails so the two real spectra's rolloffs aren't squashed into a sliver - see panel6_ylim's own doc
+xl6 = xlim; xlim([opts.panel6_kmin, xl6(2)]); % drop the empty low-k decades neither scan has data in - see panel6_kmin's own doc
 xlabel('k [cpm]'); ylabel('\Phi_{T_z} [degC^2 m^{-1} cpm^{-1}]');
 title('6. Wavenumber spectrum + Batchelor fit');
 text(0.02,0.15,sprintf('\\chi_A=%.2e   \\epsilon_A=%.2e   w_A=%.3f m/s', scanA.chi, scanA.epsilon, scanA.w), ...
     'Units','normalized','FontSize',8);
 text(0.02,0.05,sprintf('\\chi_B=%.2e   \\epsilon_B=%.2e   w_B=%.3f m/s', scanB.chi, scanB.epsilon, scanB.w), ...
     'Units','normalized','FontSize',8);
-legend('location','eastoutside');
+lgd6 = legend('location','eastoutside');
+fixAxisWidthAndLegend(ax6, lgd6, REF_POS, LEGEND_GAP);
 
 end %end function
+
+function fixAxisWidthAndLegend(ax, lgd, refPos, gapNorm)
+% Undoes legend('eastoutside')'s automatic axis-shrink so every panel's
+% axes end up the same width regardless of whether it has a legend (see
+% REF_POS's own comment above) - MATLAB shrinks only the axes that own an
+% outside legend, which otherwise leaves panel 2 (no legend) wider than
+% every other panel. Resets ax back to the shared reference width/left,
+% then slides the legend to sit just outside that restored right edge -
+% the legend's own auto-computed width/height (from its text content) are
+% left alone, only its position is corrected.
+ax.Units = 'normalized';
+lgd.Units = 'normalized';
+ax.Position([1 3]) = refPos([1 3]);
+lgd.Position(1) = ax.Position(1) + ax.Position(3) + gapNorm;
+end
 
 function chain = deconvolutionChain(scan, electronics_filter, volts_to_C1, tau0, exponent)
 % Splits mod_scan_fpo7_volts_to_Tg_spectrum.m's single H_total division
