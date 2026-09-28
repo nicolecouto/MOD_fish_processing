@@ -30,13 +30,26 @@ app = MODvis_timeseries('/path/to/L0');    % or point it at a folder directly
 Browse a folder of `.mat` files carrying per-scan spectra - either this repo's own L2/profile
 output or a legacy `MOD_fish_lib`/EPSILOMETER `Profile*.mat`. Shows pressure and up to 2 raw
 channels per row for context, and plots the full 7-channel raw spectrum for any scan you click.
+Every curve has a checkbox to show or hide it.
 
 ```matlab
 app = MODvis_spectra();
 app = MODvis_spectra('/path/to/profiles');
 ```
 
-*No example screenshot committed yet.*
+![Example MODvis_spectra.m window, ASTRAL Profile100 scan 159](../concepts/images/MODvis_spectra_example.png)
+
+The frequency-spectrum panel's y-axis is in V²/Hz for the t/s channels and g²/Hz for the
+accelerometers. Reference lines on it:
+
+- **Noise floors** (legacy `Profile*.mat` only): FPO7 bench noise, shifted per channel, and modeled
+  - see [From raw volts to a trustworthy wavenumber spectrum](../concepts/spectral_filtering_and_noise_floors.md#4-where-the-noise-floor-comes-in).
+  Shaded up to 3x (the cutoff search's `SN_min`).
+- **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits
+  over a 0-2.5 V range, each drawn solid at Δ²/12/(Fs/2) and dashed at Δ²/(Fs/2), plus the
+  accelerometer sensor noise at (20e-6)² g²/Hz - see
+  [ADC bit noise](../concepts/spectral_filtering_and_noise_floors.md#adc-bit-noise-reference-lines).
+  Same levels as the live plot in `MODSOM_liveplot`'s `Faster_app.py`.
 
 ### MODvis_twist_timeseries.m
 

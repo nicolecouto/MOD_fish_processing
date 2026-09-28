@@ -26,7 +26,9 @@ classdef MODvis_spectra < handle
     %     which fields/units are plotted.
     %   - Click a point in any of the 3 rows to shade that scan's time
     %     window across all three and plot its raw spectrum (all 7
-    %     channels, toggle on/off via checkboxes) in the bottom axes.
+    %     channels, toggle on/off via checkboxes) in the bottom axes,
+    %     with flat ADC bit-noise and accelerometer noise reference lines
+    %     (BitNoiseOrder) and, for legacy files, FPO7 noise floors.
 
     properties
         Fig matlab.ui.Figure
@@ -81,7 +83,8 @@ classdef MODvis_spectra < handle
         SpecLines struct = struct()     % channel name -> line handle
         SpecShade struct = struct()     % PhysChannelOrder name -> noise-floor-to-3x shade patch handle
         ChannelOn struct = struct()     % channel name -> logical, persists across files
-        SpecCheckPanel   % 2-column checkbox panel next to SpecAxes (raw | physical+cutoffs)
+        SpecCheckPanel   % 2-column checkbox panel next to SpecAxes (raw+bit noise | physical+cutoffs)
+        BitNoiseDivLbl   % "Bit noise" divider, with the solid/dashed line-style key
         ChannelCheck struct = struct()  % channel name -> uicheckbox handle
         ChannelOrder cell = {'t1_volt_f','t2_volt_f','s1_volt_f','s2_volt_f','a1_g_f','a2_g_f','a3_g_f'}
         SpecTitle matlab.ui.control.Label
@@ -92,6 +95,15 @@ classdef MODvis_spectra < handle
         % ChannelOrder above, just a second group of rows ("Noise floors"
         % divider) appended below.
         PhysChannelOrder cell = {'fpo7_noise_f','t1_noise_shifted_f','t2_noise_shifted_f','fpo7_noise_modeled_f'}
+
+        % Flat ADC bit-noise floors (24/20/16-bit) and accelerometer
+        % sensor noise, the same levels MODSOM_liveplot's Faster_app.py
+        % draws on its live spectra - see BitNoiseBits below and
+        % plotBitNoiseLines. Unlike PhysChannelOrder these need only
+        % Fs_epsi, so they show for both file formats. Their own group
+        % ("Bit noise" divider) under the raw channels in SpecCheckPanel's
+        % first column.
+        BitNoiseOrder cell = {'bit24_noise_f','bit20_noise_f','bit16_noise_f','accel_noise_f'}
 
         % Cutoff frequency/wavenumber - Profile.tg_fc/.sh_fc/.tg_kc/.sh_kc
         % are each [nbscan x 2], one column per channel (t1/t2 for tg_*,
@@ -249,6 +261,23 @@ classdef MODvis_spectra < handle
         % "still trustworthy" zone, not an arbitrary illustration.
         NoiseFloorShadeSNmin = 3
 
+        % Bit-noise floors (BitNoiseOrder), for an ADC of each bit depth
+        % over BitNoiseRangeV - t1/t2's 0-2.5 V range; the shear channels'
+        % ADC is configured bipolar +-2.5 V (though the signal only spans
+        % 0-2.5 V), so their step is 2x and their floor 4x these lines.
+        % With delta = BitNoiseRangeV/2^N, each bit depth is drawn twice
+        % in one color, flat over 0..Fs_epsi/2 (one-sided, like
+        % periodogram's 'psd' in mod_scan_get_spectra.m): solid at the
+        % quantization-noise mean square delta^2/12 / (Fs/2), dashed at
+        % delta^2 / (Fs/2). Colors match Faster_app.py's light theme.
+        BitNoiseBits = [24 20 16]
+        BitNoiseRangeV = 2.5
+        BitNoiseColors = [90 90 90; 180 60 60; 60 140 60]./255
+        % Accelerometer sensor noise from the accelerometer documentation,
+        % already in g^2/Hz (the units of the a1/a2/a3 _g_f spectra).
+        AccelNoisePSD = (20e-6)^2
+        AccelNoiseColor = [110 50 160]./255
+
         % Default floor for the wavenumber (bottom) spectrum panel's
         % y-axis minimum, applied whenever it's not manually locked -
         % several theory curves (Batchelor/Panchev) decay toward zero at
@@ -272,6 +301,9 @@ classdef MODvis_spectra < handle
             end
             for i = 1:numel(app.PhysChannelOrder)
                 app.ChannelOn.(app.PhysChannelOrder{i}) = true;
+            end
+            for i = 1:numel(app.BitNoiseOrder)
+                app.ChannelOn.(app.BitNoiseOrder{i}) = true;
             end
             for i = 1:numel(app.FreqCutoffOrder)
                 app.ChannelOn.(app.FreqCutoffOrder{i}) = true;
@@ -507,7 +539,7 @@ classdef MODvis_spectra < handle
             app.SpecAxes.FontSize = app.AxesTickFontSize;
             grid(app.SpecAxes,'on');
             xlabel(app.SpecAxes,'Frequency [Hz]');
-            ylabel(app.SpecAxes,'Power spectral density');
+            ylabel(app.SpecAxes,'PSD [V^2/Hz, g^2/Hz]');
 
             app.WavAxes = uiaxes(combinedRow);
             app.WavAxes.Layout.Row = 2; app.WavAxes.Layout.Column = 1;
@@ -517,12 +549,13 @@ classdef MODvis_spectra < handle
             ylabel(app.WavAxes,'Power spectral density');
 
             % Spec checkbox panel (static, built once here, visibility
-            % toggled per file): column 1 = raw channels, column 2 =
-            % noise floors + freq cutoffs.
+            % toggled per file): column 1 = raw channels + bit noise,
+            % column 2 = noise floors + freq cutoffs.
             nRawCb = numel(app.ChannelOrder);
+            nBitCb = numel(app.BitNoiseOrder);
             nPhysCb = numel(app.PhysChannelOrder);
             nFreqCutoffCb = numel(app.FreqCutoffOrder) + numel(app.ModeledFreqCutoffOrder);
-            col1Rows = 1 + nRawCb;                        % "Raw channels" + entries
+            col1Rows = 1 + nRawCb + 1 + nBitCb;           % "Raw channels" + entries + "Bit noise" + entries
             col2Rows = 1 + nPhysCb + 1 + nFreqCutoffCb;    % "Physical units" + entries + "Cutoffs" + entries
             specRows = max(col1Rows, col2Rows);
 
@@ -540,6 +573,24 @@ classdef MODvis_spectra < handle
             for i = 1:nRawCb
                 ch = app.ChannelOrder{i};
                 app.addChannelCheckbox(ch, ch, app.SpecCheckPanel, 1 + i, 1);
+            end
+
+            row = 1 + nRawCb + 1;
+            % Line-style key on the divider itself: a row of its own below
+            % the checkboxes is cut off at the panel's bottom edge.
+            app.BitNoiseDivLbl = uilabel(app.SpecCheckPanel, 'Interpreter', 'html', ...
+                'Text', '<b>Bit noise</b> (solid &Delta;&sup2;/12, dashed &Delta;&sup2;)');
+            app.BitNoiseDivLbl.Layout.Row = row; app.BitNoiseDivLbl.Layout.Column = 1;
+            app.BitNoiseDivLbl.FontSize = 10;
+            for i = 1:nBitCb
+                row = row + 1;
+                ch = app.BitNoiseOrder{i};
+                if strcmp(ch, 'accel_noise_f')
+                    lbl = 'accel noise';
+                else
+                    lbl = sprintf('%d-bit', app.BitNoiseBits(i));
+                end
+                app.addChannelCheckbox(ch, lbl, app.SpecCheckPanel, row, 1);
             end
 
             row = 1;
@@ -913,6 +964,13 @@ classdef MODvis_spectra < handle
             hasTempFs = isfield(app.CurrentData,'temperature') && ~isempty(app.CurrentData.temperature) ...
                 && isfield(app.CurrentData,'Fs_epsi') && isfinite(app.CurrentData.Fs_epsi);
             app.ChannelCheck.fpo7_noise_modeled_f.Visible = ~isempty(pu.noise_coefs) && hasTempFs;
+
+            % Bit-noise floors need only Fs_epsi (see plotBitNoiseLines).
+            hasFs = isfield(app.CurrentData,'Fs_epsi') && isfinite(app.CurrentData.Fs_epsi);
+            for i = 1:numel(app.BitNoiseOrder)
+                app.ChannelCheck.(app.BitNoiseOrder{i}).Visible = hasFs;
+            end
+            app.BitNoiseDivLbl.Visible = hasFs;
 
             % Frequency-domain cutoff checkboxes (vertical lines on SpecAxes).
             for i = 1:numel(app.FreqCutoffOrder)
@@ -1776,6 +1834,15 @@ classdef MODvis_spectra < handle
                 clr = app.ModeledNoiseColor;
                 return
             end
+            if strcmp(key, 'accel_noise_f')
+                clr = app.AccelNoiseColor;
+                return
+            end
+            iBit = find(strcmp(key, app.BitNoiseOrder(1:numel(app.BitNoiseBits))), 1);
+            if ~isempty(iBit)
+                clr = app.BitNoiseColors(iBit,:);
+                return
+            end
             % SignalColors is keyed by base channel name (t1/t2/s1/s2/
             % a1/a2/a3); every other key variant (t1_volt_f, t1_Tg_k,
             % a1_g_f, plain t1/s1/..., s1_fc/s2_fc/s1_kc/s2_kc) starts with
@@ -2262,6 +2329,8 @@ classdef MODvis_spectra < handle
                 end
             end
 
+            app.plotBitNoiseLines(f(keep));
+
             for i = 1:numel(app.FreqCutoffOrder)
                 ch = app.FreqCutoffOrder{i};
                 if ~isfield(app.ChannelCheck, ch) || strcmp(app.ChannelCheck.(ch).Visible, 'off')
@@ -2293,7 +2362,7 @@ classdef MODvis_spectra < handle
             % decade lines (10^-1, 10^0, 10^1, ...) show.
             set(app.SpecAxes,'XMinorGrid','off','YMinorGrid','off');
             xlabel(app.SpecAxes,'Frequency [Hz]');
-            ylabel(app.SpecAxes,'Power spectral density');
+            ylabel(app.SpecAxes,'PSD [V^2/Hz, g^2/Hz]');
 
             if app.SpecYLock && isfinite(app.SpecYMinField.Value) && isfinite(app.SpecYMaxField.Value) ...
                     && app.SpecYMaxField.Value > app.SpecYMinField.Value
@@ -2457,6 +2526,33 @@ classdef MODvis_spectra < handle
                     app.CurrentData.(kcField) = kc;
                 end
             end
+        end
+
+        function plotBitNoiseLines(app, f)
+            % Flat bit-noise floors and accelerometer sensor noise on
+            % SpecAxes (see BitNoiseBits), from f's lowest nonzero bin to
+            % its highest (Nyquist). Each bit depth's SpecLines entry is
+            % its [solid dashed] pair, so one checkbox toggles both.
+            fs = app.getFieldOr(app.CurrentData, 'Fs_epsi', NaN);
+            if ~isfinite(fs) || isempty(f)
+                return
+            end
+            fEnds = [f(1) f(end)];
+            for i = 1:numel(app.BitNoiseBits)
+                ch = app.BitNoiseOrder{i};
+                delta2 = (app.BitNoiseRangeV / 2^app.BitNoiseBits(i))^2;
+                clr = app.getSignalColor(ch);
+                hSolid = loglog(app.SpecAxes, fEnds, delta2/12/(fs/2) * [1 1], '-', 'Color', clr, 'LineWidth', 1);
+                hDashed = loglog(app.SpecAxes, fEnds, delta2/(fs/2) * [1 1], '--', 'Color', clr, 'LineWidth', 1);
+                h = [hSolid hDashed];
+                set(h, 'Visible', app.ChannelOn.(ch));
+                app.SpecLines.(ch) = h;
+            end
+            ch = 'accel_noise_f';
+            h = loglog(app.SpecAxes, fEnds, app.AccelNoisePSD * [1 1], '-.', ...
+                'Color', app.getSignalColor(ch), 'LineWidth', 1);
+            h.Visible = app.ChannelOn.(ch);
+            app.SpecLines.(ch) = h;
         end
 
         function Pxx = getPhysSpectrum(app, ch, pu, idx, f)

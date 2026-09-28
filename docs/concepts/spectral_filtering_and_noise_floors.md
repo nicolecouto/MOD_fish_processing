@@ -64,6 +64,17 @@ Two noise floors exist side by side:
 - **Bench (production path)** - `mod_scan_fpo7_bench_noise_f.m`, a cubic log-log polynomial fit to an actual bench measurement (probe disconnected, same electronics chain) from `MOD_fish_calibrations`. Rescaled to each scan's own high-frequency level via `mod_scan_fpo7_noise_adjust.m` before comparison.
 - **Modeled (exploratory)** - `mod_scan_fpo7_modeled_noise_f.m`, a physics-based Johnson/thermal + amplifier noise model, multiplied only by `electronics_filter` (not `H_thermal`) since electrical noise enters downstream of the bead's thermal inertia and never passes through it. Available as an overlay in `MODvis_spectra.m`; not yet wired into production cutoff-finding.
 
+### ADC bit noise (reference lines)
+
+Separate from the sensor noise floors above, `MODvis_spectra.m` also draws flat reference lines for the ADC's own quantization noise. They're not used by any cutoff search. An N-bit ADC spanning a range V has step size Δ = V/2^N, and rounding each sample to the nearest step adds an error uniformly distributed over ±Δ/2, with mean square Δ²/12 (RMS Δ/√12 ≈ 0.29 Δ). Uncorrelated from sample to sample, that error is white, so it spreads evenly over 0..Fs/2 in a one-sided PSD (the convention `mod_scan_get_spectra.m`'s `periodogram(..., 'psd')` uses):
+
+```
+floor = (V/2^N)^2 / 12 / (Fs/2)      % solid line: quantization mean square
+floor = (V/2^N)^2 / (Fs/2)           % dashed line: conservative 1-step-RMS level
+```
+
+With V = 2.5 V (the t1/t2 range) and Fs = 320 Hz, the 24-bit lines sit at 1.2e-17 (solid) and 1.4e-16 V²/Hz (dashed). The shear ADC is configured bipolar ±2.5 V, though the signal only ever spans 0-2.5 V, so its step is 2x and its floor 4x these lines; the signal also uses only half the codes, costing one bit of dynamic range. The accelerometer line is the sensor's own noise from its documentation, (20e-6)² = 4e-10 g²/Hz - far above the accelerometer ADC's bit noise, so the sensor noise is the one that matters there.
+
 The cutoff itself (`mod_scan_fpo7_cutoff.m` / `mod_scan_fpo7_cutoff_search.m`) is the last frequency bin where the (smoothed) spectrum stays above `SN_min=3` times whichever noise floor is in use, additionally capped at a known electrical-contamination tone (`contam_freq_hz`, deployment-specific - e.g. ~59 Hz on ASTRAL) so a persistent tone can't hold the spectrum artificially above the noise floor and pull the cutoff higher than the data actually supports. `mod_scan_calc_epsilon_obs.m`/`mod_scan_calc_chi_obs.m`'s direct integration and the MLE fits both restrict themselves to `k < kc = fc/abs(w)`.
 
 ## Reference table
@@ -77,6 +88,7 @@ The cutoff itself (`mod_scan_fpo7_cutoff.m` / `mod_scan_fpo7_cutoff_search.m`) i
 | Deconvolution | `mod_scan_fpo7_volts_to_Tg_spectrum.m` step 2, `mod_scan_shear_volts_to_shear_spectrum.m` step 1 | frequency -> frequency, sensor/electronics response divided out |
 | Frequency -> wavenumber | `mod_scan_fpo7_volts_to_Tg_spectrum.m` step 3, `mod_scan_shear_volts_to_shear_spectrum.m` step 3 | frequency -> wavenumber (Taylor's hypothesis + PSD Jacobian) |
 | Noise floor | `mod_scan_fpo7_bench_noise_f.m` (+`mod_scan_fpo7_noise_adjust.m`), `mod_scan_fpo7_modeled_noise_f.m` | frequency domain, compared against the deconvolved-but-not-yet-wavenumber spectrum |
+| ADC bit noise (reference only) | `MODvis_spectra.m` (`plotBitNoiseLines`) | frequency domain, flat, not used by any cutoff |
 | Cutoff | `mod_scan_fpo7_cutoff.m`, `mod_scan_fpo7_cutoff_search.m` | picks `fc` -> `kc = fc/abs(w)` |
 
 For the full narrated, step-numbered walkthrough of this same chain against real data (including the actual ASTRAL contamination-frequency investigation), see `docs/workflow/L2_calc_chi.md` (temperature/chi) and `docs/workflow/L2_calc_eps.md` (shear/epsilon) - this page is their concept-level companion, covering the physics/math background those pages assume.
