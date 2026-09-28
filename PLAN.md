@@ -685,7 +685,9 @@ Ran `/code-review` against the branch after the `chi_obs`/`chi_mle`/reorg work a
 
 ## 11. Wiki Update Checklist
 
-Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via `.github/workflows/docs.yml` — see Session Log 2026-07-09). Superseded the Notion wiki as the source of truth; pages live in-repo under `docs/workflow/` (what scripts do, how to run them) and `docs/concepts/` (physics/math background).
+Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via `.github/workflows/docs.yml` — see Session Log 2026-07-09). Superseded the Notion wiki as the source of truth; pages live in-repo under `docs/workflow/` (what scripts do, how to run them), `docs/concepts/` (physics/math background), and `docs/visualization/` (catalog of the `MODvis_*`/`*App` interactive apps and `MODplot_*` diagnostic plots — what each one shows and how to call it).
+
+**Standing rule:** any time a `MODvis_*`/`*App` or `MODplot_*` script is added or changed, update its entry in `docs/visualization/index.md` in the same change — an example image (regenerated if the script's output changed) plus a short description of how to use it. Don't let this drift out of sync with the code the way the rest of the wiki periodically has.
 
 - [x] Draft "L0: converting .modraw to .mat" — `docs/workflow/L0_modraw_conversion.md`
 - [x] Draft "Zero-padding numbered raw filenames" — `docs/workflow/pad_raw_filenames.md`
@@ -697,7 +699,7 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 - [ ] Add "Instrument configuration" section: YAML sensor manifest → `metadata.manifest`
 - [ ] Add "Calibrations" section pointing to `MOD_fish_calibrations` and git tags
 - [ ] Add "Twist counting" to field operations — how to run, what the plot means, spool swap procedure
-- [ ] Update visualization section: MODvis_timeseries, SpectraExplorerApp, twist plot
+- [x] Add visualization section: `docs/visualization/index.md` catalogs MODvis_timeseries, MODvis_spectra, MODvis_twist_timeseries, SpectraExplorerApp, and the MODplot_* diagnostic scripts — moved `CHI_INSPECTOR_MANUAL.md` here from `docs/workflow/` (2026-09-25)
 - [x] Add "From t1_volt to chi: a worked walkthrough" — `docs/concepts/temperature_to_chi_walkthrough.md`, narrative companion to `spectral_filtering_and_noise_floors.md` (filter shapes, real-data deconvolution walkthrough, Taylor's-hypothesis/gradient-Jacobian derivation, chi_obs vs chi_mle), adapted from exploratory notebook work in `mod_fish_lib`'s `temp_to_chi.ipynb`; new `plots/MODplot_fpo7_filters_explained.m` + image. A follow-up page (going backward through the filters, comparing a reconstructed spectrum against real bench-noise measurements) is planned separately (2026-09-28)
 
 ---
