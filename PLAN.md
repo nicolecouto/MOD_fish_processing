@@ -698,6 +698,7 @@ Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via
 - [ ] Add "Calibrations" section pointing to `MOD_fish_calibrations` and git tags
 - [ ] Add "Twist counting" to field operations — how to run, what the plot means, spool swap procedure
 - [ ] Update visualization section: MODvis_timeseries, SpectraExplorerApp, twist plot
+- [x] Add "From t1_volt to chi: a worked walkthrough" — `docs/concepts/temperature_to_chi_walkthrough.md`, narrative companion to `spectral_filtering_and_noise_floors.md` (filter shapes, real-data deconvolution walkthrough, Taylor's-hypothesis/gradient-Jacobian derivation, chi_obs vs chi_mle), adapted from exploratory notebook work in `mod_fish_lib`'s `temp_to_chi.ipynb`; new `plots/MODplot_fpo7_filters_explained.m` + image. A follow-up page (going backward through the filters, comparing a reconstructed spectrum against real bench-noise measurements) is planned separately (2026-09-28)
 
 ---
 

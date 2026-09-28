@@ -45,6 +45,7 @@ nav:
       - "Choosing fft_length, fft_segments_per_scan, and scan_overlap": concepts/spectral_windowing.md
       - "Units and the sw_->gsw_ migration": concepts/units_and_seawater.md
       - "From raw volts to a trustworthy wavenumber spectrum": concepts/spectral_filtering_and_noise_floors.md
+      - "From t1_volt to chi: a worked walkthrough": concepts/temperature_to_chi_walkthrough.md
   - References: references.md
 
 markdown_extensions:
