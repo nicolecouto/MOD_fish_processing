@@ -6,7 +6,7 @@
 
 Takes an L0 `.mat` file (raw counts/hex, no calibrations - see [L0: converting .modraw to .mat](modraw_to_L0_conversion.md)) and converts it to physical units:
 
-- **epsi** - AFE channel counts → volts (thermistor/shear channels) or g (accelerometer channels)
+- **epsi** - already volts (thermistor/shear channels) or g (accelerometer channels) at L0, using the standard EFE board; L1 re-applies this deployment's setup.yml channel names/config from the exact counts (e.g. renames a repurposed `s2` to `c1`)
 - **ctd** - raw hex → pressure [dbar], temperature [°C], conductivity [S/m], salinity [psu], plus derived potential temperature, potential density, `dP/dt`, depth, `dz/dt`
 - **alt**, **isap** - raw distance → height above bottom (`hab`)
 
@@ -128,7 +128,7 @@ afe:
     a3: {full_range: 1.8, ADCconf: Unipolar}
 ```
 
-`instrument_manifest.afe` is keyed by physical ADC slot (`channel_1`..`channel_7`), not by sensor name - that distinction matters because raw parsing (`MODprocess_single_modraw_to_L0.m`) only ever sees slot numbers (L0's `epsi.channel1`..`channel7`); `MODsetup_read_yaml.m` is what resolves slot → logical name (`t1`, `s1`, ...) for everything downstream. Slot order for `metadata.PROCESS.channels` comes from numerically sorting the `channel_N` keys, not from yaml field order - the old schema relied on yaml field order, which YAML libraries preserve but don't sort, so a `channel_10` would have sorted before `channel_2` under that approach the moment a deployment passed 9 channels. See PLAN.md Section 5 for the larger `metadata.manifest` idea this could still grow into (`shear_channels`/`fpo7_channels`-style grouped lists) once something actually needs to loop over "all shear channels" rather than check `metadata.AFE.(ch).type` one channel at a time - not built yet, since nothing consumes it.
+`instrument_manifest.afe` is keyed by physical ADC slot (`channel_1`..`channel_7`), not by sensor name - that distinction matters because the raw stream only carries slot numbers. L0 names them with the standard EFE board's names (`MODsetup_default_efe.m`) unless given metadata; `MODsetup_read_yaml.m` is what resolves slot → this deployment's logical name (`t1`, `s1`, `c1`, ...), which L1 then applies (`mod_efe_conversion.m`). Slot order for `metadata.PROCESS.channels` comes from numerically sorting the `channel_N` keys, not from yaml field order - the old schema relied on yaml field order, which YAML libraries preserve but don't sort, so a `channel_10` would have sorted before `channel_2` under that approach the moment a deployment passed 9 channels. See PLAN.md Section 5 for the larger `metadata.manifest` idea this could still grow into (`shear_channels`/`fpo7_channels`-style grouped lists) once something actually needs to loop over "all shear channels" rather than check `metadata.AFE.(ch).type` one channel at a time - not built yet, since nothing consumes it.
 
 MATLAB has no built-in YAML reader (checked in R2024b: no `yaml.*` namespace, `readstruct` only accepts `'json'`/`'xml'`/`'auto'` as `FileType`), so `MODsetup_read_yaml.m` uses the vendored third-party `toolbox/YAMLMatlab_0.4.3/` (MIT licensed).
 
@@ -140,7 +140,7 @@ data = MODprocess_single_L0_to_L1(L0_data, metadata)
 
 Pure transformation - takes an L0 struct and a `metadata` struct, returns the same fields with `epsi`/`ctd`/`alt`/`isap` converted to physical units. No file I/O.
 
-The three conversion steps (`convert_efe_channels`, `process_ctd_fields`, `calibrate_altimeter_hab`) live as **local subfunctions inside this file**, not as separate `modProcess_L1_apply_*.m` files - nothing calls them standalone today. Split one out the moment something else needs to call it directly. (`process_ctd_fields` was named `calibrate_ctd` until the DeepSolo work below - renamed because for SBE41/external-CTD sources it does no calibration at all, only derivation of secondary fields.)
+The three conversion steps (`apply_setup_efe`, `process_ctd_fields`, `calibrate_altimeter_hab`) live as **local subfunctions inside this file**, not as separate `modProcess_L1_apply_*.m` files - nothing calls them standalone today. Split one out the moment something else needs to call it directly. (`process_ctd_fields` was named `calibrate_ctd` until the DeepSolo work below - renamed because for SBE41/external-CTD sources it does no calibration at all, only derivation of secondary fields.)
 
 Notes on the CTD conversion specifically:
 - SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then Practical Salinity via `gsw_SP_from_C`.
@@ -149,15 +149,18 @@ Notes on the CTD conversion specifically:
 - `dPdt`, `z` (depth), `dzdt` are computed unconditionally for all sources (they only need `P`, and `z` also needs latitude). `SR` (Reference Salinity), `CT` (Conservative Temperature), `sigma0` (potential density anomaly), and `SP` (Practical Salinity, if not already reported) are only computed **when both `T` and `C` are present** - `gsw_SR_from_SP`/`gsw_CT_from_t`/`gsw_sigma0`/`gsw_SP_from_C` genuinely can't run without them. DeepSolo's fallrise data (P-only) is the one case today that takes this branch and gets `dPdt`/`z`/`dzdt` but not `SP`/`SR`/`CT`/`sigma0` - this is expected, not a bug. See [Units and the sw_->gsw_ migration](../concepts/units_and_seawater.md) for why `SR` (not exact Absolute Salinity) is used throughout.
 - Depth (`z`) needs a latitude: interpolated from `data.gps.latitude` if the file has GPS fixes, otherwise falls back to `metadata.PROCESS.latitude` from `setup.yml`. `gsw_z_from_p` returns height (negative down); `process_ctd_fields` negates it to keep this repo's positive-down `z`/`dzdt` convention.
 
-Notes on the EFE channel conversion (`convert_efe_channels`) specifically:
-- Every AFE channel - thermistor (`fpo7`), shear, and accelerometer alike - arrives from L0 as the same thing: raw 24-bit ADC counts, in `epsi.channel1`..`channelN` (ADC slot order, not sensor identity - see `MODsetup_read_yaml.m`'s `PROCESS.channels` note above).
-- Each slot's counts convert directly to its logical sensor name's physical-unit field (`epsi.channel1` → `epsi.t1_volt`, `epsi.channel3` → `epsi.s1_volt`, etc.) - there is no intermediate `_count` field kept in L1. The old `channelN` field is discarded (`rmfield`) once its counts are read. Raw counts are never lost - they still live in L0 (`epsi.channel1`..`channelN`), which is kept regardless; L1 simply doesn't duplicate them under a renamed field anymore (until 2026-08, it briefly did - `epsi.t1_count` etc. - but that was a pure, unconsumed copy that just doubled L1's size for no downstream benefit, so it was dropped).
-- `count` → `volt` is a **linear (affine) conversion** - not spectral, not a lookup table - using each channel's `full_range` (`FR`) and `ADCconf` from `setup.yml`'s `afe.channels` block:
+Notes on the EFE channels (`apply_setup_efe`) specifically:
+- Since 2026-09-29, L0 already holds EFE data in volts/g with channel names, converted with the standard EFE board config (or whatever metadata L0 was given) - see [EFE channels: volts/g at L0](modraw_to_L0_conversion.md#efe-channels-voltsg-at-l0). L1's job is only to re-apply **this deployment's setup.yml**: it recovers the exact integer counts from `L0_data.epsi_conversion` (`mod_efe_volts_g_to_counts.m`) and reconverts them with `metadata` (`mod_efe_counts_to_volts_g.m`). Counts round-trip exactly, so when nothing differs the result is bit-identical to L0.
+- On a standard board the only thing that normally changes is the **name** of a repurposed slot - e.g. `instrument_manifest.afe.channel_4: {name: c1, type: microconductivity}` turns L0's `s2_volt` into L1's `c1_volt` (a console line says so). If setup.yml's `full_range`/`ADCconf` for a slot ever differ from what L0 used, the channel is reconverted from the counts with setup.yml's values and that is printed too.
+- Any name/config setup.yml doesn't supply falls back to that slot's standard-board default (`mod_efe_conversion.m`), and `data.epsi_conversion` (carried to L1, updated) records which values came from where.
+- **Older L0 files** that still hold raw counts in `epsi.channel1`..`channelN` are converted straight from those counts - same result.
+- The conversion itself is linear (affine) per channel, `value = counts * scale + offset`:
   - **Unipolar**: `volt = FR/gain * count / 2^24`
   - **Bipolar**: `volt = FR/gain * (count/2^23 - 1)`
+  - **Accelerometers** (`type: acc`, 1.8 V full range): `g = (volt - 0.9) / 0.4` (0.9 V at 0 g, 0.4 V/g sensitivity)
 
-  (`gain` is hardcoded to `1` today - not read from `setup.yml`.)
-- Accelerometer channels (`type: acc`) get one more linear step on top of `_volt`, converting volts to g's with two hardcoded constants (accelerometer full range is always 1.8 V, centered at 0.9 V = 0 g): `epsi.a1_g = (a1_volt - 0.9) / 0.4`. Non-accelerometer channels stop at `_volt` - there's no `_g` field for `t*`/`s*`.
+  `gain` (1), the accelerometer offset/sensitivity, and the standard board's slot table all live in `setup/MODsetup_default_efe.m`.
+- There is no `_count` field in L1 (until 2026-08 there briefly was - `epsi.t1_count` etc. - but it was an unconsumed copy that doubled L1's size, so it was dropped). The counts are always recoverable from `epsi_conversion`.
 - Shear (`type: shear`) and FPO7 (`type: fpo7`) channels stop at `_volt` - conversion to their real physical units (`1/s` for shear, `°C` for FPO7) isn't implemented yet (see "Explicitly not done at this step" above).
 
 #### External CTD (DeepSolo, Wirewalker)
@@ -297,6 +300,8 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-09-29 - EFE counts → volts/g moved to L0** (branch `main-fork`). L0 now converts EFE data with the standard board config (`MODsetup_default_efe.m`) and saves `epsi_conversion`, so spectra can be checked straight from L0 without a setup.yml (`MODvis_spectra_L0.m`). `convert_efe_channels` is replaced by `apply_setup_efe`, which recovers the exact counts from `epsi_conversion` and reconverts with setup.yml (only a rename, on a standard board). Older L0 files with raw `channel1..N` counts still work. The counts ↔ volts/g math now lives in `mod_efe_conversion.m`/`mod_efe_counts_to_volts_g.m`/`mod_efe_volts_g_to_counts.m`. Verified in scratchpad sandbox copies of `blt2021_0715` and `epsi_deepsolo/26_0720_ljc`: new L1 epsi equals the existing L1 exactly for volts and to within 4e-16 g for accelerometers; the old-format-L0 path gives identical output; relabeling slot 4 as `c1` in metadata gives `c1_volt` at L1 from a default L0, and at L0 directly when metadata is passed there.
 
 **2026-09-08 - Migrated CTD field derivation from the legacy CSIRO `sw_*` (EOS-80) toolbox to GSW/TEOS-10** (branch `epsilon_processing`). `sw_salt`/`sw_ptmp`/`sw_pden`/`sw_dpth` replaced with `gsw_SP_from_C`/`gsw_CT_from_t`/`gsw_sigma0`/`gsw_z_from_p`; `ctd.S`/`.th`/`.sgth` renamed `ctd.SP`/`.CT`/`.sigma0` to match (Practical Salinity, Conservative Temperature, potential density anomaly - their TEOS-10-idiomatic names), and a new `ctd.SR` (Reference Salinity, `gsw_SR_from_SP(ctd.SP)`) persisted for every downstream GSW call that needs it. `gsw_z_from_p` returns height (negative down); `process_ctd_fields` negates it to keep `z`/`dzdt`'s existing positive-down convention. See [Units and the sw_->gsw_ migration](../concepts/units_and_seawater.md) for the full rationale, including why Reference Salinity (not exact Absolute Salinity) is used throughout.
 

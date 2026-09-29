@@ -15,7 +15,7 @@ update its entry below with an example image and a short usage note (see `PLAN.m
 
 Browse a folder of `.mat` files (L0, L1, L2, or `Profile*`) and plot up to 6 rows of any field
 that carries a `dnum` timestamp - each row optionally split across a left/right `yyaxis` pair.
-Supports nested fields (`epsi.channel1`, `ctd.P_raw`, `gps.latitude`, ...). Formerly
+Supports nested fields (`epsi.t1_volt`, `ctd.P_raw`, `gps.latitude`, ...). Formerly
 `L0ExplorerApp.m`.
 
 ```matlab
@@ -45,11 +45,67 @@ accelerometers. Reference lines on it:
 - **Noise floors** (legacy `Profile*.mat` only): FPO7 bench noise, shifted per channel, and modeled
   - see [From raw volts to a trustworthy wavenumber spectrum](../concepts/spectral_filtering_and_noise_floors.md#4-where-the-noise-floor-comes-in).
   Shaded up to 3x (the cutoff search's `SN_min`).
-- **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits
-  over a 0-2.5 V range, each drawn solid at Δ²/12/(Fs/2) and dashed at Δ²/(Fs/2), plus the
-  accelerometer sensor noise at (20e-6)² g²/Hz - see
+- **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits,
+  each drawn solid at Δ²/12/(Fs/2) and dashed at Δ²/(Fs/2), plus the accelerometer sensor noise
+  at (20e-6)² g²/Hz - see
   [ADC bit noise](../concepts/spectral_filtering_and_noise_floors.md#adc-bit-noise-reference-lines).
-  Same levels as the live plot in `MODSOM_liveplot`'s `Faster_app.py`.
+  All channels share one axes but not one ADC step size, so the dropdown under the "Bit noise"
+  heading picks **which channel's LSB** the lines use (default `t1`, which gives the same levels
+  as `MODSOM_liveplot`'s `Faster_app.py`; `s1`/`s2` are 4x higher, `a1`-`a3` are in g). The LSB
+  comes from the sibling L1 file's `epsi_conversion`, or the standard EFE board if the file has
+  none - the dropdown's tooltip says which. (The screenshot above predates the dropdown.)
+
+### MODvis_spectra_L0.m
+
+Quick-look EFE spectra straight from L0 files, against ADC bit noise - the `MODSOM_liveplot`
+use case, with **no setup.yml needed** (L0 is already in volts/g with the standard EFE board -
+see [EFE channels: volts/g at L0](../workflow/modraw_to_L0_conversion.md#efe-channels-voltsg-at-l0)).
+Laid out like `MODvis_spectra.m`: timeseries rows on top, one frequency spectrum below. Opens
+the newest file in the folder; **Newest** re-lists and jumps to it again.
+
+```matlab
+app = MODvis_spectra_L0('/path/to/L0');                  % folder: newest file
+app = MODvis_spectra_L0('/path/to/L0/modsom_012.mat');   % or one file
+app = MODvis_spectra_L0('/path/to/L0', 'nfft', 2048, 'window_s', 30);   % starting values
+app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup.yml names/config
+```
+
+![Example MODvis_spectra_L0.m window, blt2021_0715 file 021224, default rows, middle row with typed y-limits](../concepts/images/MODvis_spectra_L0_example.png)
+
+- **Top: 3 timeseries rows**, each with a left and an optional right field - any `epsi` or `ctd`
+  vector in the file (e.g. `ctd.P_raw`, `epsi.s1_volt`, `epsi.a3_g`). Rows share one time axis.
+  Defaults: t1/t2, s1/s2, a1/a2 (a missing channel, e.g. `s2` renamed `c1`, falls back to the
+  first epsi field on the left axis and nothing on the right).
+- **Click any row** to center the spectrum window there; the window is shaded on every row. On
+  load it's the last `window` seconds of the file. Rows are pinned to the same plot width, so the
+  shading lines up whether or not a row has a right axis.
+- **Timeseries view** (left panel): **Full file** shows the whole `.mat`; **Zoom to window ±
+  buffer** zooms to the spectrum window plus `buffer` seconds each side and follows each click.
+  They're mutually exclusive; a manual zoom/pan unchecks both and leaves your view alone.
+- **Y-limits per side**: each row has min/max boxes and a **Reset y** button for its left axis and
+  for its right axis. The boxes always show that side's current limits; typing sets that side only
+  (a min ≥ max is rejected), Reset returns it to auto. MATLAB's own zoom/pan tools only act on one
+  side of a two-y-axis row, so these are the reliable way to set both. Limits go back to auto when
+  the file or that row's field changes; clicking a new window keeps them. The right-side boxes are
+  disabled when the right axis is `(none)`.
+- **Bottom: one frequency spectrum** of every checked channel over that window, using
+  `mod_scan_welch_psd.m` - the same per-segment-detrended Welch estimator as L2.
+- **Every spectral setting is editable in the left panel** - nfft, window length, overlap %,
+  taper (Hann/Hamming) and per-segment detrend (linear/constant/none). Changing one recomputes
+  and redraws. Name-value arguments only set the starting values, which match the liveplot: nfft
+  1024, 10 s, 50% overlap, Hann. Detrend defaults to linear, like this repo's L2 spectra.
+- The window's times and length, the active settings, Fs (nominal, and measured from the
+  timestamps), number of segments, dof and df are printed above the spectrum, so a screenshot
+  records them. dof (1.9 × segments) is only shown at 50% overlap, where that rule holds.
+- **Bit noise**: the dropdown picks **which channel's ADC LSB** the 24/20/16-bit lines use (t1/t2
+  unipolar 2.5 V; s1/s2 bipolar 2.5 V, 4x higher; a1-a3 in g via 0.4 V/g). For an N-bit ADC,
+  Δ = LSB × 2^(24-N), solid at Δ²/12/(Fs/2), dashed at Δ²/(Fs/2). The ADXL accelerometer
+  sensor noise, (20e-6)² g²/Hz, is a separate checkbox - it's a property of the sensor, not the ADC.
+- The checkbox column is color-keyed to every curve, so there's no legend. Grid lines and ticks
+  are at whole decades only.
+- **Lock spectrum limits** keeps the spectrum's current x/y limits - including a manual zoom -
+  when it's redrawn (new click, new settings, new file). Unchecking returns to auto limits.
+- Also opens older L0 files (raw `channel1..N` counts) and L1 files.
 
 ### MODvis_twist_timeseries.m
 

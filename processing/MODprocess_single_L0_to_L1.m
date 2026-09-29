@@ -6,7 +6,15 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 % DESCRIPTION
 %   Converts one file's L0 struct (raw counts/hex, from
 %   MODprocess_single_modraw_to_L0.m) into physical units:
-%     epsi   - AFE counts -> volts (t*/s*) or g (a*), by manifest channel
+%     epsi   - re-applies setup.yml's EFE channel names/config: L0 is
+%              already in volts/g using the standard EFE board (or
+%              whatever metadata L0 was given), so the exact counts are
+%              recovered from L0_data.epsi_conversion and reconverted
+%              with this metadata (mod_efe_counts_to_volts_g.m). With a
+%              standard board this only renames repurposed slots (e.g.
+%              s2 -> c1). Older L0 files that still hold raw channel1..N
+%              counts are converted directly. data.epsi_conversion is
+%              updated to match.
 %     ctd    - raw hex -> P/T/C/SP (SBE49 only - SBE41 arrives from L0
 %              already in physical units), plus derived dPdt, z, dzdt
 %              (always) and SP, SR, CT, sigma0 (only when T/C are actually
@@ -33,7 +41,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %               from an L0 .mat file)
 %   metadata  - metadata struct (from MODsetup_read_yaml.m)
 %               Uses: metadata.PROCESS.channels, metadata.PROCESS.latitude,
-%                     metadata.AFE.(channel).full_range/.ADCconf/.type,
+%                     metadata.AFE.(channel).full_range/.ADCconf/.type
+%                     (any missing -> standard EFE, see mod_efe_conversion.m),
 %                     metadata.CTD.cal,
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
 %                     .alt_probe_dist_from_crashguard_in
@@ -57,7 +66,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   toolbox/seawater/gsw/gsw_SP_from_C.m, gsw_SR_from_SP.m, gsw_CT_from_t.m,
 %   gsw_sigma0.m, gsw_z_from_p.m
 %   mod_L1_add_twist.m
-%   (local subfunctions: convert_efe_channels, process_ctd_fields, calibrate_altimeter_hab)
+%   mod_efe_volts_g_to_counts.m, mod_efe_counts_to_volts_g.m
+%   (local subfunctions: apply_setup_efe, process_ctd_fields, calibrate_altimeter_hab)
 %
 % NOTES
 %   The subfunctions below are local rather than separate files - they are
@@ -88,9 +98,11 @@ addpath(fullfile(gsw_dir, 'thermodynamics_from_t'));
 
 data = L0_data;
 
-%% EFE channels: counts -> volts (t*, s*) or g (a*)
-if ~isempty(data.epsi) && isfield(data.epsi, 'channel1')
-    data.epsi = convert_efe_channels(data.epsi, metadata);
+%% EFE channels: re-apply setup.yml's names/config (volts/g)
+if ~isempty(data.epsi)
+    [data.epsi, data.epsi_conversion] = apply_setup_efe(data, metadata);
+elseif ~isfield(data, 'epsi_conversion')
+    data.epsi_conversion = [];
 end
 
 %% CTD: raw hex -> physical P/T/C/S, plus derived fields
@@ -132,43 +144,42 @@ end
 
 end %end function
 
-%% EFE counts -> volts/g, renaming L0's positional channel1..N to manifest names
-function epsi = convert_efe_channels(epsi, metadata)
+%% EFE: recover exact counts, reconvert with setup.yml's names/config
+% L0 files written before EFE conversion moved to L0 still hold raw
+% channel1..N counts - those go straight to mod_efe_counts_to_volts_g.
+function [epsi, conversion] = apply_setup_efe(data, metadata)
 
-bit_counts = 24;
-gain = 1;
-acc_offset = 0.9;   % V, half of the 1.8 V accelerometer full range
-acc_factor = 0.4;   % V/g, from the accelerometer datasheet
-
-Unipolar = @(FR, count) FR/gain*double(count)/2^bit_counts;
-Bipolar  = @(FR, count) FR/gain*(double(count)/2^(bit_counts-1) - 1);
-
-channel_names = metadata.PROCESS.channels;
-for iC = 1:numel(channel_names)
-    ch = channel_names{iC};
-    slot_field = sprintf('channel%d', iC);
-    if ~isfield(epsi, slot_field)
-        continue
+epsi = data.epsi;
+old_conversion = [];
+if ~isfield(epsi, 'channel1')
+    if ~isfield(data, 'epsi_conversion') || isempty(data.epsi_conversion)
+        error('MODprocess_single_L0_to_L1:noEpsiConversion', ...
+            ['L0 epsi has no raw channel1..N counts and no epsi_conversion record, ' ...
+             'so its counts can''t be recovered. Regenerate this L0 file with ' ...
+             'MODprocess_single_modraw_to_L0.m.']);
     end
+    old_conversion = data.epsi_conversion;
+    epsi = mod_efe_volts_g_to_counts(epsi, old_conversion);
+end
 
-    counts = epsi.(slot_field);
-    epsi = rmfield(epsi, slot_field);
+[epsi, conversion] = mod_efe_counts_to_volts_g(epsi, metadata);
 
-    FR = metadata.AFE.(ch).full_range;
-    switch metadata.AFE.(ch).ADCconf
-        case {'Bipolar', 'bipolar'}
-            volts = Bipolar(FR, counts);
-        case {'Unipolar', 'unipolar'}
-            volts = Unipolar(FR, counts);
-        otherwise
-            error('MODprocess_single_L0_to_L1:unknownADCconf', ...
-                'Channel %s has unrecognized ADCconf "%s"', ch, metadata.AFE.(ch).ADCconf);
-    end
-
-    if strcmpi(metadata.AFE.(ch).type, 'acc')
-        epsi.([ch '_g']) = (volts - acc_offset)/acc_factor;
-    else
-        epsi.([ch '_volt']) = volts;
+% Say when setup.yml changed anything relative to what L0 used - names are
+% expected to change for repurposed slots; config should never differ on
+% a standard EFE board.
+if ~isempty(old_conversion)
+    for slot = 1:numel(conversion.channels)
+        new_c = conversion.channel.(conversion.channels{slot});
+        old_c = old_conversion.channel.(old_conversion.channels{slot});
+        if ~strcmp(new_c.field, old_c.field)
+            fprintf('MODprocess_single_L0_to_L1: EFE slot %d renamed %s -> %s (setup.yml)\n', ...
+                slot, old_c.field, new_c.field);
+        end
+        if new_c.scale ~= old_c.scale || new_c.offset ~= old_c.offset
+            fprintf(['MODprocess_single_L0_to_L1: EFE slot %d (%s) reconverted with setup.yml config ' ...
+                '(%s, %g V) instead of L0''s (%s, %g V)\n'], ...
+                slot, new_c.field, new_c.ADCconf, new_c.full_range, old_c.ADCconf, old_c.full_range);
+        end
     end
 end
 

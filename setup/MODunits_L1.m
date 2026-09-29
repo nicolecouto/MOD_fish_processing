@@ -32,7 +32,7 @@ function u = MODunits_L1()
 
 % --- epsi (AFE channels: counts -> volts or g) ---
 u.epsi_volt = struct('unit', 'V', ...
-    'description', 'Any t*/s* channel (fpo7/shear) converted from raw counts - epsi.(channel)_volt, e.g. epsi.t1_volt, epsi.s1_volt. Pattern, not enumerated per channel - see MODprocess_single_L0_to_L1.m''s convert_efe_channels.');
+    'description', 'Any t*/s* channel (fpo7/shear) converted from raw counts - epsi.(channel)_volt, e.g. epsi.t1_volt, epsi.s1_volt. Pattern, not enumerated per channel - see mod_efe_counts_to_volts_g.m.');
 u.epsi_g = struct('unit', 'g (gravitational acceleration)', ...
     'description', 'Any a* channel (accelerometer) converted from raw counts, then volts -> g - epsi.(channel)_g, e.g. epsi.a3_g. Pattern, not enumerated per channel.');
 

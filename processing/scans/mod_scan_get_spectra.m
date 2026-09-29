@@ -10,7 +10,7 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   or anything else - e.g. a microconductivity or fluorometer probe
 %   physically wired into a slot that's usually shear/fpo7, see
 %   MODsetup_read_yaml.m's instrument_manifest.afe) gets its raw-volts
-%   spectrum, matching MODprocess_single_L0_to_L1.m's convert_efe_channels,
+%   spectrum, matching mod_efe_counts_to_volts_g.m,
 %   which already applies that same acc-vs-everything-else split when
 %   converting counts to physical units. Only 'acc' gets special handling
 %   here; this function does not otherwise care what physical sensor a
@@ -56,7 +56,7 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %                see OUTPUTS/NOTES), metadata.AFE.(channel).type
 %                (to know each channel's field suffix - '_g' for acc,
 %                '_volt' for everything else - same acc-vs-everything-else
-%                split MODprocess_single_L0_to_L1.m's convert_efe_channels
+%                split mod_efe_counts_to_volts_g.m
 %                uses). The Welch-segment overlap is a hardcoded 50%
 %                (see mod_scan_fft_seg_starts.m - NOTES below).
 %
@@ -93,12 +93,12 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %
 % CALLS
 %   MODsetup_validate_metadata.m, mod_scan_length_from_segments.m,
-%   mod_scan_fft_seg_starts.m
-%   (MATLAB's Signal Processing Toolbox periodogram, detrend, hamming)
+%   mod_scan_fft_seg_starts.m, mod_scan_welch_psd.m
+%   (MATLAB's Signal Processing Toolbox periodogram, detrend - ctd spectra)
 %
 % NOTES
 %   Each epsi channel's spectrum is Welch-averaged by hand
-%   (welch_psd_detrend_per_segment, local function below) instead of
+%   (mod_scan_welch_psd.m, with a Hamming taper and linear detrend) instead of
 %   calling pwelch directly on the whole scan: fft_length-sized segments
 %   are cut from the scan at a hardcoded 50% overlap (segment start
 %   offsets from mod_scan_fft_seg_starts.m), but each segment is detrended
@@ -169,7 +169,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
             field = [ch '_g'];
         otherwise
             % Every non-acc channel defaults to the raw-volts field name -
-            % matches MODprocess_single_L0_to_L1.m's convert_efe_channels,
+            % matches mod_efe_counts_to_volts_g.m,
             % which already converts any non-acc channel to volts
             % regardless of type. This makes a channel type this repo
             % doesn't have dedicated processing for yet (e.g.
@@ -187,7 +187,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
         continue
     end
 
-    [Pxx, f] = welch_psd_detrend_per_segment(scan.epsi.(field), fft_length, fft_seg_starts, Fs_epsi);
+    [Pxx, f] = mod_scan_welch_psd(scan.epsi.(field), fft_length, fft_seg_starts, Fs_epsi, 'hamming', 'linear');
     scan.spectra.([field '_f']) = Pxx(:)';
 end
 
@@ -229,28 +229,3 @@ if isfield(scan, 'ctd') && ~isempty(scan.ctd)
 end
 
 end %end function
-
-%% Welch-average periodograms of overlapping segments, each individually
-% detrended before its own Hamming window/FFT - see NOTES above for why
-% this isn't just pwelch(detrend(x), fft_length, [], fft_length, Fs, 'psd').
-% seg_starts (mod_scan_fft_seg_starts.m) fixes both the segment count and
-% their positions - a scan built to mod_scan_length_from_segments.m's
-% scan_length always has exactly numel(seg_starts) segments with no
-% leftover samples.
-function [Pxx, f] = welch_psd_detrend_per_segment(x, fft_length, seg_starts, Fs)
-window = hamming(fft_length);
-nseg = numel(seg_starts);
-
-Pxx = [];
-for iSeg = 1:nseg
-    idx0 = seg_starts(iSeg);
-    seg = detrend(x(idx0:idx0 + fft_length - 1));
-    [Pseg, f] = periodogram(seg, window, fft_length, Fs, 'psd');
-    if isempty(Pxx)
-        Pxx = Pseg;
-    else
-        Pxx = Pxx + Pseg;
-    end
-end
-Pxx = Pxx / nseg;
-end

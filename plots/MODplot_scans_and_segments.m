@@ -105,8 +105,8 @@ scan_starts = (0:n_scans-1) * scan_step + 1;
 scan_ends = scan_starts + scan_length - 1;
 i_center = ceil(n_scans/2);
 
-%% tile segments within one scan (mirrors mod_scan_get_spectra.m's
-% welch_psd_detrend_per_segment local function)
+%% tile segments within one scan (mirrors mod_scan_welch_psd.m, as
+% called by mod_scan_get_spectra.m)
 seg_noverlap = round(SEGMENT_OVERLAP * fft_length);
 seg_step = fft_length - seg_noverlap;
 n_segs = floor((scan_length - seg_noverlap) / seg_step);

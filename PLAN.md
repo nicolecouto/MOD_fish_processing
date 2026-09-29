@@ -332,7 +332,7 @@ deployment_root/
 
 | Level | Input | Output | Description |
 |-------|-------|--------|-------------|
-| **L0** | Raw binary files | Per-file `.mat` with raw counts/volts | Parse bytes, no calibrations, read headers |
+| **L0** | Raw binary files | Per-file `.mat` with raw counts/volts (EFE in volts/g, standard board) | Parse bytes, no calibrations, read headers; EFE counts → volts/g with the standard EFE config, no setup.yml needed |
 | **L1** | L0 `.mat` files | Per-file `.mat` with calibrated, filtered, despiked data + `twist` field | CTD→P/T/C/S; shear→dshear/dz; FPO7→dT/dt; filters; twist timeseries for this file |
 | **L2** | L1 `.mat` (+ profile indices, for vehicles that use them) | `Profile####.mat` per cast, **or** one `.mat` per L1 file (`epsi_deepsolo` — see Section 4 note below) | Per-scan spectra, epsilon, chi, QC flags |
 | **L3** | L2 profiles | Gridded sections | Interpolate onto standard pressure grid |
@@ -446,7 +446,7 @@ Shipped as `MODprocess_single_L0_to_L1.m` (per-file, pure transformation) / `MOD
 
 | Step | Description | Source in MOD_fish_lib | Status |
 |------|-------------|-------------------------|--------|
-| `convert_efe_channels` | AFE counts → volts (t*/s*) or g (a*), by manifest channel (`metadata.AFE.(ch).full_range/.ADCconf/.type`) | `mod_som_read_epsi_files_v4.m` counts→volts block | Done |
+| `convert_efe_channels` → `apply_setup_efe` (2026-09-29) | AFE counts → volts (t*/s*) or g (a*). Since 2026-09-29 done at L0 with the standard EFE board (`MODsetup_default_efe.m`, `mod_efe_counts_to_volts_g.m`, saved `epsi_conversion`); L1's `apply_setup_efe` recovers the exact counts and re-applies setup.yml's names/config (`metadata.AFE.(ch).full_range/.ADCconf/.type`) | `mod_som_read_epsi_files_v4.m` counts→volts block | Done |
 | `process_ctd_fields` (local subfunction, `MODprocess_single_L0_to_L1.m`; renamed from `calibrate_ctd`, branch `l1_to_l2_conversion`) | SBE cal equations → P [dbar], T [°C], C [S/m], S [psu] when raw counts are present, plus derived `dPdt`/`z`/`dzdt` (always) and `th`/`sgth`/`S` (only when `T`/`C` are both present - needed for DeepSolo's P-only external CTD, see `MODprocess_read_external_ctd.m` below). SBE41 "PTS" format and external CTD arrive from L0/caller already in physical units - only derived fields are computed for those. | `get_CalSBE.m`, `mod_som_read_epsi_files_v4.m` SBE block | Done |
 | `calibrate_altimeter_hab` | Raw distance → height above bottom, using `metadata.GEOMETRY.*`. Applied to both `alt` (MOD altimeter) and `isap` (ISA500) - verified against real `isap` data and, as of the `blt2021_0715` test run (2026-07-24), real `alt` data too. | `mod_som_read_epsi_files_v4.m` ALTI/ISAP blocks | Done |
 | `MODprocess_read_external_ctd.m` | For DeepSolo/Wirewalker (`metadata.vehicle_name`), reads and normalizes a deployment's independent CTD file (dnum/P, optionally T/C/S), sliced per L0 file by `MODprocess_all_L0_to_L1.m` and passed into `MODprocess_single_L0_to_L1` as an optional 3rd argument. | NEW - no prior equivalent in `MOD_fish_lib` | DeepSolo done (branch `l1_to_l2_conversion`, 2026-07-26) - `ctd/DeepSoloFallrise.mat`, P-only. Wirewalker still not implemented (no sample file available) |

@@ -1,23 +1,38 @@
-function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
+function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file, metadata)
 % MODprocess_single_modraw_to_L0        Part of MOD_fish_processing
 %
-% L0_data = MODprocess_single_modraw_to_L0(modraw_file)
+% L0_data = MODprocess_single_modraw_to_L0(modraw_file, metadata)
 %
 % DESCRIPTION
 %   Parses a single .modraw file into raw L0 data: regex-matches each
 %   $-tagged block type, decodes the shared header (sync/timestamp/length/
 %   checksum), and converts each block type's payload from raw bytes/hex
-%   into per-type structs of raw counts/volts. No calibrations applied, no
-%   metadata object used - takes and returns plain data only.
+%   into per-type structs of raw counts/volts. No calibrations applied.
+%
+%   The one exception is EFE data: its ADC counts are converted to volts
+%   (t1_volt, s1_volt, ...) or g (a1_g, ...) and given channel names here,
+%   using the standard EFE board config (MODsetup_default_efe.m) - EFE
+%   boards are standard, so this needs no setup.yml, and it lets spectra
+%   be looked at straight from L0 (MODvis_spectra_L0.m). metadata can
+%   optionally override names/config (e.g. a microconductivity probe in
+%   slot 4 as c1), but is never required. The conversion used is saved
+%   as L0_data.epsi_conversion, with plain-text instructions for
+%   recovering the exact counts (see mod_efe_conversion.m).
 %
 % INPUTS
 %   modraw_file - full path to a single .modraw file
+%   metadata    - (optional) metadata struct from MODsetup_read_yaml.m,
+%                 only used for EFE channel names/config (see
+%                 mod_efe_conversion.m). [] / omitted = standard EFE.
 %
 % OUTPUTS
 %   L0_data - struct with one field per data type found in the file.
 %             Fields for data types not present in the file are set to [].
-%             Possible fields (raw/uncalibrated):
-%               epsi     - EFE data (intermediate vars in 'efe')
+%             Possible fields (raw/uncalibrated, except epsi):
+%               epsi     - EFE data in volts/g, named by channel
+%                          (intermediate vars in 'efe')
+%               epsi_conversion - counts <-> volts/g record for epsi
+%                          (mod_efe_conversion.m), [] if no EFE data
 %               ctd      - SBE49/SBE41 data (intermediate vars in 'sbe')
 %               alt      - MOD altimeter data (intermediate vars in 'alti')
 %               isap     - ISA500 altimeter data (intermediate vars in 'isa')
@@ -37,6 +52,7 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
 %
 % CALLS
 %   toolbox/correctNegativeTime.m
+%   mod_efe_counts_to_volts_g.m (EFE counts -> volts/g)
 %   (local subfunctions: convert_timestamp, FastCTD_ASCII_parseheader,
 %    FastCTD_ASCII_parseheadline)
 %
@@ -45,9 +61,9 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
 %   pattern rather than the declared hex block-length field. This drops a
 %   block whenever a record's timestamp low bytes happen to be 0x0D 0x0A
 %   (see PLAN.md Section 9) - fix is to parse by declared length instead.
-%   Deliberately takes only a plain file path, not a metadata/config
-%   object - meant to run standalone with no dependency on Meta_Data,
-%   YAML setup, or the old mod_class.
+%   Meant to run standalone with no dependency on Meta_Data, YAML setup,
+%   or the old mod_class - metadata is optional and only touches EFE
+%   channel names/config.
 %
 %   parse_epsi_channel_string/parse_single_epsi_channel (bottom of file)
 %   are dead code inherited from mod_som_read_epsi_files_v4.m - nothing
@@ -56,6 +72,10 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file)
 %   turns out to matter for L1; remove them if that never materializes.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
+
+if nargin < 2
+    metadata = [];
+end
 
 %% Open file and save contents as 'str'
 %fprintf("   Open %s \r\n",filename)
@@ -224,6 +244,7 @@ end %end loop if there is gps data
 
 
 %% Process EFE data
+epsi_conversion = [];
 if isempty(ind_efe_start)
     no_data_types = [no_data_types,'epsi'];
     epsi=[];
@@ -249,11 +270,6 @@ else
                      efe.data.n_channels*efe.data.bytes_per_channel; % 8 bytes timestamps + 3 bytes ADC
     efe.data.recs_per_block     = 80;
     efe.data.n_recs             = efe.data.n_blocks*efe.data.recs_per_block;
-
-    efe.bit_counts              = 24;
-    efe.gain                    = 1;
-    efe.acc_offset              = 1.8/2;
-    efe.acc_factor              = 0.4; %The accelerometer gain from the manual is 400 mV/g
 
     % These fields appear to be unused:
     %efe.data.nblocks            = 160;
@@ -322,14 +338,16 @@ else
         byte3 = efe.data.raw_bytes(:,ind_time(end)+3:3:end);
         efe.data.raw = byte1*256^2 + byte2*256^1 + byte3*256^0;
 
-        % Save data as 'counts'
+        % Convert timestamp
+        [epsi.time_s,epsi.dnum] = convert_timestamp(epsi_timestamp);
+
+        % Counts -> volts/g with channel names (standard EFE unless
+        % metadata overrides) - see mod_efe_counts_to_volts_g.m
         for cha=1:efe.data.n_channels
             epsi.(['channel',num2str(cha)]) = efe.data.raw(:,cha);
         end
+        [epsi, epsi_conversion] = mod_efe_counts_to_volts_g(epsi, metadata);
 
-       % Convert timestamp
-            [epsi.time_s,epsi.dnum] = convert_timestamp(epsi_timestamp);
-  
 
     end %end if isfield(efe.data,'raw_bytes')
 end %end if there is epsi data
@@ -1893,6 +1911,7 @@ fprintf(['MISSING: ' repmat('%s ',1,length(no_data_types)), '\n'], no_data_types
 
 % Combine all data
 L0_data.epsi     = epsi;
+L0_data.epsi_conversion = epsi_conversion;
 L0_data.ctd      = ctd;
 L0_data.alt      = alt;
 L0_data.isap     = isap;

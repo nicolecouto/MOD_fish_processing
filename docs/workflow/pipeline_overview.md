@@ -22,7 +22,9 @@ Click any diagram to expand it.
 ## Shared foundation: modraw → L0 → L1
 
 Identical for realtime and postprocess. Setup is read once per deployment; L0 strips raw bytes to
-counts with zero calibration; L1 applies every calibration this repo has (CTD, altimeter, twist)
+counts with zero calibration - except EFE data, which L0 converts to volts/g with the standard EFE
+board so spectra can be checked before any setup.yml exists; L1 re-applies setup.yml's EFE names and
+applies every calibration this repo has (CTD, altimeter, twist)
 and builds the deployment-level indexes (pressure record, file time index, twist timeseries) that
 everything downstream depends on.
 
@@ -33,7 +35,9 @@ flowchart LR
     RAW[("raw/*.modraw")] --> PAD["MODsetup_pad_<br/>raw_filenames.m"]
     PAD --> L0ALL["MODprocess_all_<br/>modraw_to_L0.m"]
     L0ALL -->|per file| L0ONE["MODprocess_single_<br/>modraw_to_L0.m"]
+    DEFEFE["MODsetup_<br/>default_efe.m"] -.->|standard EFE| L0ONE
     L0ONE --> L0OUT[("L0/*.mat")]
+    L0OUT --> VISL0["MODvis_<br/>spectra_L0.m"]
   end
 
   subgraph SETS["setup - once per deployment"]
@@ -68,9 +72,13 @@ flowchart LR
 | `MODsetup_read_yaml.m` | setup_yml → metadata | Resolves AFE/CTD/altimeter manifest, calibration lookups, `has_epsi`/`has_vnav`/... flags |
 | `MODsetup_define_filters.m` | metadata → metadata | Resolves each channel's fixed electronics/ADC transfer function once per deployment |
 | `MODprocess_all_modraw_to_L0.m` | raw_dir, L0_dir → L0_files | Batch orchestrator; skips already-converted files |
-| `MODprocess_single_modraw_to_L0.m` | modraw_file → L0_data | Parses one raw file: `$`-block regex match, header decode, counts/hex → per-type structs |
+| `MODprocess_single_modraw_to_L0.m` | modraw_file, (metadata) → L0_data | Parses one raw file: `$`-block regex match, header decode, counts/hex → per-type structs; EFE counts → volts/g + `epsi_conversion` |
+| `MODsetup_default_efe.m` | → efe | The standard EFE board (slot names, types, full range, ADC config, Fs, acc constants) - what L0 uses without metadata |
+| `mod_efe_conversion.m` | n_slots, (metadata) → conversion | Per-channel counts ↔ volts/g record: names, config, exact scale/offset, plain-text recovery instructions |
+| `mod_efe_counts_to_volts_g.m` / `mod_efe_volts_g_to_counts.m` | epsi, metadata / conversion → epsi | EFE counts → `<name>_volt`/`<name>_g`, and the exact inverse |
+| `MODvis_spectra_L0.m` | browses L0 folder | Quick-look: timeseries rows, click → EFE spectrum of that window vs ADC bit noise; no setup.yml needed, all spectral settings editable |
 | `MODprocess_all_L0_to_L1.m` | L0_dir, metadata → L1_files | Batch orchestrator; also builds every meta/ index below |
-| `MODprocess_single_L0_to_L1.m` | L0_data, metadata → data | Epsi counts→volts/g, CTD P/T/C/S, altimeter hab, `mod_L1_add_twist.m` |
+| `MODprocess_single_L0_to_L1.m` | L0_data, metadata → data | Epsi: re-apply setup.yml names/config from the exact counts; CTD P/T/C/S, altimeter hab, `mod_L1_add_twist.m` |
 | `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_dir → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
 | `MODprocess_L1_make_time_index.m` | L1_dir → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
 | `MODprocess_L1_accumulate_twist_timeseries.m` | L1_dir, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous deployment count - only if `has_vnav` |
@@ -107,7 +115,8 @@ flowchart LR
 | `MODprocess_all_L1_to_L2.m` | L1_dir, metadata, L2_dir → L2_files | Batch orchestrator; no-ops if `!has_epsi` |
 | `MODprocess_single_L1_to_L2.m` | data, metadata, PressureTimeseries → L2data | Thin wrapper around `mod_L2_tile_scans.m` |
 | `mod_L2_tile_scans.m` | epsi, ctd, metadata, PressureTimeseries → L2data | 50%-overlap scan tiling, direction-gated (`is_down`), shared with postprocess |
-| `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Raw pwelch per AFE channel - `acc`→`_g`, everything else→`_volt`, uncorrected |
+| `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Raw Welch spectrum per AFE channel (`mod_scan_welch_psd.m`, per-segment detrend) - `acc`→`_g`, everything else→`_volt`, uncorrected |
+| `mod_scan_welch_psd.m` | x, fft_length, seg_starts, Fs, (taper, detrend) → Pxx, f | Welch average with each segment detrended on its own - shared by `mod_scan_get_spectra.m` and `MODvis_spectra_L0.m` |
 | `MODvis_timeseries.m` | browses L0/L1/L2/Profile folder | Any dnum-carrying struct, up to 6 rows, dual y-axis |
 | `MODvis_spectra.m` | browses L2 folder + sibling L1 | Click a point → that scan's raw spectrum, all channels |
 | `MODvis_twist_timeseries.m` | TwistTimeseries → live axes | Cable-twist count for fin adjustment during the cast |

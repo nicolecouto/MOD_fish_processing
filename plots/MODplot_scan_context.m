@@ -134,7 +134,7 @@ P1_nb = interp1(data.ctd.dnum, data.ctd.P, data.epsi.dnum(idxE_all(:,2)), 'linea
 width_db_nb = P1_nb - P0_nb;
 
 %% window + segment bookkeeping for the chosen scan (mirrors
-% mod_scan_get_spectra.m's welch_psd_detrend_per_segment)
+% mod_scan_welch_psd.m)
 idx0 = scan_starts(iScan);
 idx1 = idx0 + N_epsi - 1;
 x_raw = double(data.epsi.(channel)(idx0:idx1));   % NOT detrended - each segment gets its own detrend below
@@ -156,7 +156,7 @@ n_segs = numel(seg_starts);
 fprintf('window length = %d samples (%.2fs); overlap = %d samples (%.0f%% of window); -> %d segment(s)\n', ...
     fft_length, fft_length/Fs_epsi, noverlap, 100*noverlap/fft_length, n_segs);
 
-%% replicate mod_scan_get_spectra.m's welch_psd_detrend_per_segment by hand
+%% replicate mod_scan_welch_psd.m by hand
 nfreq = fft_length/2 + 1;
 Pxx_segs = zeros(nfreq, n_segs);
 seg_raw  = zeros(fft_length, n_segs);   % raw, undetrended
@@ -178,7 +178,7 @@ end
 Pxx_manual = mean(Pxx_segs, 2);
 
 % sanity check: same math via MATLAB's own periodogram/pwelch, called
-% per-segment the same way welch_psd_detrend_per_segment does, since
+% per-segment the same way mod_scan_welch_psd.m does, since
 % pwelch itself has no per-segment-detrend option to check against directly.
 Pxx_check = zeros(nfreq, n_segs);
 for i = 1:n_segs

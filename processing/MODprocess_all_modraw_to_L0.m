@@ -1,14 +1,15 @@
-function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
+function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata)
 % MODprocess_all_modraw_to_L0        Part of MOD_fish_processing
 %
-% L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
+% L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata)
 %
 % DESCRIPTION
 %   Converts every raw file in raw_dir to a .mat file in L0_dir, using
-%   MODprocess_single_modraw_to_L0. No calibrations, no metadata object -
-%   each .mat file contains only the raw fields from
-%   MODprocess_single_modraw_to_L0 plus a raw_file_info field recording
-%   which raw file (name, byte size) created it.
+%   MODprocess_single_modraw_to_L0. No calibrations, and no metadata
+%   needed - each .mat file contains the fields from
+%   MODprocess_single_modraw_to_L0 (raw, except EFE data, which is in
+%   volts/g using the standard EFE config) plus a raw_file_info field
+%   recording which raw file (name, byte size) created it.
 %
 %   S1kips files that have already been converted (matched by raw file
 %   size against raw_file_info.bytes), except the most recently modified
@@ -28,6 +29,12 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %                      (fullfile(fileparts(raw_dir),'L0')), created if missing.
 %   raw_file_suffix - (optional) e.g. '.modraw'. Default: auto-detected
 %                      from raw_dir by MODsetup_detect_raw_suffix.m.
+%   metadata        - (optional) metadata struct from MODsetup_read_yaml.m,
+%                      passed to MODprocess_single_modraw_to_L0 for EFE
+%                      channel names/config only. Default: [] (standard
+%                      EFE, MODsetup_default_efe.m). Files already
+%                      converted are not redone just because metadata
+%                      changed - L1 re-applies setup.yml anyway.
 %
 % OUTPUTS
 %   L0_files  - cell array of full paths to all .mat files in L0_dir
@@ -43,14 +50,17 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
-%   Deliberately takes only plain paths, not a metadata/config object -
-%   this and MODprocess_single_modraw_to_L0.m are meant to run standalone
-%   with no dependency on Meta_Data, YAML setup, or the old mod_class.
+%   This and MODprocess_single_modraw_to_L0.m are meant to run standalone
+%   with no dependency on Meta_Data, YAML setup, or the old mod_class -
+%   metadata is optional.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 if nargin < 2 || isempty(L0_dir)
     L0_dir = fullfile(fileparts(raw_dir), 'L0');
+end
+if nargin < 4
+    metadata = [];
 end
 if nargin < 3 || isempty(raw_file_suffix)
     raw_file_suffix = MODsetup_detect_raw_suffix(raw_dir);
@@ -116,7 +126,7 @@ for i = 1:nfiles
 
     fprintf(1, '%s | %s --> %s.mat | ', datestr(now, 'YYYY.mm.dd HH:MM:SS'), filename, base);
 
-    L0_data = MODprocess_single_modraw_to_L0(fullfile(raw_dir, filename));
+    L0_data = MODprocess_single_modraw_to_L0(fullfile(raw_dir, filename), metadata);
 
     L0_data.raw_file_info.bytes    = list_rawfile(i).bytes;
     L0_data.raw_file_info.filename = base;
