@@ -4,7 +4,7 @@ This repo used to depend on the legacy CSIRO SEAWATER toolbox (`sw_*`, EOS-80/PS
 verbatim in `toolbox/seawater/`. As of 2026-09-08 (branch `epsilon_processing`), every `sw_*` call
 site outside that toolbox has been replaced with its TEOS-10-equivalent `gsw_*` call from a fully
 vendored GSW (Gibbs SeaWater) Oceanographic Toolbox, `toolbox/seawater/gsw/` (v3.06.16). Nicole's
-2026-08-13 note (`PLAN.md` Section 12) is the origin of this work: *"There's strong, well-established
+2026-08-13 note (`SESSION_LOG.md`) is the origin of this work: *"There's strong, well-established
 consensus: use GSW (TEOS-10), not the old SEAWATER (sw_) toolbox... We should get rid of sw_
 dependence and move to gsw_. We should also keep very careful notes of what units all our variables
 are in."*

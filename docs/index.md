@@ -7,7 +7,7 @@ This site has two kinds of pages:
 - **[Workflow](workflow/modraw_to_L0_conversion.md)** - what each script does and how to run it, organized by data level (L0 -> L1 -> L2 -> L3) and by use case.
 - **[Concepts](concepts/index.md)** - the physics and math behind the processing: calculating epsilon from shear, picking out profiles, figure of merit, noise spectra, and related background.
 
-For the current state of the refactor, active tasks, and the session-by-session log of what's been built, see `PLAN.md` at the repo root.
+For the current state of the refactor and active tasks, see `PLAN.md` at the repo root; for the session-by-session log of what's been built, see `SESSION_LOG.md`.
 
 ## Requirements
 

@@ -2593,7 +2593,7 @@ classdef MODvis_spectra < handle
                     % (mod_scan_fpo7_modeled_noise_f.m), at this scan's own
                     % local water temperature - the "not yet wired into
                     % anything" alternative to the bench-measured floor
-                    % (see PLAN.md's 2026-08-25/26 session log). Visualized
+                    % (see SESSION_LOG.md, 2026-08-25/26). Visualized
                     % here only; production chi still uses bench noise.
                     if isempty(pu.noise_coefs) || ~isfield(app.CurrentData,'temperature') ...
                             || idx > numel(app.CurrentData.temperature)

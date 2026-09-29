@@ -45,7 +45,7 @@ function Psg = batchelor_spectrum(epsilon, chi, nu, ktemp, k)
 %        because they already share a wavenumber axis.
 %   This function is a direct, unchanged-math port of variant #2 (Ren-Chieh
 %   Lien 1992, after Oakey 1981) - not variant #1. See the 2026-09-08
-%   session log entry in PLAN.md (Section 12) for how this was confirmed
+%   entry in SESSION_LOG.md for how this was confirmed
 %   by reading both source files side by side.
 %
 % INPUTS

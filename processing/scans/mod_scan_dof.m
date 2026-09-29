@@ -21,7 +21,7 @@ function dof = mod_scan_dof(fft_segments_per_scan)
 %   mod_scan_calc_chi_mle.m's MLE weighting can't disagree on what dof
 %   actually is. Rockland does the same thing (dof_spec is an output of
 %   get_diss_odas.m, not an input field) - see the design discussion in
-%   PLAN.md's session log.
+%   SESSION_LOG.md.
 %
 %   The 1.9 factor is only valid at exactly 50% overlap (Nuttall's
 %   derivation) - that's why overlap is hardcoded rather than exposed as

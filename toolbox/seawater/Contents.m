@@ -24,7 +24,7 @@
 %    shape as visc.m - pure seawater-property math with no metadata/scan
 %    argument - so it lives here too, not in processing/scans/, where it
 %    was originally named mod_scan_thermal_diffusivity.m before being
-%    moved and renamed on 2026-09-08 (see PLAN.md Section 12 session log).
+%    moved and renamed on 2026-09-08 (see SESSION_LOG.md).
 %
 % 3. gsw/ - the full vendored GSW (Gibbs SeaWater) Oceanographic Toolbox,
 %    TEOS-10, v3.06.16 - unmodified third-party code. This is what every

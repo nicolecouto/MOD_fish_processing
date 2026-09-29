@@ -161,14 +161,14 @@ datetime_utc,folder,old_name,new_name
 ## History
 
 Added 2026-07-08 to fix sort order in deployments with numbered (not
-datetime-named) raw files - see `PLAN.md` Session Log entry "Zero-pad
+datetime-named) raw files - see `SESSION_LOG.md` entry "Zero-pad
 numbered raw filenames."
 
 Updated 2026-07-23: replaced the plain terminal `y/n` confirmation with a
 GUI dialog (falling back to a text prompt when no display is available, or
 skipping with a warning under `-batch`), and switched from positional
 arguments to Name-Value pairs, adding `pad_width` as an explicit override for
-the auto-computed digit count. See `PLAN.md` Session Log.
+the auto-computed digit count. See `SESSION_LOG.md`.
 
 Updated 2026-07-24: fixed a bug where auto width always padded to at least 3
 digits, even when a deployment's files already had a uniform (but smaller)
@@ -179,5 +179,5 @@ uniform widths are left alone, since they already sort correctly as-is. Also
 fixed the GUI dialog/text prompt popping up even when nothing needed
 renaming - the "would this actually change anything" check now runs before
 any prompt, not after. And switched informational console messages to a
-shortened path via the new `util/MODutil_short_path.m`. See `PLAN.md`
-Session Log.
+shortened path via the new `util/MODutil_short_path.m`. See
+`SESSION_LOG.md`.

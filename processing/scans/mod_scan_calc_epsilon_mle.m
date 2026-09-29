@@ -32,7 +32,7 @@ function scan = mod_scan_calc_epsilon_mle(scan, metadata)
 %   back as an output) - a colleague's 2026 ASTRAL reprocess fork
 %   overrode this to 5 cpm specifically for the MLE fit, which is the
 %   provenance kmin_mle's registered default follows (see
-%   MODsetup_metadata_field_registry.m, PLAN.md Session Log 2026-09-02).
+%   MODsetup_metadata_field_registry.m, SESSION_LOG.md 2026-09-02).
 %
 % INPUTS
 %   scan       - struct with:

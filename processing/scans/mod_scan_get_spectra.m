@@ -123,7 +123,7 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   hardcoded rather than exposed as a tunable fraction - see
 %   docs/concepts/spectral_windowing.md. This differs from the old
 %   MOD_fish_lib mod_efe_scan_acceleration.m's single-periodogram-per-scan
-%   spectra by design - see PLAN.md's session log for why. Minus the
+%   spectra by design - see SESSION_LOG.md for why. Minus the
 %   h_freq transfer-function division and fc1/fc2 band integration that
 %   function also did - both need calibration/filter machinery this repo
 %   doesn't have yet.

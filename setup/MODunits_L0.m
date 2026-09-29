@@ -10,7 +10,7 @@ function u = MODunits_L0()
 %   (MODprocess_single_modraw_to_L0.m's own DESCRIPTION) - so every entry
 %   here is explicitly documented as unitless/raw rather than omitted,
 %   per this repo's "keep very careful notes of what units all our
-%   variables are in" goal (PLAN.md, 2026-08-13 session log). Mirrors
+%   variables are in" goal (SESSION_LOG.md, 2026-08-13). Mirrors
 %   MODsetup_metadata_field_registry.m's pattern (a static function
 %   returning a struct, no data needed in hand to call it) but keyed by
 %   field name -> {unit, description} rather than by yaml-registry name.
