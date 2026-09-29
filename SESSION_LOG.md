@@ -4,6 +4,13 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-09-28 - Session log moved out of PLAN.md; self-documenting project skill (branch `main-fork`)
+
+- PLAN.md was 1255 lines, ~550 of them this log. Moved the log here byte-for-byte (entries below are unedited), left a one-line stub at `PLAN.md` Section 12 so section numbers cited from code stay valid, and added an index of Sections 1-12 at the top of PLAN.md.
+- Repointed every "PLAN.md Session Log" / "Section 12 session log" citation to `SESSION_LOG.md`: PLAN.md Sections 1-11, `docs/index.md`, `docs/workflow/*.md` History sections, `docs/concepts/units_and_seawater.md`, and comments/description strings in 8 `.m` files. Pointer text only.
+- Added `.claude/skills/self-documenting/SKILL.md`: the general version of Section 11's Standing rule - a checklist of which docs to update for which kind of change, append-only History/log entries, `mkdocs.yml` nav + `mkdocs build --strict`, sandbox testing, preview images before committing.
+- Tested: `mkdocs build --strict` passes; `checkcode` unchanged on edited `.m` files; `MODsetup_metadata_field_registry` still loads.
+
 ### 2026-09-22 - Folded mod_scan_fpo7_noise_f.m into mod_scan_fpo7_modeled_noise_f.m as a private subfunction; fixed a Johnson-noise units bug found while wiring the theoretical noise floor into two consuming projects (branch `epsilon_processing`)
 
 `mod_scan_fpo7_noise_f.m`/`mod_scan_fpo7_modeled_noise_f.m` were first wired into actual processing/plotting code this session (previously exercised only by `MODvis_spectra.m`'s app) - a new shared `MODplot_chi_spectra_noise_floor.m` (in `plots/`) overlays a theoretical noise floor alongside bench-measured ones for both `apex_epsi` (a different repo/project) and `mod_fish_lib/data_for_reorg/epsi_mako/astral`'s exploratory scripts.

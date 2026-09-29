@@ -702,7 +702,7 @@ Ran `/code-review` against the branch after the `chi_obs`/`chi_mle`/reorg work a
 
 Wiki: `MOD_fish_processing/docs/` (MkDocs Material, deployed to GitHub Pages via `.github/workflows/docs.yml` — see `SESSION_LOG.md`, 2026-07-09). Superseded the Notion wiki as the source of truth; pages live in-repo under `docs/workflow/` (what scripts do, how to run them), `docs/concepts/` (physics/math background), and `docs/visualization/` (catalog of the `MODvis_*`/`*App` interactive apps and `MODplot_*` diagnostic plots — what each one shows and how to call it).
 
-**Standing rule:** any time a `MODvis_*`/`*App` or `MODplot_*` script is added or changed, update its entry in `docs/visualization/index.md` in the same change — an example image (regenerated if the script's output changed) plus a short description of how to use it. Don't let this drift out of sync with the code the way the rest of the wiki periodically has.
+**Standing rule:** any time a `MODvis_*`/`*App` or `MODplot_*` script is added or changed, update its entry in `docs/visualization/index.md` in the same change — an example image (regenerated if the script's output changed) plus a short description of how to use it. Don't let this drift out of sync with the code the way the rest of the wiki periodically has. The general version of this rule, for all docs, is the `.claude/skills/self-documenting/SKILL.md` project skill.
 
 - [x] Draft "L0: converting .modraw to .mat" — `docs/workflow/L0_modraw_conversion.md`
 - [x] Draft "Zero-padding numbered raw filenames" — `docs/workflow/pad_raw_filenames.md`
