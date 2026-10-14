@@ -46,6 +46,15 @@ classdef MODvis_spectra_L0 < handle
     %     delta^2/(Fs/2), with delta = LSB*2^(24-N) - same conventions and
     %     colors as MODvis_spectra. Plus the ADXL accelerometer sensor
     %     noise, (20e-6)^2 g^2/Hz, a property of the sensor, not the ADC.
+    %   - "Export this scan" saves the shaded window's spectra; "Export all
+    %     scans" tiles the current file into back-to-back windows of
+    %     window_s (a leftover partial window at the end is dropped) - for
+    %     comparing deployments, or averages/std over a file. Both use the
+    %     current spectral settings, include every channel whether or not
+    %     it's checked, and save one .mat (see exportScans for the fields;
+    %     E = load(file) gives E.spectra.t1_volt, E.f, ...). Each spectrum
+    %     is a row: 1 x Nf for one scan, M x Nf for M scans, one shared f.
+    %     Also callable without the dialog: app.exportScans('all', outfile).
     %
     % INPUTS
     %   target - (optional) an L0 .mat file or a folder of them. Default:
@@ -109,6 +118,10 @@ classdef MODvis_spectra_L0 < handle
         FullViewCheck matlab.ui.control.CheckBox     % timeseries: whole file
         WindowViewCheck matlab.ui.control.CheckBox   % timeseries: spectrum window +/- buffer
         BufferField matlab.ui.control.NumericEditField
+
+        ExportScanBtn matlab.ui.control.Button
+        ExportAllBtn matlab.ui.control.Button
+        ExportFolder string = ""         % last folder exported to
 
         Folder string = ""
         Files string = strings(0,1)
@@ -174,9 +187,9 @@ classdef MODvis_spectra_L0 < handle
             app.GL.ColumnSpacing = 10;
 
             %% LEFT: folder, files, spectral settings
-            left = uigridlayout(app.GL, [15 2]);
+            left = uigridlayout(app.GL, [18 2]);
             left.Layout.Row = 1; left.Layout.Column = 1;
-            left.RowHeight = {30, 44, 22, '1x', 30, 26, 28, 28, 28, 28, 28, 26, 24, 24, 28};
+            left.RowHeight = {30, 44, 22, '1x', 30, 26, 28, 28, 28, 28, 28, 26, 24, 24, 28, 26, 30, 30};
             left.ColumnWidth = {'1x', '1x'};
             left.RowSpacing = 5;
 
@@ -235,6 +248,17 @@ classdef MODvis_spectra_L0 < handle
             app.BufferField = uieditfield(left, 'numeric', 'Value', 5, 'Limits', [0 Inf], ...
                 'ValueDisplayFormat', '%g', 'ValueChangedFcn', @(~,~) app.applyView());
             app.BufferField.Layout.Row = 15; app.BufferField.Layout.Column = 2;
+
+            lbl = uilabel(left, 'Text', 'Export spectra (.mat)', 'FontWeight', 'bold');
+            lbl.Layout.Row = 16; lbl.Layout.Column = [1 2];
+            app.ExportScanBtn = uibutton(left, 'Text', 'Export this scan', ...
+                'Tooltip', 'Spectra of the shaded window, every channel, current settings', ...
+                'ButtonPushedFcn', @(~,~) app.exportScans('this'));
+            app.ExportScanBtn.Layout.Row = 17; app.ExportScanBtn.Layout.Column = [1 2];
+            app.ExportAllBtn = uibutton(left, 'Text', 'Export all scans', ...
+                'Tooltip', 'The whole file in back-to-back windows of window [s], every channel, current settings', ...
+                'ButtonPushedFcn', @(~,~) app.exportScans('all'));
+            app.ExportAllBtn.Layout.Row = 18; app.ExportAllBtn.Layout.Column = [1 2];
 
             %% RIGHT: timeseries rows + spectrum section
             right = uigridlayout(app.GL, [app.NRows+1 1]);
@@ -660,11 +684,16 @@ classdef MODvis_spectra_L0 < handle
             % Sample range of the spectrum window, centered on
             % WindowCenter and clamped to the file
             t = app.Data.epsi.dnum;
-            n = min(numel(t), max(1, round(app.WindowField.Value * app.Conversion.Fs_epsi)));
+            n = app.windowSamples();
             [~, ic] = min(abs(t - app.WindowCenter));
             i0 = ic - floor(n/2);
             i0 = max(1, min(i0, numel(t) - n + 1));
             i1 = i0 + n - 1;
+        end
+
+        function n = windowSamples(app)
+            % Spectrum window length [samples], at most the whole file
+            n = min(numel(app.Data.epsi.dnum), max(1, round(app.WindowField.Value * app.Conversion.Fs_epsi)));
         end
 
         function drawShade(app, i)
@@ -761,15 +790,8 @@ classdef MODvis_spectra_L0 < handle
 
             [i0, i1] = app.windowIndices();
             n = i1 - i0 + 1;
-            step = nfft - round(overlap_pct/100 * nfft);
             t = app.Data.epsi.dnum;
-            nTotal = numel(t);
-            Fs_meas = NaN;
-            if nTotal > 1
-                % Timestamps are ms-quantized, so use the whole span
-                % rather than a median sample spacing
-                Fs_meas = (nTotal - 1) / ((t(end) - t(1)) * 86400);
-            end
+            Fs_meas = app.measuredFs();
 
             % No legend - the checkbox column is color-keyed to every curve
             lockedLims = {};
@@ -778,38 +800,28 @@ classdef MODvis_spectra_L0 < handle
             end
             cla(ax);
             hold(ax, 'on');
+            [names, fields] = app.presentChannels();
+            on = cellfun(@(fl) app.ChannelOn.(fl), fields);
+            [P, f, nseg, nskip] = app.computeSpectra(i0, i1, fields(on));
             nsegUsed = 0;
             nsegSkipped = 0;
-            f = [];
-            names = app.Conversion.channels;
-            for iC = 1:numel(names)
-                c = app.Conversion.channel.(names{iC});
-                if ~isfield(app.Data.epsi, c.field) || ~app.ChannelOn.(c.field); continue; end
-                x = app.Data.epsi.(c.field)(i0:i1);
-                starts = 1:step:(numel(x) - nfft + 1);
-                ok = arrayfun(@(s) all(isfinite(x(s:s+nfft-1))), starts);
-                nsegSkipped = max(nsegSkipped, sum(~ok));
-                starts = starts(ok);
-                if isempty(starts); continue; end
-                [Pxx, f] = mod_scan_welch_psd(x, nfft, starts, Fs, taper, detrend_type);
-                nsegUsed = max(nsegUsed, numel(starts));
-                plot(ax, f(2:end), Pxx(2:end), '-', ...
+            for iC = find(on)
+                fl = fields{iC};
+                nsegUsed = max(nsegUsed, nseg.(fl));
+                nsegSkipped = max(nsegSkipped, nskip.(fl));
+                if nseg.(fl) == 0; continue; end
+                plot(ax, f(2:end), P.(fl)(2:end), '-', ...
                     'Color', app.channelColor(names{iC}), 'LineWidth', 1.2);
             end
-            if isempty(f)
-                fEnds = [Fs/nfft Fs/2];
-            else
-                fEnds = [f(2) f(end)];
-            end
+            fEnds = [f(2) f(end)];
 
             lsb = app.Conversion.channel.(app.BitNoiseLsbDrop.Value);
-            keys = {'bit24', 'bit20', 'bit16'};
             for iB = 1:numel(app.BitNoiseBits)
-                if ~app.NoiseCheck.(keys{iB}).Value; continue; end
-                delta = lsb.scale * 2^(app.Conversion.bit_counts - app.BitNoiseBits(iB));
+                if ~app.NoiseCheck.(sprintf('bit%d', app.BitNoiseBits(iB))).Value; continue; end
+                [quant, fullLsb] = app.bitNoisePSD(lsb, app.BitNoiseBits(iB));
                 clr = app.BitNoiseColors(iB,:);
-                plot(ax, fEnds, delta^2/12/(Fs/2) * [1 1], '-', 'Color', clr, 'LineWidth', 1);
-                plot(ax, fEnds, delta^2/(Fs/2) * [1 1], '--', 'Color', clr, 'LineWidth', 1);
+                plot(ax, fEnds, quant * [1 1], '-', 'Color', clr, 'LineWidth', 1);
+                plot(ax, fEnds, fullLsb * [1 1], '--', 'Color', clr, 'LineWidth', 1);
             end
             if app.NoiseCheck.accel.Value
                 plot(ax, fEnds, app.AccelNoisePSD * [1 1], '-.', ...
@@ -862,6 +874,192 @@ classdef MODvis_spectra_L0 < handle
                 app.CurrentFile, datestr(t(i0), 'HH:MM:SS'), datestr(t(i1), 'HH:MM:SS'), n/Fs, n, ...
                 app.Conversion.source, nfft, Fs/nfft, overlap_pct, taper, detrend_type, ...
                 Fs, Fs_meas, nsegUsed, dofTxt, warnTxt);
+        end
+
+        function [names, fields] = presentChannels(app)
+            % EFE channels in slot order that exist in the loaded file:
+            % names ('t1', ...) and their epsi fields ('t1_volt', ...)
+            names = {};
+            fields = {};
+            for iC = 1:numel(app.Conversion.channels)
+                c = app.Conversion.channel.(app.Conversion.channels{iC});
+                if isfield(app.Data.epsi, c.field)
+                    names{end+1} = app.Conversion.channels{iC}; %#ok<AGROW>
+                    fields{end+1} = c.field; %#ok<AGROW>
+                end
+            end
+        end
+
+        function [P, f, nseg, nskip] = computeSpectra(app, i0, i1, fields)
+            % Welch spectrum of each epsi field over samples i0:i1 with the
+            % settings in the left panel. Segments with a NaN are skipped;
+            % a field with no usable segment gets all-NaN. f is every bin
+            % from 0 to Fs/2 (column), whether or not any segment was used.
+            Fs = app.Conversion.Fs_epsi;
+            nfft = round(app.NfftField.Value);
+            step = nfft - round(app.OverlapField.Value/100 * nfft);
+            f = (0:floor(nfft/2))' * Fs/nfft;   % same bins periodogram returns
+            P = struct();
+            nseg = struct();
+            nskip = struct();
+            for k = 1:numel(fields)
+                x = app.Data.epsi.(fields{k})(i0:i1);
+                starts = 1:step:(numel(x) - nfft + 1);
+                ok = arrayfun(@(s) all(isfinite(x(s:s+nfft-1))), starts);
+                nskip.(fields{k}) = sum(~ok);
+                starts = starts(ok);
+                nseg.(fields{k}) = numel(starts);
+                if isempty(starts)
+                    P.(fields{k}) = NaN(size(f));
+                else
+                    P.(fields{k}) = mod_scan_welch_psd(x, nfft, starts, Fs, ...
+                        app.TaperDrop.Value, app.DetrendDrop.Value);
+                end
+            end
+        end
+
+        function Fs_meas = measuredFs(app)
+            % Timestamps are ms-quantized, so use the whole file's span
+            % rather than a median sample spacing
+            t = app.Data.epsi.dnum;
+            Fs_meas = NaN;
+            if numel(t) > 1
+                Fs_meas = (numel(t) - 1) / ((t(end) - t(1)) * 86400);
+            end
+        end
+
+        function [quant, fullLsb] = bitNoisePSD(app, c, bits)
+            % Flat ADC bit-noise PSD [unit^2/Hz] for conversion channel
+            % record c at an N-bit ADC: delta = LSB*2^(24-N);
+            % quant = delta^2/12/(Fs/2) (solid line), fullLsb =
+            % delta^2/(Fs/2) (dashed line)
+            Fs = app.Conversion.Fs_epsi;
+            delta = c.scale * 2^(app.Conversion.bit_counts - bits);
+            quant = delta^2/12/(Fs/2);
+            fullLsb = delta^2/(Fs/2);
+        end
+
+        function out = exportScans(app, which, outfile)
+            % which = 'this' (the shaded window) or 'all' (the current file
+            % tiled into back-to-back windows of window_s, a leftover
+            % partial window dropped). outfile omitted -> save dialog.
+            % Saved with -struct, so load(outfile) returns out itself:
+            %   README        - char, what's in here
+            %   file, folder  - the L0 file the spectra came from
+            %   f             - [1 x Nf] frequency [Hz], 0 to Fs/2, shared
+            %                   by every scan and channel
+            %   spectra.<field> - [M x Nf] PSD per scan [V^2/Hz or g^2/Hz],
+            %                   field = t1_volt, s1_volt, a1_g, ...; a scan
+            %                   with no NaN-free segment is all-NaN
+            %   units.<field> - 'V^2/Hz' or 'g^2/Hz'
+            %   scan          - i0, i1 [M x 1] sample indices into the L0
+            %                   file's epsi (epsi.x(i0:i1) is the scan),
+            %                   dnum_start, dnum_end [M x 1]
+            %   nseg.<field>, dof.<field> - [M x 1] Welch segments used,
+            %                   dof = 1.9*nseg (NaN unless overlap is 50%)
+            %   noise.<field> - flat noise floors [unit^2/Hz] (scalars):
+            %                   bit24/bit20/bit16 = delta^2/12/(Fs/2),
+            %                   bit24_full_lsb/... = delta^2/(Fs/2), lsb
+            %                   [unit], plus adxl for accelerometer channels
+            %   settings      - nfft, window_s, window_samples, overlap_pct,
+            %                   taper, detrend, Fs, Fs_measured, df
+            %   epsi_conversion - the file's counts <-> volts/g record
+            out = [];
+            if isempty(fieldnames(app.Data)); return; end
+            t = app.Data.epsi.dnum;
+            Fs = app.Conversion.Fs_epsi;
+            [~, base] = fileparts(app.CurrentFile);
+            switch which
+                case 'this'
+                    [i0, i1] = app.windowIndices();
+                    defName = sprintf('%s_spectra_%s.mat', base, char(datetime(t(i0), 'ConvertFrom', 'datenum', 'Format', 'HHmmss')));
+                case 'all'
+                    n = app.windowSamples();
+                    i0 = (1:n:(numel(t) - n + 1))';
+                    i1 = i0 + n - 1;
+                    defName = sprintf('%s_spectra_all.mat', base);
+                otherwise
+                    error('MODvis_spectra_L0:exportScans', 'which must be ''this'' or ''all''.');
+            end
+
+            if nargin < 3 || isempty(outfile)
+                % Default next to the L0 folder, not in it - the file list
+                % shows every .mat in the L0 folder
+                startDir = app.ExportFolder;
+                if startDir == ""; startDir = fileparts(app.Folder); end
+                [fn, fp] = uiputfile('*.mat', 'Export spectra', fullfile(startDir, defName));
+                figure(app.Fig);
+                if isequal(fn, 0); return; end
+                outfile = fullfile(fp, fn);
+                app.ExportFolder = string(fp);
+            end
+
+            [names, fields] = app.presentChannels();
+            M = numel(i0);
+            nfft = round(app.NfftField.Value);
+            overlap_pct = app.OverlapField.Value;
+
+            out.README = sprintf([ ...
+                'EFE spectra exported by MODvis_spectra_L0.m from %s (%d scan(s)). ' ...
+                'spectra.<field> is [scans x frequencies]: row m is scan m, over samples ' ...
+                'scan.i0(m):scan.i1(m) of the L0 file''s epsi, and column k is frequency f(k) ' ...
+                '(f is shared by every scan and channel, and starts at 0 Hz). ' ...
+                'Welch PSD (mod_scan_welch_psd.m), one-sided, each segment detrended on its own; ' ...
+                'settings holds nfft, window, overlap, taper and detrend. Segments containing ' ...
+                'a NaN are skipped (nseg), and a scan with none left is all-NaN. noise.<field> ' ...
+                'holds flat noise floors in the same units as spectra.<field>: bitN is ADC ' ...
+                'quantization noise delta^2/12/(Fs/2) with delta = lsb*2^(24-N), bitN_full_lsb ' ...
+                'is delta^2/(Fs/2), and adxl (accelerometers only) is the ADXL sensor noise.'], ...
+                app.CurrentFile, M);
+            out.file = char(app.CurrentFile);
+            out.folder = char(app.Folder);
+            out.exported = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+
+            out.scan.i0 = i0(:);
+            out.scan.i1 = i1(:);
+            out.scan.dnum_start = t(i0(:));
+            out.scan.dnum_end = t(i1(:));
+
+            [~, f] = app.computeSpectra(1, 1, {});
+            out.f = f';
+            for k = 1:numel(fields)
+                out.spectra.(fields{k}) = NaN(M, numel(f));
+                out.nseg.(fields{k}) = zeros(M, 1);
+            end
+            for m = 1:M
+                [P, ~, nseg] = app.computeSpectra(i0(m), i1(m), fields);
+                for k = 1:numel(fields)
+                    out.spectra.(fields{k})(m,:) = P.(fields{k})';
+                    out.nseg.(fields{k})(m) = nseg.(fields{k});
+                end
+            end
+            for k = 1:numel(fields)
+                c = app.Conversion.channel.(names{k});
+                out.units.(fields{k}) = [c.unit '^2/Hz'];
+                if overlap_pct == 50
+                    out.dof.(fields{k}) = mod_scan_dof(out.nseg.(fields{k}));
+                else
+                    out.dof.(fields{k}) = NaN(M, 1);
+                end
+                nz = struct('lsb', c.scale);
+                for bits = app.BitNoiseBits
+                    [nz.(sprintf('bit%d', bits)), nz.(sprintf('bit%d_full_lsb', bits))] = app.bitNoisePSD(c, bits);
+                end
+                if strcmp(c.unit, 'g')
+                    nz.adxl = app.AccelNoisePSD;
+                end
+                out.noise.(fields{k}) = nz;
+            end
+
+            out.settings = struct('nfft', nfft, 'window_s', app.WindowField.Value, ...
+                'window_samples', i1(1) - i0(1) + 1, 'overlap_pct', overlap_pct, ...
+                'taper', app.TaperDrop.Value, 'detrend', app.DetrendDrop.Value, ...
+                'Fs', Fs, 'Fs_measured', app.measuredFs(), 'df', Fs/nfft);
+            out.epsi_conversion = app.Conversion;
+
+            save(outfile, '-struct', 'out');
+            uialert(app.Fig, sprintf('Exported %d scan(s) to %s', M, outfile), 'Spectra exported', ...
+                'Icon', 'success');
         end
     end
 end

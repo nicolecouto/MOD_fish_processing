@@ -11,7 +11,7 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   volts/g using the standard EFE config) plus a raw_file_info field
 %   recording which raw file (name, byte size) created it.
 %
-%   S1kips files that have already been converted (matched by raw file
+%   Skips files that have already been converted (matched by raw file
 %   size against raw_file_info.bytes), except the most recently modified
 %   file in the folder, which is always reconverted in case it's still
 %   being written to (e.g. during real-time acquisition).

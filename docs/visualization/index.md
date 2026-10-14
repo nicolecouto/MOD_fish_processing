@@ -105,6 +105,30 @@ app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup
   are at whole decades only.
 - **Lock spectrum limits** keeps the spectrum's current x/y limits - including a manual zoom -
   when it's redrawn (new click, new settings, new file). Unchecking returns to auto limits.
+- **Export spectra (.mat)**: **Export this scan** saves the shaded window's spectra; **Export all
+  scans** tiles the current file into back-to-back windows of `window` seconds (a leftover partial
+  window at the end is dropped), for comparing deployments or averaging over a file. Both use the
+  current spectral settings, include every channel whether or not it's checked, and open a save
+  dialog (starting next to the L0 folder, not in it). `E = load(file)` gives:
+
+    | Field | Contents |
+    |---|---|
+    | `spectra.t1_volt`, `.s1_volt`, `.a1_g`, ... | PSD, one row per scan: 1 × Nf for one scan, M × Nf for all |
+    | `f` | 1 × Nf frequency [Hz], 0 to Fs/2, shared by every scan and channel |
+    | `units.<field>` | `V^2/Hz` or `g^2/Hz` |
+    | `scan.i0`, `scan.i1` | M × 1 sample indices into the L0 file's `epsi` (`epsi.t1_volt(i0:i1)` is the scan); also `scan.dnum_start`/`dnum_end` |
+    | `file`, `folder` | the L0 file the spectra came from |
+    | `nseg.<field>`, `dof.<field>` | M × 1 Welch segments used (NaN segments skipped; none left → all-NaN row), dof = 1.9 × nseg (NaN unless 50% overlap) |
+    | `noise.<field>` | flat floors [same units as the spectra]: `bit24`/`bit20`/`bit16` = Δ²/12/(Fs/2), `bit24_full_lsb`/... = Δ²/(Fs/2), `lsb`, and `adxl` for accelerometers |
+    | `settings` | `nfft`, `window_s`, `window_samples`, `overlap_pct`, `taper`, `detrend`, `Fs`, `Fs_measured`, `df` |
+    | `epsi_conversion`, `README`, `exported` | the file's counts ↔ volts/g record, a plain-text description, export time |
+
+    ```matlab
+    A = load('EPSI_B_PC2_21_07_15_021224_spectra_all.mat');
+    loglog(A.f, mean(A.spectra.s1_volt, 1, 'omitnan'))   % mean over scans
+    ```
+
+    From a script, `app.exportScans('this' | 'all', outfile)` skips the dialog.
 - Also opens older L0 files (raw `channel1..N` counts) and L1 files.
 
 ### MODvis_twist_timeseries.m
