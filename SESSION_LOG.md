@@ -4,6 +4,26 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-14 (later) - Realtime/postprocessing driver design written up (branch `main-fork`)
+
+Nicole asked for a sketch of realtime processing on the ship, after a read of MOD_fish_lib's `RUN_Auto_process_data.m` (`epsiAuto`/`fctdAuto` split: two cast detectors, two time indices, FCTD files written twice, two grids with different names, microconductivity chi only on the FCTD side, a timer that stops on any error, twist counting as a separate session). The design went through several rounds with Nicole and is written up in `docs/workflow/realtime_processing.md`, linked from the nav and from `pipeline_overview.md`; nothing is built yet. Main decisions:
+- Same scripts for realtime and postprocessing, with switches (by file/by profile, watch on/off).
+- L2 = L1 timeseries + scans; L1 is the starting point for postprocessing.
+- Microconductivity pre-emphasis removal at L1, chi as an L2 scan module.
+- One cast table from the pressure time series for both modes; the grid uses it.
+- Despiking stays in the grid step for now.
+- Twist chained per winch over the cruise.
+- `MODsetup_build_yaml` merges `dev1_setup.yml` + `cruise_meta_data.yml` into `depl_meta_data.yml`.
+- `matlab -batch` worker loop plus a uifigure monitor app with Start/Pause/Stop and a streaming log.
+
+Facts checked along the way:
+- The old FastCTD GUI did pick casts: `FastCTD_GridData` runs `FastCTD_FindCasts`, bins each cast in depth, then re-bins onto a time grid (`tGrid`).
+- fctd_epsi's `main.c` never reads `CTD.MicroCond`, `CTD.Compass`, `CTD.output_format` or `CTD.chN_type`. Setup keeps them anyway, because it is copied into every `.modraw` header.
+- `dev1_setup.yml`'s top-level `profiling_direction` is not read by processing (processing reads `profile_detection.profile_dir`).
+- `mod_L2_tile_scans.m:164-166` keeps descending scans only, whatever the direction setting.
+
+`mkdocs build --strict` passes.
+
 ### 2026-10-14 - Start New Deployment onto main-fork; dev1_setup.yml; altimeter lookup by family (branch `main-fork`)
 
 Getting main-fork ready to use and test at sea (cruise in 9 days). The newest Start New Deployment window and visualizers were on `modvis_export`, which shares no history with main-fork. Every visualization/processing/setup file there already matched main-fork's working tree (committed separately, plus a header typo fix in `MODprocess_all_modraw_to_L0.m`), so only `acquisition/` (784b06d..6b04bc3) needed copying.

@@ -1,0 +1,215 @@
+# Realtime and postprocessing: one driver for every vehicle
+
+**Status:** design agreed 2026-10-14, not built yet. This page is the plan. Each section gets
+updated to describe the real code as it's built, and gets an entry in History below.
+
+## Why
+
+MOD_fish_lib's `RUN_Auto_process_data.m` runs either `epsiAuto_process_data` or
+`fctdAuto_process_data`. After the shared raw-to-mat step they become two separate stacks:
+
+- two cast detectors;
+- two time indices;
+- FCTD files written twice;
+- two grids with different field names (`GRID.t/s/pr` vs `FCTDgrid.temperature/salinity/depth`);
+- two plot scripts that only work with variables already in the workspace.
+
+Microconductivity chi exists only in the FCTD stack. Twist counting runs as its own Matlab
+session from its own rsync copy. Any error stops the timer, and the whole grid is rebuilt
+every tick.
+
+Here instead:
+
+- **One set of scripts** for realtime and postprocessing, with switches (by file or by profile,
+  watch or run once). Nothing is written just for realtime.
+- **The manifest decides what runs.** `instrument_manifest` says what's on board, and each step
+  runs only for those sensors, in the right order. There is no FCTD or EPSI branch.
+- **One file format for every vehicle.** Same structs and field names everywhere; a sensor
+  that isn't on board just has no field.
+- **A live monitor** with Start / Pause / Stop and a streaming log, which can't stop processing
+  even if it crashes.
+
+## Where postprocessing starts: L1
+
+L1 is just the `.modraw` turned into real data: physical units, calibrations, and sensor
+responses removed (for example the microconductivity pre-emphasis). It contains **no choices
+about spectra or casts**. To postprocess a deployment, start from its L1 files. Every
+spectral-processing and profile-picking choice (fft length, scan length, cast detection
+parameters, gridding) happens after L1, so it can be redone from L1 without going back to the
+raw files.
+
+## Levels and folders
+
+| Folder | What's in each file |
+|---|---|
+| `raw/` | Symlinks to this survey's `.modraw` files in the cruise-wide `RAW_full_cruise/` |
+| `L0/` | Parsed blocks: counts, and EFE volts/g from the standard board |
+| `L1/` | Physical-unit timeseries: `epsi`, `ctd`, `alt`, `vnav`, `gps`, `fluor`, `twist`, ... |
+| `L2/` | The **same timeseries as L1 plus `scans`**: spectra, FP07 chi, epsilon, microconductivity chi, fluorometer and CTD scan means (the same layout as a `Profile####.mat`) |
+| `profiles_L1/`, `profiles_L2/` | Postprocessing only: the same contents, cut by cast instead of by file |
+| `grid/` | `grid.mat`: one column per cast, binned in pressure |
+| `meta/` | `depl_meta_data.yml` and the deployment-wide files (`time_index.mat`, `pressure_time_series.mat`, `twist_time_series.mat`, `casts.mat`), plus `realtime/` (status, log, problems, control) |
+
+L1 is never rewritten after it's made. L2 carries the timeseries along so one file holds both
+the data and what was computed from it, at about L1 + 15% on disk.
+
+Every folder gets an auto-written `_README.txt` listing:
+- what's in the files;
+- the steps applied;
+- the parameters used;
+- the git commit of the code.
+
+So it's clear from the folder what has been done.
+
+## How it runs on the ship
+
+```mermaid
+flowchart LR
+  DEV1["DEV1<br/>fctd_epsi writes .modraw"] -->|rsync| RAW[("DEV3<br/>Processed/RAW_full_cruise/")]
+  SND["Start New Deployment<br/>(DEV1)"] --> YML[("survey/meta/<br/>dev1_setup.yml")]
+  YML --> BUILD["MODsetup_build_yaml<br/>+ cruise_meta_data.yml"] --> DEPL[("depl_meta_data.yml")]
+  RAW --> W["Worker<br/>MODprocess_deployment<br/>(matlab -batch)"]
+  DEPL --> W
+  W --> FILES[("raw/ L0/ L1/ L2/ grid/<br/>meta/realtime/ status, log")]
+  FILES --> APP["Monitor app<br/>MODvis_realtime_monitor"]
+  APP -->|"control.json<br/>Start/Pause/Stop"| W
+```
+
+There are two Matlab processes on DEV3. They talk only through files.
+
+**Worker:** `MODprocess_deployment(depl_meta_data_yml, 'by', 'file', 'watch', true)`, started by
+the monitor app's **Start** button (or `Start Realtime Processing.command`) with `matlab -batch`.
+It has no windows. Each loop:
+
+1. finds new or grown raw files;
+2. runs every stage on each one;
+3. writes status;
+4. waits `poll_s` (default 30 s).
+
+The wait starts **after** a loop finishes. A loop that takes 3 minutes is followed by a 30 s
+pause; loops never overlap and nothing is skipped. `poll_s` only sets how fast new data is
+noticed when the worker is idle.
+
+The raw file that's still being written gets redone only after it has grown by `regrow_min_s`
+of data (e.g. 2 min), or once it has closed. Without that, it and everything after it would be
+redone on every loop. `status.json` reports how long each loop took, so you can see if
+processing falls behind.
+
+Every file and stage is wrapped in `try/catch`:
+- A bad file is logged, listed in `problems.json`, and retried when it changes. The loop
+  carries on.
+- The worker never prompts, since `-batch` can't. If parameters are missing, the survey shows
+  "waiting for parameters".
+- **Stop** finishes the current file and exits cleanly.
+
+**Monitor app:** `MODvis_realtime_monitor`, a uifigure. It only reads what the worker writes,
+so a slow redraw or a crash can't stop processing. You can close and reopen it, or run another
+copy on a computer that mounts DEV3.
+
+A Matlab `timer` inside one session isn't used for two reasons: long processing freezes the
+plots, and one error in the timer callback stops it.
+
+**Files** in `<survey>/meta/realtime/`:
+
+| File | What's in it |
+|---|---|
+| `status.json` | Active survey and worker state, file counts per stage, last file, lag behind the newest raw file, loop time |
+| `realtime.log` | Every action and error, appended. Also copied into `Processed/cruise_log.txt` for the whole cruise |
+| `problems.json` | Files that failed, with the error |
+| `control.json` | Written by the app: run, pause or stop |
+
+**Postprocessing** is the same call with `'by', 'profile', 'watch', false`: one pass, no other code.
+
+## Stages
+
+Each stage is an existing `MODprocess_all_*` function unless marked new. The by-file/by-profile
+switch only changes what goes in and where the result goes.
+
+| # | Stage | Function | What it does |
+|---|---|---|---|
+| 0 | Route raw files | new `MODutil_route_raw_by_survey` | Reads each new file's `CTD.survey` from its header and symlinks it into `<survey>/raw/`. Symlinks follow a growing file, while hard links break when rsync replaces it. The active survey is the newest `depl_meta_data.yml`; a new one switches the worker over once the old survey's last files are done. |
+| 1 | modraw → L0 | `MODprocess_all_modraw_to_L0` | Already handles growing files. |
+| 2 | L0 → L1 | `MODprocess_all_L0_to_L1` | Physical units and calibrations. Microconductivity pre-emphasis removal moves here (new `mod_L1_ucond_remove_preemphasis`). The deployment-wide files in `meta/` (`time_index`, `pressure_time_series`, `twist_time_series`) are **appended to**, not rebuilt from every L1 file. The FP07 refit runs every N files. |
+| 2b | Casts | `modProcess_detect_profiles` on `pressure_time_series` | **One cast table** (`meta/casts.mat`) for both modes. Casts are keyed by start time, not by number, so they survive renumbering. A cast still in progress is left out until it ends. Realtime and postprocessing differ only in the parameters and any hand edits. Postprocessing also cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
+| 3 | → L2 | `MODprocess_all_L1_to_L2` | Copies the timeseries and adds `scans`. The modules that run depend on the manifest: CTD always; `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`); `fluor` → scan means. Scans are kept for up, down or both per `profiling_direction`. |
+| 4 | Grid | new `MODprocess_grid(metadata, 'by', 'file'\|'profile')` | Columns always come from the cast table. By file, each cast's data is found in the L2 files through `time_index`; by profile, it's read from `profiles_L2/`. Bins in pressure (dz from `grid.dz_m`); only new or changed casts are rebinned. Despiking and salinity cleanup happen here for now, as a separate function the grid calls, because despiking may move to L2 later (per scan, before spectra). |
+| 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | Chains every survey on the same **winch/cable**, with spool swaps from `Processed/spool_swap_log.csv`. Output: `Processed/twist/<winch>_twist_time_series.mat`. Each L1 file's own count still starts at 0; only these chained files carry the running total. |
+
+## One format for every vehicle
+
+`grid/grid.mat` contains:
+- axes `time`, `pressure`, `z`, `cast_direction`, `cast_start`, `cast_end`;
+- `source` (by file or by profile);
+- CTD always (`T`, `SP`, `CT`, `SR`, `sigma0`, `w`);
+- then only what's on board: `epsilon_final`, `chi_t1`/`chi_t2`/`chi_c1`, fluorometer channels, `alt_hab`;
+- `variables` (name, unit and description from `setup/MODunits_L3.m`) and the manifest.
+
+The monitor app and any later viewer loop over `variables`, so a Mako, an FCTD with
+microconductivity and an FCTD with fluorometer all display with the same code.
+
+## Metadata
+
+`MODsetup_build_yaml(survey_meta_dir)` writes `depl_meta_data.yml`, the file processing reads,
+from two files:
+
+- `dev1_setup.yml`: written by [Start New Deployment](start_new_deployment.md); says what's on
+  the vehicle;
+- `cruise_meta_data.yml`: the cruise's processing parameters per sensor type (spectral, chi,
+  epsilon, profile detection, grid, sample rates).
+
+Values from `dev1_setup.yml` win over the cruise file, and an existing `depl_meta_data.yml` is
+kept as `.replaced_*`. Start New Deployment's `profiling_direction` is mapped to
+`profile_detection.profile_dir`, which is what processing reads.
+
+Those two files are enough: besides the registry parameters, `MODsetup_read_yaml` only reads
+the optional `ctd.type` and `ctd.sample_per_record`.
+
+**Preflight** (when the worker starts, and as a button in the app) checks every registry
+parameter the manifest needs. The worker lists anything missing in `status.json`; the app
+opens the usual prompt dialogs, which save to `depl_meta_data.yml`.
+
+## Monitor app
+
+Laid out after the 2018 FastCTD GUI, with epsi variables added:
+
+- **Top status strip:** survey, vehicle and winch; worker state; file counts per stage; lag;
+  last update; problems count.
+- **Left, colour sections:** time vs pressure, one column per cast, sigma0 contours. Variables
+  are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
+- **Middle:**
+  - pressure vs time;
+  - TS of the last ~5 casts, coloured by age, to catch conductivity problems;
+  - twist count vs time for this winch, with spool swaps marked;
+  - space left for more panels.
+- **Bottom, streaming log**, with errors highlighted (click one for the full message).
+- **Right, control panel:** Start / Pause / Stop, Preflight, time span, depth range, colour
+  limits and colormaps per variable, open the selected time in `MODvis_timeseries` /
+  `MODvis_spectra`, Save PNG. Every plot setting is editable here and shown on the plot.
+
+## Testing: the simulator
+
+New `MODutil_simulate_acquisition(source_raw_dir, sandbox_incoming)` copies a real deployment's
+raw files into a sandbox `RAW_full_cruise/` over time, growing the last file the way
+`fctd_epsi` does. The worker and app run against it. It's tested on copies of:
+- `epsi_mako/blt2021_0715`;
+- `fctd_w_ucond`;
+- `fctd_w_ucond_fluor`.
+
+Each run includes a new survey mid-run, a deliberately corrupt raw file, and a missing
+parameter.
+
+## Other pieces in this round
+
+- `MODutil_read_som3(modraw_file)`: prints and returns the `$SOM3` block of a raw file
+  (mission name, vehicle name, firmware, git id, revision, SN, ...).
+- Start New Deployment gets a `winch` field, and Setup loses its explanatory comment lines.
+  Setup keeps every key, because it's copied into every `.modraw` header.
+- Fix: scan selection in `mod_L2_tile_scans.m` currently always keeps descending scans; it
+  will follow `profiling_direction`.
+
+## History
+
+**2026-10-14 - Design agreed** (branch `main-fork`). Written from the planning discussion with
+Nicole, after reading MOD_fish_lib's `RUN_Auto_process_data.m`, `epsiAuto_process_data.m`,
+`fctdAuto_process_data.m`, the FCTD formatting/gridding chain and `FastCTD_GUI.m`. Not built
+yet.

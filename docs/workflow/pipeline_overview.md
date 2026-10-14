@@ -19,6 +19,17 @@ VecNav, onboard CTD, no ISAP/GPS) are taken from the one real `epsi_mako` `setup
 
 Click any diagram to expand it.
 
+!!! note "Starting point for postprocessing: L1"
+    L1 is just the `.modraw` turned into real data - physical units and calibrations, no choices
+    about spectra or casts. To postprocess, start from the L1 files; every spectral-processing
+    and profile-picking choice happens after L1.
+
+!!! note "Planned: one driver for realtime and postprocessing"
+    [Realtime and postprocessing driver](realtime_processing.md) is the agreed design (2026-10-14,
+    not built yet) for a single manifest-driven driver, an L2 that carries the L1 timeseries plus
+    scans, gridding from one cast table, and a live monitor app. This page describes the code as
+    it is today.
+
 ## Shared foundation: modraw → L0 → L1
 
 Identical for realtime and postprocess. Setup is read once per deployment; L0 strips raw bytes to
