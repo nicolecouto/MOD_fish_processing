@@ -1,0 +1,20 @@
+# Vehicle preset - loaded when this vehicle is picked in Start New Deployment.
+# Probe SNs here are only the starting values; the window remembers the
+# last-used ones per vehicle.
+vehicle: MAKO1
+fish_flag: EPSI
+fish_pc: EPSI_PC3
+ctd_sn: 0674
+ch1_type: fpo7
+ch1_sn: 448
+ch2_type: fpo7
+ch2_sn: 447
+ch3_type: shear
+ch3_sn: 428
+ch4_type: shear
+ch4_sn: 427
+compass_sn:
+profiling_direction: down
+vnav: true
+alt: true
+fluor: false

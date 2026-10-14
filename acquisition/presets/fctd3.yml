@@ -1,0 +1,20 @@
+# Vehicle preset - loaded when this vehicle is picked in Start New Deployment.
+# Seeded from FCTD3's last Setups (Dec 2025): FCTD_PC3, CTD 0674,
+# microconductivity 2025-09-02-05.
+vehicle: FCTD3
+fish_flag: FCTD
+fish_pc: FCTD_PC3
+ctd_sn: 0674
+ch1_type: none
+ch1_sn:
+ch2_type: none
+ch2_sn:
+ch3_type: none
+ch3_sn:
+ch4_type: microcond
+ch4_sn: 2025-09-02-05
+compass_sn:
+profiling_direction: up
+vnav: true
+alt: true
+fluor: false

@@ -14,7 +14,9 @@
 #
 # Two shapes under a fish_flag: a single geometry block directly (FCTD -
 # every FCTD unit shares one mount, no vehicle_name needed), or one block
-# per vehicle_name (EPSI - geometry differs by platform).
+# per vehicle_name (EPSI - geometry differs by platform). Keys match ignoring
+# case, and a numbered unit with no entry of its own (MAKO1, MAKO2, ... as
+# Start New Deployment writes vehicle_name) uses its family's entry (Mako).
 
 altimeter:
   FCTD:

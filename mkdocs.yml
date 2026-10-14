@@ -31,6 +31,7 @@ theme:
 nav:
   - Home: index.md
   - Workflow:
+      - "Start New Deployment: Setup and dev1_setup.yml": workflow/start_new_deployment.md
       - "Pipeline overview: realtime vs. postprocess": workflow/pipeline_overview.md
       - "modraw → L0: converting .modraw to .mat": workflow/modraw_to_L0_conversion.md
       - ".modraw tag reference": workflow/modraw_tag_format.md

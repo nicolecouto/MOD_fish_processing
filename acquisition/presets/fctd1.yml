@@ -1,0 +1,20 @@
+# Vehicle preset - loaded when this vehicle is picked in Start New Deployment.
+# Default slot layout is the 25_0409/0410 dye survey: fluorometer on slot 3,
+# microconductivity on slot 4, slots 1-2 empty.
+vehicle: FCTD1
+fish_flag: FCTD
+fish_pc: FCTD_PC1
+ctd_sn: 0537
+ch1_type: none
+ch1_sn:
+ch2_type: none
+ch2_sn:
+ch3_type: fluor
+ch3_sn:
+ch4_type: microcond
+ch4_sn: J5023-2
+compass_sn:
+profiling_direction: up
+vnav: true
+alt: true
+fluor: false

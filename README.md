@@ -2,6 +2,9 @@
 Data processing pipeline and field commands for MOD profiling fish
 
 
+acquisition
+    start_new_deployment.py - Start New Deployment window (Python/tkinter) for the acquisition Mac: writes the Setup file fctd_epsi reads, the deployment's meta/dev1_setup.yml, and a row in the cruise deployment log - see docs/workflow/start_new_deployment.md
+
 visualization
     MODvis_timeseries.m - plots time series from a directory of L0, L1, L2, or Profile .mat files (formerly L0ExplorerApp.m)
     MODvis_spectra.m - browses a folder of .mat files carrying per-scan spectra (this repo's own L2/profile output, or legacy MOD_fish_lib/EPSILOMETER Profile*.mat), with wavenumber/frequency spectrum plots, theoretical overlays, FPO7 noise floors, and ADC bit-noise (24/20/16-bit) and accelerometer noise reference lines

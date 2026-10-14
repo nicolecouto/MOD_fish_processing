@@ -295,8 +295,9 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     looked up from the repo-committed
 %                                     setup/platform_instrument_geometry.yml
 %                                     table by fish_flag (and vehicle_name,
-%                                     where the table needs it) - see that
-%                                     file's header. Left unset if neither
+%                                     where the table needs it; matched
+%                                     ignoring case, MAKO1 falling back to
+%                                     Mako) - see that file's header. Left unset if neither
 %                                     source has a matching entry
 %                                     (deployments with no alt/isap
 %                                     hardware don't need one)
@@ -691,22 +692,41 @@ end
 % repo-committed, not a per-deployment path. A fish_flag entry is either a
 % geometry block directly (one mount shared by every vehicle with that
 % fish_flag, e.g. FCTD) or a struct of per-vehicle_name geometry blocks
-% (e.g. EPSI) - isfield(entry,'angle_deg') tells the two apart. Returns []
-% if fish_flag has no entry, or (per-vehicle case) vehicle_name has no
-% entry - same "absent means not set, never guessed" rule as the rest of
-% this function.
+% (e.g. EPSI) - isfield(entry,'angle_deg') tells the two apart. Keys match
+% case-insensitively, and a numbered unit with no entry of its own falls
+% back to its family (MAKO1 -> Mako; Start New Deployment writes the unit).
+% Returns [] if fish_flag has no entry, or (per-vehicle case) neither the
+% vehicle_name nor its family has one - same "absent means not set, never
+% guessed" rule as the rest of this function.
 function alt_geom = lookup_altimeter_geometry(fish_flag, vehicle_name)
 alt_geom = [];
 table_file = fullfile(fileparts(mfilename('fullpath')), 'platform_instrument_geometry.yml');
 table = ReadYaml(table_file);
-if ~isfield(table, 'altimeter') || ~isfield(table.altimeter, fish_flag)
+if ~isfield(table, 'altimeter')
     return
 end
-entry = table.altimeter.(fish_flag);
+entry = field_ignoring_case(table.altimeter, fish_flag);
+if isempty(entry)
+    return
+end
 if isfield(entry, 'angle_deg')
     alt_geom = entry;
-elseif ~isempty(vehicle_name) && isfield(entry, vehicle_name)
-    alt_geom = entry.(vehicle_name);
+elseif ~isempty(vehicle_name)
+    alt_geom = field_ignoring_case(entry, vehicle_name);
+    if isempty(alt_geom)
+        % Numbered unit (MAKO1, MAKO2, ...) falls back to its family (Mako)
+        alt_geom = field_ignoring_case(entry, regexprep(vehicle_name, '\d+$', ''));
+    end
+end
+end
+
+%% s.(name) with name matched case-insensitively; [] if there's no match
+function val = field_ignoring_case(s, name)
+val = [];
+names = fieldnames(s);
+iMatch = find(strcmpi(names, name), 1);
+if ~isempty(iMatch)
+    val = s.(names{iMatch});
 end
 end
 

@@ -1,0 +1,20 @@
+# Vehicle preset - loaded when this vehicle is picked in Start New Deployment.
+# No MAKO2 Setup on record yet, so pressure case, CTD and probe serial numbers
+# are blank: the window asks for them, then remembers them (last_used.json).
+vehicle: MAKO2
+fish_flag: EPSI
+fish_pc:
+ctd_sn:
+ch1_type: fpo7
+ch1_sn:
+ch2_type: fpo7
+ch2_sn:
+ch3_type: shear
+ch3_sn:
+ch4_type: shear
+ch4_sn:
+compass_sn:
+profiling_direction: down
+vnav: true
+alt: true
+fluor: false
