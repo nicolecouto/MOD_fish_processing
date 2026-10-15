@@ -87,11 +87,12 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     file (paths.ctd) rather than
 %                                     $SB49/$SB41 blocks in the raw stream
 %                                     - see MODprocess_read_external_ctd.m
-%     winch                        - winch/cable the vehicle is on, from
-%                                     setup.yml (Start New Deployment writes
-%                                     it to dev1_setup.yml). Used to chain
-%                                     twist counts over a cruise. '' if not
-%                                     declared.
+%     winch_spool                  - the spool on the winch, from setup.yml
+%                                     (Start New Deployment writes it to
+%                                     dev1_setup.yml). One winch and one
+%                                     spool serve every vehicle; the cruise
+%                                     twist count restarts where it changes.
+%                                     '' if not declared.
 %     manifest.has_vnav/.has_isap/.has_alt/.has_gps/.has_fluor
 %                                   - presence flags from setup.yml's
 %                                     instrument_manifest block. false when
@@ -381,9 +382,9 @@ metadata.vehicle_name = '';
 if isfield(yml, 'vehicle_name')
     metadata.vehicle_name = yml.vehicle_name;
 end
-metadata.winch = '';
-if isfield(yml, 'winch')
-    metadata.winch = char(string(yml.winch));
+metadata.winch_spool = '';
+if isfield(yml, 'winch_spool')
+    metadata.winch_spool = char(string(yml.winch_spool));
 end
 
 %% Processing parameters - every value MODsetup_metadata_field_registry.m

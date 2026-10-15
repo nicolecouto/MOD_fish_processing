@@ -383,8 +383,13 @@ def validate(values, config=None):
         warnings.append('Vehicle %s looks like a Mako, but fish type is FCTD' % values.get('vehicle'))
     elif flag == 'EPSI' and 'FCTD' in veh:
         warnings.append('Vehicle %s looks like an FCTD, but fish type is EPSI' % values.get('vehicle'))
-    if not str(values.get('winch', '') or '').strip():
-        warnings.append('No winch set - this survey\'s twist count won\'t be chained with other surveys on the same winch')
+    spool = str(values.get('winch_spool', '') or '').strip()
+    previous_spool = str(values.get('previous_winch_spool', '') or '').strip()
+    if not spool:
+        warnings.append('No winch spool set - the cruise twist count needs it')
+    elif previous_spool and spool != previous_spool:
+        warnings.append('Winch spool changed from %s to %s - the twist count restarts from 0 at this deployment'
+                        % (previous_spool, spool))
     # Calibration files, looked up the way fctd_epsi does (ctd.c InitFishCTD):
     # slots 1-2 in the FP07 folder and slots 3-4 in the shear folder (by slot,
     # not sensor type), as <folder>/<SN>/Calibration_<SN>.txt, and the CTD as
@@ -516,7 +521,7 @@ def render_dev1_setup_yml(values, config):
         'cruise: %s' % yq(values.get('cruise', '')),
         'experiment: %s' % yq(values.get('experiment', '')),
         'vehicle_name: %s' % yq(values.get('vehicle', '')),
-        'winch: %s # winch/cable; twist is chained per winch over the cruise' % yq(values.get('winch', '')),
+        'winch_spool: %s # one spool for every vehicle; twist restarts when it changes' % yq(values.get('winch_spool', '')),
         'pressure_case: %s' % yq(values.get('fish_pc', '')),
         'fish_flag: %s # EPSI or FCTD' % values['fish_flag'],
         'profiling_direction: %s # for turbulence data, up or down' % values.get('profiling_direction', 'down'),
@@ -593,7 +598,7 @@ def dev1_setup_yml_path(values, config):
     return os.path.join(config['processed_root'], values['survey'], 'meta', 'dev1_setup.yml')
 
 
-LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch', 'fish_flag', 'fish_pc', 'ctd_sn',
+LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch_spool', 'fish_flag', 'fish_pc', 'ctd_sn',
               'ch1_type', 'ch1_sn', 'ch2_type', 'ch2_sn', 'ch3_type', 'ch3_sn',
               'ch4_type', 'ch4_sn', 'microcond_sn', 'experiment', 'cruise',
               'setup_backup', 'dev1_setup_yml']
@@ -643,7 +648,7 @@ def write_all(values, config, write_yml=True):
         d = os.path.dirname(log_path)
         if d:
             os.makedirs(d, exist_ok=True)
-        # An existing log with different columns (e.g. from before winch was
+        # An existing log with different columns (e.g. from before winch_spool was
         # added) is set aside, so rows never land under the wrong headers
         if os.path.isfile(log_path):
             with open(log_path, newline='') as f:

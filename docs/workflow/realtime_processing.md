@@ -135,7 +135,7 @@ switch only changes what goes in and where the result goes.
 | 2b | Casts | `modProcess_detect_profiles` on `pressure_time_series` | **One cast table** (`meta/casts.mat`) for both modes. Casts are keyed by start time, not by number, so they survive renumbering. A cast still in progress is left out until it ends. Realtime and postprocessing differ only in the parameters and any hand edits. Postprocessing also cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
 | 3 | → L2 | `MODprocess_all_L1_to_L2` | Copies the timeseries and adds `scans`. The modules that run depend on the manifest: CTD always; `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`); `fluor` → scan means. Scans are kept for up, down or both per `profiling_direction`. |
 | 4 | Grid | new `MODprocess_grid(metadata, 'by', 'file'\|'profile')` | Columns always come from the cast table. By file, each cast's data is found in the L2 files through `time_index`; by profile, it's read from `profiles_L2/`. Bins in pressure (dz from `grid.dz_m`); only new or changed casts are rebinned. Despiking and salinity cleanup happen here for now, as a separate function the grid calls, because despiking may move to L2 later (per scan, before spectra). |
-| 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | Chains every survey on the same **winch/cable**, with spool swaps from `Processed/spool_swap_log.csv`. Output: `Processed/twist/<winch>_twist_time_series.mat`. Each L1 file's own count still starts at 0; only these chained files carry the running total. |
+| 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | One winch and one spool serve every vehicle, so this chains **every survey of the cruise** in time order into one series. The count restarts where the survey's `winch_spool` changes (set in Start New Deployment), and at any mid-deployment change logged in `Processed/spool_swap_log.csv`. Output: `Processed/twist/twist_time_series.mat`. Each L1 file's own count still starts at 0; only this chained file carries the running total. |
 
 ## One format for every vehicle
 
@@ -219,14 +219,14 @@ kept as `depl_meta_data.yml.building` so you can look at it.
 
 Laid out after the 2018 FastCTD GUI, with epsi variables added:
 
-- **Top status strip:** survey, vehicle and winch; worker state; file counts per stage; lag;
+- **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
   last update; problems count.
 - **Left, colour sections:** time vs pressure, one column per cast, sigma0 contours. Variables
   are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
 - **Middle:**
   - pressure vs time;
   - TS of the last ~5 casts, coloured by age, to catch conductivity problems;
-  - twist count vs time for this winch, with spool swaps marked;
+  - cruise twist count vs time (all vehicles - one winch spool), with spool changes marked;
   - space left for more panels.
 - **Bottom, streaming log**, with errors highlighted (click one for the full message).
 - **Right, control panel:** Start / Pause / Stop, Preflight, time span, depth range, colour
@@ -255,10 +255,12 @@ parameter.
   Firmware from 2023 on records probe SN `000` for every EFE channel, so `$SOM3` doesn't say
   which probes were on; Setup and `dev1_setup.yml` do. The 2025 FCTD fluorometer files have no
   `$SOM3` block.
-- **Built:** Start New Deployment has a `winch` field: remembered per vehicle, written to
-  `dev1_setup.yml` and the deployment log, with a warning when it's empty. Setup now has one
-  comment line (provenance) instead of the section notes. Setup keeps every key, because it's
-  copied into every `.modraw` header.
+- **Built:** Start New Deployment has a `winch_spool` field. There's one winch with one spool
+  on it, used by every vehicle, so it's cruise-wide: it's filled in from the last Create
+  Setup (any vehicle), written to `dev1_setup.yml` and the deployment log, and warned about
+  when it's empty or changes (the twist count restarts there). Setup now has one comment line
+  (provenance) instead of the section notes. Setup keeps every key, because it's copied into
+  every `.modraw` header.
 - Fix: scan selection in `mod_L2_tile_scans.m` currently always keeps descending scans; it
   will follow `profiling_direction`.
 
@@ -273,6 +275,6 @@ yet.
 `setup/cruise_meta_data_template.yml` (from `MODsetup_write_cruise_meta_data_template`),
 `MODsetup_preflight` (with a no-prompt mode added to `MODsetup_validate_metadata`),
 `MODsetup_add_derived_metadata` + `meta/fpo7_calibration.mat`, the prompt retry in L0 → L1,
-`MODutil_read_som3`, and the Start New Deployment winch field and Setup comment cleanup. Also:
+`MODutil_read_som3`, and the Start New Deployment winch spool field and Setup comment cleanup. Also:
 `MODsetup_read_yaml` now reads every processing parameter with one registry loop. Tested in a
 scratchpad sandbox - see `SESSION_LOG.md` (2026-10-14, step 1).

@@ -21,14 +21,16 @@ Setup** shows the changes, then:
 The window warns if the vehicle name and fish type disagree (MAKO or EPSI
 in the name with FCTD selected, or FCTD in the name with EPSI selected).
 
-**Winch** names the winch/cable the vehicle is on. Twist counts are chained
-over the cruise per winch, so every survey on the same winch should use the
-same name. It's remembered per vehicle, written to `dev1_setup.yml` (`winch:`)
-and the deployment log (not to `Setup` - `fctd_epsi` doesn't use it), and the
-window warns if it's empty.
+**Winch spool** names the spool on the winch. There's one winch with one
+spool on it at a time, and every vehicle uses it, so this isn't per vehicle:
+the window fills in the spool used at the last Create Setup, whatever the
+vehicle was. Change it only when the spool is changed - the window then warns
+that the twist count restarts from 0 at this deployment. It's written to
+`dev1_setup.yml` (`winch_spool:`) and the deployment log (not to `Setup` -
+`fctd_epsi` doesn't use it), and the window warns if it's empty.
 
 If `deployment_log.csv` already exists with different columns (e.g. one
-written before the winch column), it's set aside as
+written before the winch_spool column), it's set aside as
 `deployment_log_old_columns.csv` and a new log is started, so rows never end
 up under the wrong headers. The Create Setup message says when this happens.
 
@@ -41,7 +43,7 @@ Raw file names start with the fish type - `EPSI...` for a Mako, `FCTD...`
 for an FCTD - so the prefix can't be left on the wrong one.
 
 **Create Setup** also saves what you entered for that vehicle, so picking
-the vehicle next time fills in the same probes, CTD, pressure case and winch. Every
+the vehicle next time fills in the same probes, CTD and pressure case. Every
 serial number used is also added to that sensor type's dropdown.
 The window opens filled in from the current `Setup` (or the first vehicle
 preset if there isn't one), and warns if the survey date isn't today or the
@@ -131,9 +133,10 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/dev1
 
 ## History
 
-**2026-10-14 (later) - Winch field; one comment line in Setup** (branch `main-fork`). Added
-the Winch box (remembered per vehicle; `winch:` in `dev1_setup.yml`; a `winch` column in the
-deployment log; warning when empty) for chaining twist per winch over the cruise. Setup's
+**2026-10-14 (later) - Winch spool field; one comment line in Setup** (branch `main-fork`). Added
+the Winch spool box (one spool for every vehicle: carried over from the last Create Setup, not
+per vehicle; `winch_spool:` in `dev1_setup.yml`; a `winch_spool` column in the deployment log;
+warning when empty, and when it changes, since the twist count restarts there). Setup's
 section-note comment lines removed, leaving one provenance line. Tested in a scratchpad sandbox:
 Setup round-trips through the fctd_epsi tokenizer (`check_roundtrip`), 1463 bytes for MAKO1.
 

@@ -4,6 +4,20 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-14 (step 1, correction) - Winch spool is cruise-wide, not per vehicle (branch `main-fork`)
+
+Nicole clarified that there's one winch with one spool on it at a time, used by every vehicle. When the spool is changed, the new one is in place for all instruments after that, and the instruments are what swap out. So the per-vehicle "winch" field from step 1 was the wrong model:
+- Renamed to **winch spool** (`winch_spool`), not remembered per vehicle.
+- The window fills it in from the last Create Setup, whatever the vehicle. Switching vehicles leaves it alone.
+- Changing it warns that the twist count restarts from 0 at that deployment.
+- Written to `dev1_setup.yml` (`winch_spool:`) and the deployment log. `MODsetup_read_yaml` sets `metadata.winch_spool`.
+- The planned cruise twist (`docs/workflow/realtime_processing.md`, stage 5) becomes one series over every survey in time order, restarting where `winch_spool` changes and at mid-deployment changes in `Processed/spool_swap_log.csv`.
+
+Tested by driving the window over three sessions in a scratchpad sandbox:
+- MAKO1 with SPOOL_A, then FCTD1, which opened with SPOOL_A and gave no warning;
+- then MAKO1 changed to SPOOL_B, which gave the restart warning;
+- `dev1_setup.yml`, the log and `MODsetup_read_yaml` all carry it.
+
 ### 2026-10-14 (step 1) - depl_meta_data.yml, preflight, derived metadata, $SOM3 reader, winch (branch `main-fork`)
 
 Step 1 of `docs/workflow/realtime_processing.md`.

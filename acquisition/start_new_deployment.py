@@ -59,7 +59,7 @@ ADVANCED_NOTES = {
 }
 # config.yml keys that write_all/validate read from config, editable under Advanced
 CONFIG_OVERRIDES = ['processed_root', 'deployment_log', 'calibrations_root']
-REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'winch', 'vnav', 'alt', 'fluor'] + \
+REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'vnav', 'alt', 'fluor'] + \
     ['ch%d_%s' % (i, k) for i in range(1, 5) for k in ('type', 'sn')]
 TYPE_BY_LABEL = {v: k for k, v in msf.SENSOR_LABELS.items()}
 
@@ -90,6 +90,10 @@ class StartNewDeployment:
                 self.vars['vehicle'].set(names[0])
                 self.on_vehicle()
             self.refresh()
+        # The winch spool is the same for every vehicle until it's changed:
+        # start from the one used at the last Create Setup
+        if not self.vars['winch_spool'].get():
+            self.vars['winch_spool'].set(self.previous_winch_spool())
 
     # ------------------------------------------------------------------ data
     def load_presets(self):
@@ -107,11 +111,17 @@ class StartNewDeployment:
         except (OSError, ValueError):
             return {}
 
+    def previous_winch_spool(self):
+        """Winch spool used at the last Create Setup (any vehicle)."""
+        return self.read_last_used().get('_cruise', {}).get('winch_spool', '')
+
     def save_last_used(self, values):
         """Remember this vehicle's probes etc. (filled in next time it's picked),
-        and add each slot's serial number to that sensor type's dropdown list."""
+        the winch spool for the cruise (one spool for every vehicle), and add
+        each slot's serial number to that sensor type's dropdown list."""
         data = self.read_last_used()
         data[values['vehicle']] = {k: values.get(k) for k in REMEMBERED}
+        data.setdefault('_cruise', {})['winch_spool'] = values.get('winch_spool', '')
         history = data.setdefault('_sn_history', {})
         for i in range(1, 5):
             t, sn = values.get('ch%d_type' % i), values.get('ch%d_sn' % i)
@@ -138,6 +148,7 @@ class StartNewDeployment:
         for i in range(1, 5):
             v['ch%d_type' % i] = TYPE_BY_LABEL.get(v.get('ch%d_type' % i), v.get('ch%d_type' % i, 'none'))
         v['survey'] = msf.build_survey(v.get('survey_date', ''), v.get('vehicle', ''), v.get('survey_desc', ''))
+        v['previous_winch_spool'] = self.previous_winch_spool()
         return v
 
     def set_values(self, d):
@@ -217,8 +228,8 @@ class StartNewDeployment:
         ttk.Label(ins, text='Profiling').grid(row=0, column=4, sticky='e', **pad)
         ttk.Combobox(ins, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up'],
                      state='readonly', width=6).grid(row=0, column=5, sticky='w', **pad)
-        ttk.Label(ins, text='Winch').grid(row=0, column=6, sticky='e', **pad)
-        ttk.Entry(ins, textvariable=self.var('winch'), width=12).grid(row=0, column=7, sticky='w', **pad)
+        ttk.Label(ins, text='Winch spool').grid(row=0, column=6, sticky='e', **pad)
+        ttk.Entry(ins, textvariable=self.var('winch_spool'), width=12).grid(row=0, column=7, sticky='w', **pad)
 
         ttk.Label(ins, text='AFE slot', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=0, sticky='w', **pad)
         ttk.Label(ins, text='Sensor', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=1, sticky='w', **pad)
@@ -326,11 +337,8 @@ class StartNewDeployment:
         d = dict(self.presets.get(name, {}))
         d.update({k: v for k, v in self.read_last_used().get(name, {}).items() if v is not None})
         d.pop('vehicle', None)
-        # Winch isn't in the presets: clear it unless this vehicle remembers one,
-        # so the previous vehicle's winch is never carried over
         known_vehicle = bool(d)
-        d.setdefault('winch', '')
-        self.set_values(d)
+        self.set_values(d)   # the winch spool isn't per vehicle, so it's left as it is
         if not known_vehicle and name:
             self.status('New vehicle %s - fill in the fish type and instruments; they are remembered '
                         'for %s when you click Create Setup.' % (name, name))
