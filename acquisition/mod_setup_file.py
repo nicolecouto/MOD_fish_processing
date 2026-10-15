@@ -598,6 +598,53 @@ def dev1_setup_yml_path(values, config):
     return os.path.join(config['processed_root'], values['survey'], 'meta', 'dev1_setup.yml')
 
 
+SPOOL_LOG_FIELDS = ['datetime_utc', 'spool_id', 'spool_length_m', 'notes']
+SPOOL_LOG_COMMENT = ('# Winch spool changes for the cruise (one winch, one spool at a time, every vehicle). '
+                     'Start New Deployment adds a row when the spool changes; add a row by hand for a change '
+                     'made mid-deployment.')
+
+
+def spool_log_path(config):
+    """Cruise-wide spool_swap_log.csv, next to the survey folders."""
+    root = config.get('processed_root', '')
+    return os.path.join(root, 'spool_swap_log.csv') if root else ''
+
+
+def last_logged_spool(config):
+    """spool_id of the last row in the cruise spool_swap_log.csv ('' if none)."""
+    path = spool_log_path(config)
+    if not path or not os.path.isfile(path):
+        return ''
+    with open(path, newline='') as f:
+        rows = [r for r in csv.reader(f) if r and not r[0].startswith('#')]
+    if len(rows) < 2 or rows[0][:2] != SPOOL_LOG_FIELDS[:2]:
+        return ''
+    return rows[-1][1].strip()
+
+
+def log_spool_change(values, config, survey):
+    """Append a row to the cruise spool_swap_log.csv when the winch spool
+    differs from its last row (or it's the first spool logged). Returns the
+    path written, or ''. The twist count restarts at this time."""
+    path = spool_log_path(config)
+    spool = str(values.get('winch_spool', '') or '').strip()
+    if not path or not spool:
+        return ''
+    previous = last_logged_spool(config)
+    if spool == previous:
+        return ''
+    new_file = not os.path.isfile(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'a', newline='') as f:
+        if new_file:
+            f.write(SPOOL_LOG_COMMENT + '\n')
+            csv.writer(f).writerow(SPOOL_LOG_FIELDS)
+        note = ('changed from %s by Start New Deployment, survey %s' % (previous, survey) if previous
+                else 'first spool logged, by Start New Deployment, survey %s' % survey)
+        csv.writer(f).writerow([datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'), spool, '', note])
+    return path
+
+
 LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch_spool', 'fish_flag', 'fish_pc', 'ctd_sn',
               'ch1_type', 'ch1_sn', 'ch2_type', 'ch2_sn', 'ch3_type', 'ch3_sn',
               'ch4_type', 'ch4_sn', 'microcond_sn', 'experiment', 'cruise',
@@ -616,7 +663,7 @@ def write_all(values, config, write_yml=True):
     setup_path = os.path.join(setup_dir, 'Setup')
     text = render_setup(values)
     stamp = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
-    result = {'setup': setup_path, 'backup': '', 'yml': '', 'log': ''}
+    result = {'setup': setup_path, 'backup': '', 'yml': '', 'log': '', 'spool_log': ''}
 
     if os.path.isfile(setup_path):
         backup = _unused_path(os.path.join(setup_dir, 'Setup_replaced_' + stamp))
@@ -665,6 +712,7 @@ def write_all(values, config, write_yml=True):
                 w.writeheader()
             w.writerow(row)
         result['log'] = log_path
+    result['spool_log'] = log_spool_change(values, config, values['survey'])
     return result
 
 

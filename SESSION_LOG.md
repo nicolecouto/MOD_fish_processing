@@ -4,6 +4,24 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-14 (step 1, spool changes from two sources) - MODprocess_find_spool_swaps (branch `main-fork`)
+
+Nicole wanted spool changes taken from both the `dev1_setup.yml` files and a spool swap log, in case someone deletes a `dev1_setup.yml` along the way.
+
+- **Start New Deployment** appends a row to the cruise `<processed_root>/spool_swap_log.csv` whenever the spool differs from the log's last row (or for the first spool logged). The row holds the UTC time, `spool_id` and a note, in the same columns as the existing hand-edited format.
+  - The window's "previous spool" now comes from that log first, then from `last_used.json`.
+- **New `processing/MODprocess_find_spool_swaps.m`** reads every survey's `dev1_setup.yml` (`winch_spool` and the written-at UTC time from its first line) and the log.
+  - A change between surveys in the dev1 files is matched to a log row with the same spool, dated after the previous survey and up to 10 min after this survey's dev1.
+  - Both have it: source `both`, at the log's time. Only dev1 has it: the dev1 time, with a warning.
+  - A log row with no matching dev1 change is kept as `spool_swap_log`: a mid-deployment change, or a deleted dev1. It's warned about if the next survey says a different spool.
+  - Planned use: by the cruise twist count (stage 5, step 6). The per-deployment `MODprocess_L1_accumulate_twist_timeseries` still reads `meta/spool_swap_log.csv` for now.
+- **Tested** in a scratchpad sandbox with three surveys written by `write_all` (A, A, B; times edited to 01:00/05:00/09:00):
+  - both sources intact: A and B, `both`, no warnings;
+  - survey c's dev1 deleted: B still found, from the log;
+  - log deleted: A and B from dev1, with warnings;
+  - hand-added mid-deployment row C at 07:30: kept, no warning, because the later B row explains survey c;
+  - same, without the B row: B from dev1 plus two warnings.
+
 ### 2026-10-14 (step 1, correction) - Winch spool is cruise-wide, not per vehicle (branch `main-fork`)
 
 Nicole clarified that there's one winch with one spool on it at a time, used by every vehicle. When the spool is changed, the new one is in place for all instruments after that, and the instruments are what swap out. So the per-vehicle "winch" field from step 1 was the wrong model:

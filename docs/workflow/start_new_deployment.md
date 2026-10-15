@@ -29,6 +29,15 @@ that the twist count restarts from 0 at this deployment. It's written to
 `dev1_setup.yml` (`winch_spool:`) and the deployment log (not to `Setup` -
 `fctd_epsi` doesn't use it), and the window warns if it's empty.
 
+When the spool differs from the last row of the cruise
+`<processed root>/spool_swap_log.csv` (or that file doesn't exist yet), Create
+Setup appends a row to it: the UTC time, the spool, and a note. That log, not
+the window's memory, is what the next Create Setup compares against. Add a row
+by hand for a spool changed in the middle of a deployment (columns
+`datetime_utc` as `yyyy-MM-ddTHH:mm:ssZ`, `spool_id`, `spool_length_m`,
+`notes`). Processing checks the log against the `dev1_setup.yml` files
+(`MODprocess_find_spool_swaps.m`), so losing either one doesn't lose a change.
+
 If `deployment_log.csv` already exists with different columns (e.g. one
 written before the winch_spool column), it's set aside as
 `deployment_log_old_columns.csv` and a new log is started, so rows never end

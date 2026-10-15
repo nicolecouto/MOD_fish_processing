@@ -135,7 +135,7 @@ switch only changes what goes in and where the result goes.
 | 2b | Casts | `modProcess_detect_profiles` on `pressure_time_series` | **One cast table** (`meta/casts.mat`) for both modes. Casts are keyed by start time, not by number, so they survive renumbering. A cast still in progress is left out until it ends. Realtime and postprocessing differ only in the parameters and any hand edits. Postprocessing also cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
 | 3 | → L2 | `MODprocess_all_L1_to_L2` | Copies the timeseries and adds `scans`. The modules that run depend on the manifest: CTD always; `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`); `fluor` → scan means. Scans are kept for up, down or both per `profiling_direction`. |
 | 4 | Grid | new `MODprocess_grid(metadata, 'by', 'file'\|'profile')` | Columns always come from the cast table. By file, each cast's data is found in the L2 files through `time_index`; by profile, it's read from `profiles_L2/`. Bins in pressure (dz from `grid.dz_m`); only new or changed casts are rebinned. Despiking and salinity cleanup happen here for now, as a separate function the grid calls, because despiking may move to L2 later (per scan, before spectra). |
-| 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | One winch and one spool serve every vehicle, so this chains **every survey of the cruise** in time order into one series. The count restarts where the survey's `winch_spool` changes (set in Start New Deployment), and at any mid-deployment change logged in `Processed/spool_swap_log.csv`. Output: `Processed/twist/twist_time_series.mat`. Each L1 file's own count still starts at 0; only this chained file carries the running total. |
+| 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | One winch and one spool serve every vehicle, so this chains **every survey of the cruise** in time order into one series. The count restarts at each spool change, from `MODprocess_find_spool_swaps` (**built**), which checks two sources against each other so a deleted file doesn't lose a change: every survey's `dev1_setup.yml` (`winch_spool`, and when it was written) and the cruise `Processed/spool_swap_log.csv` (Start New Deployment adds a row when the spool changes; a mid-deployment change is added by hand). It uses the log's time when both agree, falls back to whichever one has the change, and warns when they disagree. Output: `Processed/twist/twist_time_series.mat`. Each L1 file's own count still starts at 0; only this chained file carries the running total. |
 
 ## One format for every vehicle
 
@@ -255,6 +255,10 @@ parameter.
   Firmware from 2023 on records probe SN `000` for every EFE channel, so `$SOM3` doesn't say
   which probes were on; Setup and `dev1_setup.yml` do. The 2025 FCTD fluorometer files have no
   `$SOM3` block.
+- **Built:** `MODprocess_find_spool_swaps(processed_root)` lists the spool changes for the cruise
+  twist count from the `dev1_setup.yml` files and `spool_swap_log.csv` together (see stage 5).
+  Tested with both sources, a deleted `dev1_setup.yml`, a deleted log, a hand-added
+  mid-deployment change, and a missing log row.
 - **Built:** Start New Deployment has a `winch_spool` field. There's one winch with one spool
   on it, used by every vehicle, so it's cruise-wide: it's filled in from the last Create
   Setup (any vehicle), written to `dev1_setup.yml` and the deployment log, and warned about

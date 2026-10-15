@@ -112,8 +112,11 @@ class StartNewDeployment:
             return {}
 
     def previous_winch_spool(self):
-        """Winch spool used at the last Create Setup (any vehicle)."""
-        return self.read_last_used().get('_cruise', {}).get('winch_spool', '')
+        """Winch spool in use: the last row of the cruise spool_swap_log.csv, or
+        else the one used at the last Create Setup (any vehicle)."""
+        shown = {k: self.vars[k].get().strip() for k in CONFIG_OVERRIDES if k in self.vars}
+        return (msf.last_logged_spool(self.effective_config(dict(self.config, **shown)))
+                or self.read_last_used().get('_cruise', {}).get('winch_spool', ''))
 
     def save_last_used(self, values):
         """Remember this vehicle's probes etc. (filled in next time it's picked),
@@ -505,6 +508,8 @@ class StartNewDeployment:
             lines.append('dev1_setup.yml: ' + res['yml'])
         if res['log']:
             lines.append('Logged in: ' + res['log'])
+        if res.get('spool_log'):
+            lines.append('Winch spool change logged in: ' + res['spool_log'])
         if res.get('log_rotated'):
             lines.append('(The old log had different columns - kept as %s)' % os.path.basename(res['log_rotated']))
         lines += ['', 'Restart ./fctd_epsi to start recording with it.']
