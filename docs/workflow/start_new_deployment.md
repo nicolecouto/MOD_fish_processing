@@ -70,19 +70,27 @@ the window from the `Setup` again - it doesn't write or save anything.
    go, and the deck hardware shared by every vehicle (serial ports, baud
    rates, raw data folder). Use network paths (`/Volumes/DEV1_HD/...`,
    `/Volumes/DEV3_HD/...`) so they're the same from every computer.
-3. Set up the **calibrations folder** - one place that both `fctd_epsi` and
-   processing read, laid out like MOD_fish_calibrations:
+3. Set up the **calibrations folder**: a clone of the MOD_fish_calibrations
+   repo next to the software on DEV1,
+   `/Volumes/DEV1_HD/Users/Shared/Software_current_cruise/MOD_fish_calibrations`
+   (`calibrations_root` in `config.yml`). Cal files are kept up to date there
+   with `git pull`, separately from the code. `fctd_epsi` (DEV1) and processing
+   (DEV3, over the network at the same path) read the same files:
    - `SBE/<SN>.CAL` - CTD
    - `SHEAR_PROBES/<SN>/Calibration_<SN>.txt` - shear probes
    - `FPO7/<SN>/Calibration_<SN>.txt` - FP07 probes
+   - `SHEAR/cap1nFres200Meg_5KohmInput.mat` - shear charge-amp response
+     (processing only; without it epsilon has no electronics correction)
 
    `Setup` gets `<folder>/SBE`, `<folder>/SHEAR_PROBES` and `<folder>/FPO7`
    (`fctd_epsi` looks up slots 1-2 in FPO7 and 3-4 in SHEAR_PROBES, and
    records N/A for any probe file it can't find); `dev1_setup.yml` gets
    `calibrations_root: <folder>`. The same subfolders fill the serial number
-   lists. The CTD path in `Setup` used to be `Acquisition/SBECAL`, so fill
-   `SBE/` before the first Create Setup and restart of `fctd_epsi`:
-   `mkdir -p <folder>/SBE && cp <MOD_fish_lib>/Acquisition/SBECAL/*.CAL <folder>/SBE/`
+   lists. The CTD path in `Setup` used to be `MOD_fish_lib/Acquisition/SBECAL`;
+   MOD_fish_calibrations' `SBE/` has the same ten `.CAL` files with the same
+   coefficients (checked 2026-10-15: only letter case, line endings and number
+   formatting differ, plus one more digit on 0536's PTEMPA0), so moving to it
+   changes no CTD calibration.
 4. Check `acquisition/presets/*.yml` - one per vehicle (MAKO1-3, FCTD1-3:
    fish type, pressure case, CTD, default AFE slot layout). MAKO2 and MAKO3
    have no serial numbers yet - the window asks for them the first time. A
