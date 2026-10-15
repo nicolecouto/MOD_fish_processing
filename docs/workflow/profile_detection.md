@@ -19,6 +19,19 @@ Both modes are kept side by side deliberately (not one replacing the other): rea
 
 ## Profile detection
 
+### The cast table: `MODprocess_L1_update_cast_table.m` (`processing/L1/`)
+
+```matlab
+[casts, metadata] = MODprocess_L1_update_cast_table(metadata)
+```
+
+The one place casts are picked: runs `modProcess_detect_profiles.m` (below) on `meta/pressure_time_series.mat` and saves `meta/casts.mat` (`casts`, `record_end_dnum`, `made_utc`).
+- **Used by both modes.** Realtime grids by these casts; postprocessing cuts `profiles_L1/Profile####.mat` from them (`MODprocess_all_extract_profiles.m` reads the table instead of detecting casts itself).
+- **Fields.** Each cast has `.profile_number` (the `Profile####` number), `.direction`, `.dnum_start`/`.dnum_end`, `.P_start`/`.P_end`, `.index_start`/`.index_end` and `.complete`.
+- **`.complete` is false for a cast that runs into the end of the record** - during realtime acquisition it's still going. Realtime leaves it out until it ends; postprocessing still extracts it.
+- **Key per-cast results by `dnum_start`, not the number.** Numbers can change as the record grows (e.g. two runs merge).
+- **Tuning.** Change the `profile_detection` parameters in the yml; there's no second picker.
+
 ### `modProcess_detect_profiles.m` (`processing/L1/`)
 
 ```matlab
@@ -37,10 +50,10 @@ Output is a `profiles(i)` struct array (`.profile_number`, `.direction`, `.index
 ### `MODprocess_L1_make_time_index.m` (`processing/`)
 
 ```matlab
-TimeIndex = MODprocess_L1_make_time_index(L1_dir)
+TimeIndex = MODprocess_L1_make_time_index(L1_cache)
 ```
 
-Loads only `epsi.dnum` (min/max) per L1 file - not full file contents - sorted by start time. Built inside `MODprocess_all_L0_to_L1.m`, saved as `meta/time_index.mat`, so `modProcess_extract_profile.m` can find which L1 file(s) overlap a profile's time range without loading every file's full contents.
+Each L1 file's `epsi.dnum` (min/max; `ctd.dnum` if no epsi), sorted by start time, from the L1 file cache (`MODprocess_L1_update_file_cache.m`) - no L1 file is loaded. Built inside `MODprocess_all_L0_to_L1.m`, saved as `meta/time_index.mat`, so `modProcess_extract_profile.m` can find which L1 file(s) overlap a profile's time range without loading every file's full contents.
 
 ## Profile extraction: stitching across a file boundary, with real gap detection
 

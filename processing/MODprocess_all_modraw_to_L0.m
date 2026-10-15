@@ -1,7 +1,8 @@
-function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata)
+function [L0_files, problems, processed] = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata, varargin)
 % MODprocess_all_modraw_to_L0        Part of MOD_fish_processing
 %
 % L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata)
+% [L0_files, problems, processed] = MODprocess_all_modraw_to_L0(..., 'newest_min_redo_s', s, 'continue_on_error', tf)
 %
 % DESCRIPTION
 %   Converts every raw file in raw_dir to a .mat file in L0_dir, using
@@ -14,7 +15,8 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   Skips files that have already been converted (matched by raw file
 %   size against raw_file_info.bytes), except the most recently modified
 %   file in the folder, which is always reconverted in case it's still
-%   being written to (e.g. during real-time acquisition).
+%   being written to (e.g. during real-time acquisition) - unless
+%   'newest_min_redo_s' is set (see INPUTS).
 %
 %   If raw filenames end in unpadded numbers (modsom_0, ..., modsom_192),
 %   offers to rename them in place with zero-padded numbers (modsom_000,
@@ -35,18 +37,33 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %                      EFE, MODsetup_default_efe.m). Files already
 %                      converted are not redone just because metadata
 %                      changed - L1 re-applies setup.yml anyway.
+%   Name-value options (same for MODprocess_all_modraw_to_L0.m,
+%   MODprocess_all_L0_to_L1.m and MODprocess_all_L1_to_L2.m):
+%     'newest_min_redo_s' - default 0: the newest file is always redone (in
+%                      case it's still being written). > 0 (the realtime
+%                      worker): the newest file is redone only when it's
+%                      out of date, at most once per this many seconds -
+%                      see MODutil_needs_redo.m.
+%     'continue_on_error' - default false: a file that fails stops the run
+%                      with its error. true (the realtime worker): the file
+%                      is recorded in problems and the next file is done.
 %
 % OUTPUTS
 %   L0_files  - cell array of full paths to all .mat files in L0_dir
 %               after this call (both newly converted and pre-existing)
+%   problems  - struct array (.file, .stage, .identifier, .message), one
+%               per file that failed with 'continue_on_error' true; empty
+%               otherwise
+%   processed - cellstr of the input files (re)processed by this call
 %
 % CALLED BY
-%   (top-level scripts / notebooks)
+%   MODprocess_deployment.m, top-level scripts
 %
 % CALLS
 %   MODprocess_single_modraw_to_L0.m
 %   MODsetup_detect_raw_suffix.m
 %   MODsetup_pad_raw_filenames.m
+%   MODutil_needs_redo.m, MODutil_save_atomic.m
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -55,6 +72,14 @@ function L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix
 %   metadata is optional.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
+
+p = inputParser;
+addParameter(p, 'newest_min_redo_s', 0);
+addParameter(p, 'continue_on_error', false);
+parse(p, varargin{:});
+opts = p.Results;
+problems = struct('file', {}, 'stage', {}, 'identifier', {}, 'message', {});
+processed = {};
 
 if nargin < 2 || isempty(L0_dir)
     L0_dir = fullfile(fileparts(raw_dir), 'L0');
@@ -77,6 +102,9 @@ MODsetup_pad_raw_filenames(raw_dir, 'raw_file_suffix', raw_file_suffix, 'L0_dir'
 
 % Get list of raw files in the data path
 list_rawfile = dir(fullfile(raw_dir, ['*', raw_file_suffix]));
+% a symlink whose file is gone is still listed by dir (with the link's own
+% size and time) - leave it out, it isn't data
+list_rawfile = list_rawfile(arrayfun(@(f) isfile(fullfile(raw_dir, f.name)), list_rawfile));
 nfiles = length(list_rawfile);
 
 % Stop if no raw files are found
@@ -111,8 +139,12 @@ for i = 1:nfiles
 
     already_converted = false;
     if ~isempty(myL0file)
-        S = load(fullfile(myL0file.folder, myL0file.name), 'raw_file_info');
-        already_converted = isfield(S, 'raw_file_info') && list_rawfile(i).bytes <= S.raw_file_info.bytes;
+        try
+            S = load(fullfile(myL0file.folder, myL0file.name), 'raw_file_info');
+            already_converted = isfield(S, 'raw_file_info') && list_rawfile(i).bytes <= S.raw_file_info.bytes;
+        catch
+            already_converted = false; % unreadable L0 (e.g. half-written by an older version) - redo it
+        end
     end
 
     % Convert to .mat if:
@@ -120,19 +152,30 @@ for i = 1:nfiles
     %   (2) the current raw file is larger than what is saved in raw_file_info, or
     %   (3) this is the most recently modified file in the folder, in case
     %       it's still being written to
-    if already_converted && i ~= i_newest
+    if ~MODutil_needs_redo(already_converted, i == i_newest, fullfile(L0_dir, [base '.mat']), ...
+            opts.newest_min_redo_s, false)
         continue
     end
 
     fprintf(1, '%s | %s --> %s.mat | ', datestr(now, 'YYYY.mm.dd HH:MM:SS'), filename, base);
 
-    L0_data = MODprocess_single_modraw_to_L0(fullfile(raw_dir, filename), metadata);
+    try
+        L0_data = MODprocess_single_modraw_to_L0(fullfile(raw_dir, filename), metadata);
 
-    L0_data.raw_file_info.bytes    = list_rawfile(i).bytes;
-    L0_data.raw_file_info.filename = base;
+        L0_data.raw_file_info.bytes    = list_rawfile(i).bytes;
+        L0_data.raw_file_info.filename = base;
 
-    % Save data in .mat file
-    save(fullfile(L0_dir, base), '-struct', 'L0_data')
+        % Save data in .mat file
+        MODutil_save_atomic(fullfile(L0_dir, [base '.mat']), L0_data)
+        processed{end+1} = filename; %#ok<AGROW>
+    catch ME
+        if ~opts.continue_on_error
+            rethrow(ME)
+        end
+        fprintf(1, 'FAILED: %s\n', ME.message);
+        problems(end+1) = struct('file', fullfile(raw_dir, filename), 'stage', 'modraw_to_L0', ...
+            'identifier', ME.identifier, 'message', ME.message); %#ok<AGROW>
+    end
 
 end %end loop through files
 

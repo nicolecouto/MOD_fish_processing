@@ -230,14 +230,14 @@ Algorithm (ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`):
 ### `MODprocess_L1_accumulate_twist_timeseries.m`
 
 ```matlab
-TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, meta_dir)
+TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_cache, meta_dir)
 ```
 
 Called automatically at the end of `MODprocess_all_L0_to_L1.m`, gated on `metadata.manifest.has_vnav` - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/twist_time_series.mat`.
 
 Also applies spool-swap resets from an operator-edited `meta/spool_swap_log.csv` (per deployment; the cruise-wide twist count planned in [Realtime and postprocessing driver](realtime_processing.md) stage 5 will use `MODprocess_find_spool_swaps.m` and the cruise `Processed/spool_swap_log.csv` instead) (`#`-comment lines supported, columns `datetime_utc, spool_id, spool_length_m, notes`), if that file exists: at each swap timestamp, the cumulative count is reset to 0 from that point forward. Falls back to the legacy `meta/SpoolSwapLog.csv` name (with a warning) if the new name isn't found - this file is hand-edited during a cruise, not pipeline-regenerated, so an in-progress deployment's file must not be silently ignored after this rename. `TwistTimeseries.spool_swap_dnum` records the swap times actually applied, for the plot to mark. Cruise-level tracking of spool swaps and fin-angle adjustments *across* deployments/instruments (same winch cable, different vehicles) is not built yet - `spool_swap_log.csv` today only resets within a single deployment's `twist_time_series.mat`.
 
-L1 `.mat` files are saved as `save(L1_file, '-struct', 'data')` (flattened - `vnav`/`twist`/etc. are top-level variables, not nested under a `data` struct), so this function loads `vnav`/`twist` directly rather than `data.vnav`/`data.twist`.
+The per-file `twist` fields come from the L1 file cache (see the next section), not from loading every L1 file.
 
 ### `MODvis_twist_timeseries.m`
 
@@ -250,9 +250,12 @@ Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`) 
 ### `MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`
 
 ```matlab
-PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
+L1_cache = MODprocess_L1_update_file_cache(L1_dir, metadata.paths.meta);
+PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_cache);
 PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
 ```
+
+`meta/time_index.mat`, `meta/pressure_time_series.mat` and `meta/twist_time_series.mat` are all built from `meta/l1_file_cache.mat` (`MODprocess_L1_update_file_cache.m`), which keeps each L1 file's time span, `ctd.dnum`/`ctd.P` and `twist` and reloads only L1 files that are new or changed - so these deployment-wide files don't reload every L1 file on every realtime pass. Results are identical to building them from every L1 file (checked against the previous code on a `blt2021_0715` sandbox, cold and warm cache). L1 files themselves are never changed.
 
 Called automatically at the end of `MODprocess_all_L0_to_L1.m` (right after the twist accumulation step), whenever this deployment has any CTD data - builds `meta/pressure_time_series.mat`, the deployment-length pressure record with a smoothed `dPdt` and an `is_down` (descending) classification per sample. This is deliberately an L1-level product, not an L2 one - see [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md) for the full writeup of the classification algorithm and why it lives here rather than in L2.
 
@@ -260,11 +263,18 @@ Called automatically at the end of `MODprocess_all_L0_to_L1.m` (right after the 
 
 ```matlab
 L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all)
+[L1_files, problems, processed] = MODprocess_all_L0_to_L1(..., 'newest_min_redo_s', 120, 'continue_on_error', true, 'fpo7_refit_new_files', 10)
 ```
 
 Orchestrator: loops over every `.mat` file in `L0_dir`, calls `MODprocess_single_L0_to_L1` on each, saves one `.mat` per L0 file into `L1_dir`. `L1_dir` is optional - defaults to a sibling `L1/` folder next to `L0_dir` (created if it doesn't exist). `metadata` should be read once per session with `MODsetup_read_yaml` and passed in, not re-read per file.
 
 Skips a file if its L1 `.mat` already exists and is newer than the L0 file it came from - except the most recently modified L0 file, which is always reprocessed (mirrors `MODprocess_all_modraw_to_L0.m`'s same rule one level up, in case the raw file behind it was still being written when L0 last ran). Pass `reprocess_all = true` to force every file to redo regardless.
+
+Options for realtime use (the worker, `MODprocess_deployment.m`, sets them; the defaults keep the behaviour above):
+
+- `'newest_min_redo_s'` (default 0) - above 0, the newest file is redone only when it's out of date, and at most once per that many seconds (`MODutil_needs_redo.m`, shared by all three per-file drivers), so a growing raw file isn't redone - with everything after it - on every pass.
+- `'continue_on_error'` (default false) - true: a file that fails is returned in `problems` (`.file`, `.stage`, `.identifier`, `.message`) and the next file is done; `processed` lists the files (re)done.
+- `'fpo7_refit_new_files'` (default 0, refit every call) - N: refit the FP07 calibration only once N more L1 files exist than at the last fit (the fit reads every L1 file). `meta/fpo7_calibration.mat` records `n_L1_files`.
 
 Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_external_ctd`, a local subfunction) - see "External CTD (DeepSolo, Wirewalker)" above.
 

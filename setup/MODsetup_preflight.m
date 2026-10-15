@@ -21,8 +21,10 @@ function [report, metadata] = MODsetup_preflight(depl_yml, prompt)
 %     - epsilon: only if an AFE slot is type shear.
 %     (Types are matched ignoring case, as processing does.)
 %   Also reported, as problems: the yml (or a calibration file it points
-%   at) can't be read, and shear probes whose calibration file is missing
-%   (epsilon is skipped for them).
+%   at) can't be read, shear probes whose calibration file is missing
+%   (epsilon is skipped for them), and a missing shear charge-amp filter
+%   file (calibrations_root/SHEAR/cap1nFres200Meg_5KohmInput.mat - epsilon
+%   would have no electronics correction).
 %
 %   prompt = true (needs a display or console): each missing value is
 %   asked for with the usual dialog (MODsetup_validate_metadata.m) and
@@ -41,12 +43,12 @@ function [report, metadata] = MODsetup_preflight(depl_yml, prompt)
 %   metadata - from MODsetup_read_yaml.m ([] if the yml couldn't be read)
 %
 % CALLED BY
-%   (the realtime worker and monitor app - not built yet; see
-%   docs/workflow/realtime_processing.md)
+%   MODprocess_deployment.m (each survey pass); the monitor app's Preflight
+%   button (not built yet); by hand
 %
 % CALLS
 %   MODsetup_read_yaml.m, MODsetup_metadata_field_registry.m,
-%   MODsetup_validate_metadata.m
+%   MODsetup_validate_metadata.m, MODsetup_define_filters.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -62,6 +64,7 @@ catch ME
     report.problems{end+1} = sprintf('Could not read %s: %s', depl_yml, ME.message);
     if nargout == 0
         print_report(report);
+        clear report
     end
     return
 end
@@ -103,10 +106,30 @@ for iC = 1:numel(channels)
     end
 end
 
+% Shear channels need the charge-amp response for epsilon; without it
+% MODsetup_define_filters.m only warns and leaves the correction out.
+% Checked only once nothing is missing, since resolving filters needs
+% fft_length/Fs_epsi.
+if isempty(report.missing) && any(strcmpi(cellfun(@(ch) metadata.AFE.(ch).type, channels, ...
+        'UniformOutput', false), 'shear'))
+    warnState = warning('off', 'MODsetup_define_filters:noChargeAmpFile');
+    with_filters = MODsetup_define_filters(metadata);
+    warning(warnState);
+    for iC = 1:numel(channels)
+        if strcmpi(with_filters.AFE.(channels{iC}).type, 'shear') ...
+                && ~isfield(with_filters.AFE.(channels{iC}), 'electronics_filter')
+            report.problems{end+1} = sprintf(['Shear channel %s: no charge-amp filter file ' ...
+                '(%s) - epsilon would have no electronics correction.'], channels{iC}, ...
+                fullfile(metadata.paths.calibrations_root, 'SHEAR', 'cap1nFres200Meg_5KohmInput.mat'));
+        end
+    end
+end
+
 report.ok = isempty(report.missing) && isempty(report.problems);
 
 if nargout == 0
     print_report(report);
+    clear report
 end
 end %end function
 

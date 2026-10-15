@@ -1,7 +1,8 @@
-function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_all)
+function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_all, varargin)
 % MODprocess_all_L1_to_L2        Part of MOD_fish_processing
 %
 % L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_all)
+% [L2_files, problems, processed] = MODprocess_all_L1_to_L2(..., 'newest_min_redo_s', s, 'continue_on_error', tf)
 %
 % DESCRIPTION
 %   Converts every .mat file in L1_dir to a per-scan-spectra .mat file in
@@ -54,18 +55,33 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %                    (fullfile(fileparts(L1_dir),'L2')), created if missing.
 %   reprocess_all - (optional) logical, default false. If true, ignores
 %                    the up-to-date check and reconverts every input file.
+%   Name-value options (same for MODprocess_all_modraw_to_L0.m,
+%   MODprocess_all_L0_to_L1.m and MODprocess_all_L1_to_L2.m):
+%     'newest_min_redo_s' - default 0: the newest file is always redone (in
+%                      case it's still being written). > 0 (the realtime
+%                      worker): the newest file is redone only when it's
+%                      out of date, at most once per this many seconds -
+%                      see MODutil_needs_redo.m.
+%     'continue_on_error' - default false: a file that fails stops the run
+%                      with its error. true (the realtime worker): the file
+%                      is recorded in problems and the next file is done.
 %
 % OUTPUTS
 %   L2_files  - cell array of full paths to all .mat files in L2_dir
 %               after this call (both newly converted and pre-existing)
+%   problems  - struct array (.file, .stage, .identifier, .message), one
+%               per file that failed with 'continue_on_error' true; empty
+%               otherwise
+%   processed - cellstr of the input files (re)processed by this call
 %
 % CALLED BY
-%   (top-level scripts / notebooks)
+%   MODprocess_deployment.m, top-level scripts
 %
 % CALLS
 %   MODprocess_single_L1_to_L2.m
 %   MODsetup_add_derived_metadata.m (at the start, and on the retry path)
 %   MODsetup_read_yaml.m (only on the retry path - see NOTES/DESCRIPTION)
+%   MODutil_needs_redo.m, MODutil_save_atomic.m
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -87,6 +103,14 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   electronics correction.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
+
+p = inputParser;
+addParameter(p, 'newest_min_redo_s', 0);
+addParameter(p, 'continue_on_error', false);
+parse(p, varargin{:});
+opts = p.Results;
+problems = struct('file', {}, 'stage', {}, 'identifier', {}, 'message', {});
+processed = {};
 
 if nargin < 3 || isempty(L2_dir)
     L2_dir = fullfile(fileparts(L1_dir), 'L2');
@@ -135,28 +159,38 @@ for i = 1:nfiles
         already_converted = L2_info.datenum >= list_L1file(i).datenum;
     end
 
-    if ~reprocess_all && already_converted && i ~= i_newest
+    if ~MODutil_needs_redo(already_converted, i == i_newest, L2_file, opts.newest_min_redo_s, reprocess_all)
         continue
     end
 
     fprintf(1, '%s | L1/%s --> L2/%s | ', datestr(now, 'YYYY.mm.dd HH:MM:SS'), filename, filename);
 
-    data = load(fullfile(list_L1file(i).folder, filename));
-    while true
-        try
-            L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
-            break
-        catch ME
-            if strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
-                metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
-                continue % retry this same file with fresh, complete metadata
+    try
+        data = load(fullfile(list_L1file(i).folder, filename));
+        while true
+            try
+                L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
+                break
+            catch ME
+                if strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
+                    metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
+                    continue % retry this same file with fresh, complete metadata
+                end
+                rethrow(ME)
             end
+        end
+
+        MODutil_save_atomic(L2_file, L2data)
+        processed{end+1} = filename; %#ok<AGROW>
+        fprintf(1, '%d scans\n', numel(L2data.dnum));
+    catch ME
+        if ~opts.continue_on_error
             rethrow(ME)
         end
+        fprintf(1, 'FAILED: %s\n', ME.message);
+        problems(end+1) = struct('file', fullfile(L1_dir, filename), 'stage', 'L1_to_L2', ...
+            'identifier', ME.identifier, 'message', ME.message); %#ok<AGROW>
     end
-
-    save(L2_file, '-struct', 'L2data')
-    fprintf(1, '%d scans\n', numel(L2data.dnum));
 
 end %end loop through files
 

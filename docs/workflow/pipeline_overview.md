@@ -25,10 +25,11 @@ Click any diagram to expand it.
     and profile-picking choice happens after L1.
 
 !!! note "Planned: one driver for realtime and postprocessing"
-    [Realtime and postprocessing driver](realtime_processing.md) is the agreed design (2026-10-14,
-    not built yet) for a single manifest-driven driver, an L2 that carries the L1 timeseries plus
-    scans, gridding from one cast table, and a live monitor app. This page describes the code as
-    it is today.
+    [Realtime and postprocessing driver](realtime_processing.md) is the agreed design (2026-10-14)
+    for a single manifest-driven driver, an L2 that carries the L1 timeseries plus scans,
+    gridding from one cast table, and a live monitor app. Built so far: the driver
+    (`MODprocess_deployment.m`, realtime worker and one-pass runs), raw-file routing, the cast
+    table, metadata build/preflight. This page describes the per-step functions as they are today.
 
 ## Shared foundation: modraw → L0 → L1
 
@@ -84,7 +85,7 @@ flowchart LR
 | `MODsetup_read_yaml.m` | setup_yml → metadata | Resolves AFE/CTD/altimeter manifest, calibration lookups, `has_epsi`/`has_vnav`/... flags |
 | `MODsetup_add_derived_metadata.m` | metadata → metadata | Adds what isn't in the yml: electronics filters (`MODsetup_define_filters.m`) and the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat`. Called by the L0 → L1 and L1 → L2 drivers |
 | `MODsetup_define_filters.m` | metadata → metadata | Resolves each channel's fixed electronics/ADC transfer function once per deployment |
-| `MODprocess_all_modraw_to_L0.m` | raw_dir, L0_dir → L0_files | Batch orchestrator; skips already-converted files |
+| `MODprocess_all_modraw_to_L0.m` | raw_dir, L0_dir → L0_files | Batch orchestrator; skips already-converted files. All three per-file drivers take `'newest_min_redo_s'` and `'continue_on_error'` (`MODutil_needs_redo.m`) for realtime use |
 | `MODprocess_single_modraw_to_L0.m` | modraw_file, (metadata) → L0_data | Parses one raw file: `$`-block regex match, header decode, counts/hex → per-type structs; EFE counts → volts/g + `epsi_conversion` |
 | `MODsetup_default_efe.m` | → efe | The standard EFE board (slot names, types, full range, ADC config, Fs, acc constants) - what L0 uses without metadata |
 | `mod_efe_conversion.m` | n_slots, (metadata) → conversion | Per-channel counts ↔ volts/g record: names, config, exact scale/offset, plain-text recovery instructions |
@@ -92,9 +93,10 @@ flowchart LR
 | `MODvis_spectra_L0.m` | browses L0 folder | Quick-look: timeseries rows, click → EFE spectrum of that window vs ADC bit noise; no setup.yml needed, all spectral settings editable |
 | `MODprocess_all_L0_to_L1.m` | L0_dir, metadata → L1_files | Batch orchestrator; also builds every meta/ index below |
 | `MODprocess_single_L0_to_L1.m` | L0_data, metadata → data | Epsi: re-apply setup.yml names/config from the exact counts; CTD P/T/C/S, altimeter hab, `mod_L1_add_twist.m` |
-| `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_dir → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
-| `MODprocess_L1_make_time_index.m` | L1_dir → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
-| `MODprocess_L1_accumulate_twist_timeseries.m` | L1_dir, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous deployment count - only if `has_vnav` |
+| `MODprocess_L1_update_file_cache.m` | L1_dir, meta_dir → L1_cache | Per-L1-file time span, `ctd.dnum`/`P` and `twist` in `meta/l1_file_cache.mat`; rereads only new or changed L1 files, so the deployment-wide files below don't reload every L1 file each pass |
+| `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_cache → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
+| `MODprocess_L1_make_time_index.m` | L1_cache → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
+| `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous deployment count - only if `has_vnav` |
 | `MODprocess_L1_apply_fpo7_calibration.m` | L1_dir, metadata, PressureTimeseries → metadata | In-situ volts→°C fit against real CTD T - only if real onboard CTD |
 
 ## Realtime: L1 → L2 (per file), live viz
@@ -172,6 +174,7 @@ flowchart LR
 
 | Function | In → out | Role |
 |---|---|---|
+| `MODprocess_L1_update_cast_table.m` | metadata → casts | The one cast table, `meta/casts.mat` (from `modProcess_detect_profiles.m`), used by realtime and postprocessing; `.complete` false for a cast still going |
 | `modProcess_detect_profiles.m` | PressureTimeseries, metadata → profiles | Speed-limit hysteresis, min-length filter, same-direction merge. Always both directions |
 | `modProcess_extract_profile.m` | profile, TimeIndex, metadata → profile_data | Stitches raw epsi/ctd across L1 file boundaries; real gap detection via `segment_id` |
 | `MODprocess_all_extract_profiles.m` | metadata, profiles_L1_dir → profile_files | Batch orchestrator for extraction only, saves into `metadata.paths.profiles_L1` |

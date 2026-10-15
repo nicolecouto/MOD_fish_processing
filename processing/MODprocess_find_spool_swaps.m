@@ -58,21 +58,19 @@ function [swaps, warnings_out] = MODprocess_find_spool_swaps(processed_root, spo
 %   docs/workflow/realtime_processing.md stage 5)
 %
 % CALLS
-%   ReadYaml (toolbox/YAMLMatlab_0.4.3)
+%   MODutil_list_surveys.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 if nargin < 2 || isempty(spool_log_csv)
     spool_log_csv = fullfile(processed_root, 'spool_swap_log.csv');
 end
-addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', 'YAMLMatlab_0.4.3'));
 MATCH_AFTER_DAYS = 10 / (24 * 60); % a log row up to 10 min after the survey's dev1_setup.yml still matches it
 warnings_out = {};
 
-surveys = read_dev1_setups(processed_root);
+[surveys, survey_warnings] = MODutil_list_surveys(processed_root);
 log_rows = read_spool_log(spool_log_csv);
-warnings_out = [warnings_out, surveys.warnings, log_rows.warnings];
-surveys = surveys.list;
+warnings_out = [warnings_out, survey_warnings, log_rows.warnings];
 log_rows = log_rows.list;
 log_used = false(size(log_rows));
 
@@ -121,7 +119,7 @@ for iR = find(~log_used)
         later_row = any([log_rows.dnum] > r.dnum & [log_rows.dnum] <= surveys(next_idx).dnum + MATCH_AFTER_DAYS);
         if ~same_spool(surveys(next_idx).spool, r.spool_id) && ~later_row
             warnings_out{end+1} = sprintf(['%s says spool %s from %s UTC, but the next survey, %s, ' ...
-                'says spool %s.'], spool_log_csv, r.spool_id, datestr(r.dnum, 31), next_survey, ...
+                'says spool %s.'], spool_log_csv, r.spool_id, datestr(r.dnum, 31), surveys(next_idx).survey, ...
                 surveys(next_idx).spool); %#ok<AGROW,DATST>
         end
     end
@@ -140,44 +138,6 @@ if nargout == 0
     clear swaps
 end
 end %end function
-
-%% Every survey's dev1_setup.yml: survey, winch_spool, time written
-function out = read_dev1_setups(processed_root)
-out.list = struct('survey', {}, 'spool', {}, 'dnum', {}, 'file', {});
-out.warnings = {};
-files = dir(fullfile(processed_root, '*', 'meta', 'dev1_setup.yml'));
-for iF = 1:numel(files)
-    f = fullfile(files(iF).folder, files(iF).name);
-    [~, survey] = fileparts(fileparts(files(iF).folder)); % <survey>/meta -> <survey>
-    spool = '';
-    try
-        y = ReadYaml(f);
-        if isfield(y, 'winch_spool')
-            spool = strtrim(char(string(y.winch_spool)));
-        end
-        if isfield(y, 'survey_name')
-            survey = char(string(y.survey_name));
-        end
-    catch ME
-        out.warnings{end+1} = sprintf('Could not read %s (%s) - skipped.', f, ME.message);
-        continue
-    end
-    first_line = strtrim(fgetl_safe(f));
-    tok = regexp(first_line, '(\d{4}-\d\d-\d\d \d\d:\d\d) UTC', 'tokens', 'once');
-    if ~isempty(tok)
-        dnum = datenum(datetime(tok{1}, 'InputFormat', 'yyyy-MM-dd HH:mm'));
-    else
-        dnum = files(iF).datenum; % local file time - only a fallback
-        out.warnings{end+1} = sprintf(['%s has no "written ... UTC" first line - using the file''s ' ...
-            'modification time.'], f);
-    end
-    out.list(end+1) = struct('survey', survey, 'spool', spool, 'dnum', dnum, 'file', f);
-end
-if ~isempty(out.list)
-    [~, order] = sort([out.list.dnum]);
-    out.list = out.list(order);
-end
-end
 
 %% spool_swap_log.csv rows (comment lines skipped; unparseable rows reported)
 function out = read_spool_log(file)
@@ -246,15 +206,6 @@ end
 function s = make_swap(dnum, spool, source, survey, notes)
 s = struct('dnum', dnum, 'time_utc', char(datetime(dnum, 'ConvertFrom', 'datenum', 'Format', 'yyyy-MM-dd HH:mm:ss')), ...
     'spool_id', spool, 'source', source, 'survey', survey, 'notes', notes);
-end
-
-function line = fgetl_safe(file)
-fid = fopen(file, 'r');
-line = fgetl(fid);
-fclose(fid);
-if ~ischar(line)
-    line = '';
-end
 end
 
 function print_swaps(swaps)

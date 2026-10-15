@@ -1,7 +1,8 @@
-function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all)
+function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all, varargin)
 % MODprocess_all_L0_to_L1        Part of MOD_fish_processing
 %
 % L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_all)
+% [L1_files, problems, processed] = MODprocess_all_L0_to_L1(..., 'newest_min_redo_s', s, 'continue_on_error', tf)
 %
 % DESCRIPTION
 %   Converts every L0 .mat file in L0_dir to a physical-units .mat file in
@@ -61,13 +62,32 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %                    (fullfile(fileparts(L0_dir),'L1')), created if missing.
 %   reprocess_all - (optional) logical, default false. If true, ignores
 %                    the up-to-date check and reconverts every L0 file.
+%   Name-value options (same for MODprocess_all_modraw_to_L0.m,
+%   MODprocess_all_L0_to_L1.m and MODprocess_all_L1_to_L2.m):
+%     'newest_min_redo_s' - default 0: the newest file is always redone (in
+%                      case it's still being written). > 0 (the realtime
+%                      worker): the newest file is redone only when it's
+%                      out of date, at most once per this many seconds -
+%                      see MODutil_needs_redo.m.
+%     'continue_on_error' - default false: a file that fails stops the run
+%                      with its error. true (the realtime worker): the file
+%                      is recorded in problems and the next file is done.
+%     'fpo7_refit_new_files' (this driver only) - default 0: the FP07
+%                      volts->degC fit is redone on every call. N > 0 (the
+%                      realtime worker): redone only once N more L1 files
+%                      exist than at the last fit (or if there's no fit
+%                      yet), since it reads every L1 file.
 %
 % OUTPUTS
 %   L1_files  - cell array of full paths to all .mat files in L1_dir
 %               after this call (both newly converted and pre-existing)
+%   problems  - struct array (.file, .stage, .identifier, .message), one
+%               per file that failed with 'continue_on_error' true; empty
+%               otherwise
+%   processed - cellstr of the input files (re)processed by this call
 %
 % CALLED BY
-%   (top-level scripts / notebooks)
+%   MODprocess_deployment.m, top-level scripts
 %
 % CALLS
 %   MODsetup_add_derived_metadata.m, MODsetup_save_metadata.m (unconditional)
@@ -81,6 +101,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
 %   MODsetup_read_yaml.m (only to reread the yml after a prompted value is
 %   saved to it - MODsetup_validate_metadata.m's yamlUpdated)
+%   MODutil_needs_redo.m, MODutil_save_atomic.m, MODprocess_L1_update_file_cache.m
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -109,6 +130,15 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   instrument yet.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
+
+p = inputParser;
+addParameter(p, 'newest_min_redo_s', 0);
+addParameter(p, 'continue_on_error', false);
+addParameter(p, 'fpo7_refit_new_files', 0);
+parse(p, varargin{:});
+opts = p.Results;
+problems = struct('file', {}, 'stage', {}, 'identifier', {}, 'message', {});
+processed = {};
 
 if nargin < 3 || isempty(L1_dir)
     L1_dir = fullfile(fileparts(L0_dir), 'L1');
@@ -168,18 +198,28 @@ for i = 1:nfiles
         already_converted = L1_info.datenum >= list_L0file(i).datenum;
     end
 
-    if ~reprocess_all && already_converted && i ~= i_newest
+    if ~MODutil_needs_redo(already_converted, i == i_newest, L1_file, opts.newest_min_redo_s, reprocess_all)
         continue
     end
 
     fprintf(1, '%s | L0/%s --> L1/%s | ', datestr(now, 'YYYY.mm.dd HH:MM:SS'), filename, filename);
 
-    L0_data = load(fullfile(list_L0file(i).folder, filename));
-    ctd_chunk = slice_external_ctd(external_ctd_full, L0_data);
-    data = MODprocess_single_L0_to_L1(L0_data, metadata, ctd_chunk);
+    try
+        L0_data = load(fullfile(list_L0file(i).folder, filename));
+        ctd_chunk = slice_external_ctd(external_ctd_full, L0_data);
+        data = MODprocess_single_L0_to_L1(L0_data, metadata, ctd_chunk);
 
-    save(L1_file, '-struct', 'data')
-    fprintf(1, '\n');
+        MODutil_save_atomic(L1_file, data)
+        processed{end+1} = filename; %#ok<AGROW>
+        fprintf(1, '\n');
+    catch ME
+        if ~opts.continue_on_error
+            rethrow(ME)
+        end
+        fprintf(1, 'FAILED: %s\n', ME.message);
+        problems(end+1) = struct('file', fullfile(L0_dir, filename), 'stage', 'L0_to_L1', ...
+            'identifier', ME.identifier, 'message', ME.message); %#ok<AGROW>
+    end
 
 end %end loop through files
 
@@ -192,7 +232,10 @@ L1_files = fullfile({L1_listing.folder}, {L1_listing.name})';
 % contents. Unconditional (unlike the pressure-record/twist blocks below) -
 % it only needs epsi.dnum, not CTD or vnav, so every deployment with any L1
 % files gets one, even before profile-cutting is wired up to consume it.
-TimeIndex = MODprocess_L1_make_time_index(L1_dir);
+% Per-L1-file summaries, reloading only new or changed L1 files - the
+% deployment-wide files below are rebuilt from these, not from every L1 file
+L1_cache = MODprocess_L1_update_file_cache(L1_dir, metadata.paths.meta);
+TimeIndex = MODprocess_L1_make_time_index(L1_cache);
 save(fullfile(metadata.paths.meta, 'time_index.mat'), '-struct', 'TimeIndex');
 
 % Deployment-level twist count: re-chain every L1 file's per-file twist
@@ -201,7 +244,7 @@ save(fullfile(metadata.paths.meta, 'time_index.mat'), '-struct', 'TimeIndex');
 % otherwise rather than let it churn through every L1 file logging
 % "missing vnav" for nothing.
 if isfield(metadata, 'manifest') && isfield(metadata.manifest, 'has_vnav') && metadata.manifest.has_vnav
-    MODprocess_L1_accumulate_twist_timeseries(L1_dir, metadata.paths.meta);
+    MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.meta);
 end
 
 % Deployment-level pressure record + profiling-direction classification:
@@ -214,7 +257,7 @@ end
 % at all, rather than churning through every L1 file to discover that.
 has_ctd = (~isempty(metadata.CTD.cal)) || ~isempty(external_ctd_full);
 if has_ctd
-    PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
+    PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_cache);
     if ~isempty(PressureTimeseries.dnum)
         while true
             try
@@ -236,13 +279,13 @@ if has_ctd
         % qualifies here even though it passed the has_ctd check above.
         % Gated on PressureTimeseries.dnum being non-empty too since the
         % fit needs is_down, just computed above.
-        if ~isempty(metadata.CTD.cal)
+        if ~isempty(metadata.CTD.cal) && fpo7_refit_due(metadata.paths.meta, numel(L1_cache), opts.fpo7_refit_new_files)
             % Refit from scratch: the fit loaded by MODsetup_add_derived_metadata
             % is set aside, so a channel that can't be refit isn't saved again
             % as if it were new (save_fpo7_calibration keeps it, with its old time)
             [metadata, previous_fit] = set_aside_fpo7_fits(metadata);
             metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, PressureTimeseries);
-            metadata = save_fpo7_calibration(metadata, previous_fit);
+            metadata = save_fpo7_calibration(metadata, previous_fit, numel(L1_cache));
             MODsetup_save_metadata(metadata, metadata.paths.meta, ...
                 'fpo7_calibration', mfilename('fullpath'));
         end
@@ -250,6 +293,20 @@ if has_ctd
 end
 
 end %end function
+
+%% Is an FP07 refit due? Always when every_n is 0 or there's no saved fit;
+% otherwise once n_L1_files has grown by every_n since the saved fit.
+function tf = fpo7_refit_due(meta_dir, n_L1_files, every_n)
+tf = true;
+cal_file = fullfile(meta_dir, 'fpo7_calibration.mat');
+if every_n <= 0 || ~isfile(cal_file)
+    return
+end
+saved = load(cal_file);
+if isfield(saved, 'n_L1_files')
+    tf = n_L1_files >= saved.n_L1_files + every_n;
+end
+end
 
 %% Remove every fpo7 channel's volts_to_C before a refit; return what was
 % removed (volts_to_C.(ch)) so save_fpo7_calibration can keep it for a
@@ -269,11 +326,12 @@ end
 % meta/fpo7_calibration.mat - where MODsetup_add_derived_metadata.m loads
 % it from in any later session or after a yml reread. Fields:
 % volts_to_C.(ch) = [slope, intercept], sn.(ch) = probe SN as char ('' if
-% none), fitted.(ch) = UTC time of that channel's fit. A channel that
+% none), fitted.(ch) = UTC time of that channel's fit, n_L1_files = how many
+% L1 files there were (for 'fpo7_refit_new_files'). A channel that
 % couldn't be refit this time keeps its previous fit and fit time (with a
 % warning). Written to a temp file and moved into place, so a reader never
 % sees half a file.
-function metadata = save_fpo7_calibration(metadata, previous)
+function metadata = save_fpo7_calibration(metadata, previous, n_L1_files)
 cal_file = fullfile(metadata.paths.meta, 'fpo7_calibration.mat');
 old_fitted = struct();
 if isfile(cal_file)
@@ -313,7 +371,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
 end
 if ~isempty(fieldnames(volts_to_C))
     tmp_file = [tempname(metadata.paths.meta) '.mat'];
-    save(tmp_file, 'volts_to_C', 'sn', 'fitted');
+    save(tmp_file, 'volts_to_C', 'sn', 'fitted', 'n_L1_files');
     movefile(tmp_file, cal_file, 'f');
 end
 end

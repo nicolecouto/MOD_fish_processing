@@ -10,7 +10,12 @@ setup
     MODsetup_preflight.m - checks a deployment's yml has every processing parameter its instruments need (asks for missing ones with prompt = true), before an unattended run
     cruise_meta_data_template.yml - every processing parameter with its description and suggested starting value (made by MODsetup_write_cruise_meta_data_template.m); copy to <processed_root>/cruise_meta_data.yml and review
 
+processing
+    MODprocess_deployment.m - the one driver: realtime worker (MODprocess_deployment(processed_root, 'watch', true), or double-click "Start Realtime Processing.command") and one-pass/postprocessing runs (MODprocess_deployment(survey_folder, 'by', 'profile')); see docs/workflow/realtime_processing.md
+    MODprocess_find_spool_swaps.m - winch spool changes for the cruise twist count, from the dev1_setup.yml files and spool_swap_log.csv together
+
 util
+    MODutil_simulate_acquisition.m - replays a real deployment's raw files into a test folder, growing each file the way fctd_epsi does, to test realtime processing
     MODutil_read_som3.m - prints (or returns) what's in a .modraw file's $SOM3 block: mission, vehicle, firmware, and each SOM module (EFE channels with probe SNs, SBE, SD card, ...)
 
 visualization

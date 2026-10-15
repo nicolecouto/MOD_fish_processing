@@ -23,10 +23,10 @@ This also directly answers "can I process a single L1 file to L2 on its own?" - 
 ### `MODprocess_L1_make_pressure_timeseries.m`
 
 ```matlab
-PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir)
+PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_cache)
 ```
 
-Concatenates `ctd.dnum`/`ctd.P` out of every L1 `.mat` file in `L1_dir`, sorted by file start time (loads only the `ctd` field per file, not full files). Pure - no metadata needed, no file writing. This is the deployment-length pressure record PLAN.md Section 6.3 originally sketched as `modProcess_make_pressure_timeseries.m`.
+Concatenates every L1 file's `ctd.dnum`/`ctd.P`, sorted by file start time, built from `meta/l1_file_cache.mat` (`MODprocess_L1_update_file_cache.m`), which keeps each L1 file's time span, `ctd.dnum`/`ctd.P` and `twist` and reloads only L1 files that are new or changed - so these deployment-wide files don't reload every L1 file on every realtime pass. Pure - no metadata needed, no file writing. This is the deployment-length pressure record PLAN.md Section 6.3 originally sketched as `modProcess_make_pressure_timeseries.m`.
 
 ### `mod_L1_detect_profiling_direction.m`
 

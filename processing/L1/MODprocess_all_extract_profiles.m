@@ -5,8 +5,10 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %
 % DESCRIPTION
 %   Extraction-only half of the profile pipeline (PLAN.md Phase A
-%   refactor, Section 6.3): detects every profile in the deployment, both
-%   directions (modProcess_detect_profiles.m), then stitches each one's
+%   refactor, Section 6.3): takes every profile in the deployment, both
+%   directions, from the cast table (MODprocess_L1_update_cast_table.m,
+%   which runs modProcess_detect_profiles.m and saves meta/casts.mat - the
+%   same casts realtime gridding uses), then stitches each one's
 %   raw epsi/ctd record across L1 file boundaries
 %   (modProcess_extract_profile.m) and saves it as Profile####.mat - the
 %   stitched-but-not-yet-converted record, no spectra/chi/epsilon. This
@@ -53,11 +55,11 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %               pre-existing)
 %
 % CALLED BY
-%   (top-level scripts / notebooks - typically followed by
+%   MODprocess_deployment.m ('by', 'profile'), top-level scripts - followed by
 %   MODprocess_all_L1_to_L2.m pointed at this function's output directory)
 %
 % CALLS
-%   modProcess_detect_profiles.m, modProcess_extract_profile.m,
+%   MODprocess_L1_update_cast_table.m, modProcess_extract_profile.m,
 %   MODsetup_read_yaml.m (only on the retry path)
 %
 % NOTES
@@ -86,7 +88,6 @@ if ~exist(pressure_timeseries_file, 'file')
          'mod_L1_detect_profiling_direction.m) once this deployment has ' ...
          'CTD data in its L1 files - run that first.'], pressure_timeseries_file);
 end
-PressureTimeseries = load(pressure_timeseries_file);
 
 time_index_file = fullfile(metadata.paths.meta, 'time_index.mat');
 if ~exist(time_index_file, 'file')
@@ -96,7 +97,9 @@ if ~exist(time_index_file, 'file')
 end
 TimeIndex = load(time_index_file);
 
-profiles = modProcess_detect_profiles(PressureTimeseries, metadata);
+% The one cast table (meta/casts.mat) - realtime grids by the same casts.
+% Every cast is extracted, including one that runs into the end of the record.
+[profiles, metadata] = MODprocess_L1_update_cast_table(metadata);
 
 if isempty(profiles)
     disp('MODprocess_all_extract_profiles: no profiles detected for this deployment.')

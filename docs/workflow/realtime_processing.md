@@ -1,8 +1,9 @@
 # Realtime and postprocessing: one driver for every vehicle
 
-**Status:** design agreed 2026-10-14. Built so far: [Metadata](#metadata) (`MODsetup_build_yaml`,
-the cruise template, `MODsetup_preflight`) and the [other pieces](#other-pieces-in-this-round)
-marked built. The worker, grid and monitor app are not built yet. Each section is updated as its
+**Status:** design agreed 2026-10-14. Built so far: [Metadata](#metadata), the worker
+(`MODprocess_deployment`, [How it runs](#how-it-runs-on-the-ship)), stages 0-2b, the folder
+READMEs, the simulator, and the [other pieces](#other-pieces-in-this-round) marked built. Not built
+yet: L2 = L1 + scans, the grid, the cruise twist, the monitor app, microconductivity chi. Each section is updated as its
 code is built, with an entry in History below.
 
 ## Why
@@ -72,55 +73,87 @@ flowchart LR
   YML --> BUILD["MODsetup_build_yaml<br/>+ cruise_meta_data.yml"] --> DEPL[("depl_meta_data.yml")]
   RAW --> W["Worker<br/>MODprocess_deployment<br/>(matlab -batch)"]
   DEPL --> W
-  W --> FILES[("raw/ L0/ L1/ L2/ grid/<br/>meta/realtime/ status, log")]
+  W --> FILES[("survey/raw/ L0/ L1/ L2/<br/>Processed/realtime/<br/>status, log")]
   FILES --> APP["Monitor app<br/>MODvis_realtime_monitor"]
   APP -->|"control.json<br/>Start/Pause/Stop"| W
 ```
 
 There are two Matlab processes on DEV3. They talk only through files.
 
-**Worker:** `MODprocess_deployment(depl_meta_data_yml, 'by', 'file', 'watch', true)`, started by
-the monitor app's **Start** button (or `Start Realtime Processing.command`) with `matlab -batch`.
-It has no windows. Each loop:
+**Worker (built):** `MODprocess_deployment(processed_root, 'watch', true)`, started by
+`Start Realtime Processing.command` (double-click; it reads `processed_root` from
+`acquisition/config.yml`) or later by the monitor app's **Start** button, with `matlab -batch`.
+It has no windows. Each pass:
 
-1. finds new or grown raw files;
-2. runs every stage on each one;
+1. links new raw files from `RAW_full_cruise/` into their survey's `raw/`;
+2. for each survey that has something new (oldest first; the newest is the active one), runs
+   every stage below;
 3. writes status;
-4. waits `poll_s` (default 30 s).
+4. waits `poll_s` (default 30 s), checking `control.json` every second.
 
-The wait starts **after** a loop finishes. A loop that takes 3 minutes is followed by a 30 s
-pause; loops never overlap and nothing is skipped. `poll_s` only sets how fast new data is
+The wait starts **after** a pass finishes. A pass that takes 3 minutes is followed by a 30 s
+pause; passes never overlap and nothing is skipped. `poll_s` only sets how fast new data is
 noticed when the worker is idle.
 
-The raw file that's still being written gets redone only after it has grown by `regrow_min_s`
-of data (e.g. 2 min), or once it has closed. Without that, it and everything after it would be
-redone on every loop. `status.json` reports how long each loop took, so you can see if
-processing falls behind.
+The raw file that's still being written is redone only once it's out of date and its outputs are
+at least `regrow_min_s` old (default 120 s), so it and everything after it aren't redone on every
+pass. In the simulator test (4 files, each written over 30 s, `poll_s` 5 s) each file went
+through L0 → L1 → L2 twice over 22 passes. `status.json` reports how long each pass took and the
+lag of the newest product behind the newest raw data. A survey is skipped once it's caught up
+(nothing to do, and `raw/` unchanged for longer than twice `regrow_min_s` plus a pass) until
+`raw/` changes. An edit to its yml or a calibration file alone doesn't wake a caught-up survey;
+run a one-pass `MODprocess_deployment(survey_folder)` (or touch a raw file) to apply it.
 
-Every file and stage is wrapped in `try/catch`:
-- A bad file is logged, listed in `problems.json`, and retried when it changes. The loop
-  carries on.
-- The worker never prompts, since `-batch` can't. If parameters are missing, the survey shows
-  "waiting for parameters".
-- **Stop** finishes the current file and exits cleanly.
+Nothing stops the worker except **Stop**:
+- A bad file is logged, listed in the survey's `problems.json`, and retried on later passes (the
+  log only shows it again if the error changes). Once it goes through, the log says so and it's
+  removed from the list.
+- A stage that fails as a whole is listed the same way, and the next stage still runs; it's
+  cleared once that stage goes through.
+- Anything else that goes wrong in a pass is logged (once, not every pass), and the worker waits
+  and tries again.
+- Output files are written to `<file>.tmp` and then moved into place, so a Matlab killed mid-save
+  (Terminal closed, power cut) never leaves a half-written `.mat`; an unreadable L0 or L1 file is
+  redone or retried rather than blocking the survey.
+- A raw file deleted from `RAW_full_cruise/` leaves a broken link in `raw/`; it's listed in
+  `status.json` (`broken_links`) and otherwise left out, not processed.
+- The worker never prompts, since `-batch` can't. A survey whose parameters are incomplete
+  shows "waiting for parameters" (with the list) until they're added to `cruise_meta_data.yml`
+  or `depl_meta_data.yml`; a survey with no raw files yet shows "waiting for raw files".
+- **Stop** (`{"command": "stop"}` in `control.json`) finishes the current stage and exits; the
+  survey shows "stopped mid-pass" and is picked up where it left off next time. **pause** keeps
+  the worker alive without processing.
+- One worker per processed folder: `realtime/worker.lock` holds the running worker's PID, and a
+  second one refuses to start while that PID is alive. A lock left by a crashed worker is taken
+  over automatically; `'force', true` (or `--force` on the `.command`) overrides it anyway.
+- `RAW_full_cruise/` is looked for on every pass, so the worker can be started before the first
+  rsync creates it.
 
-**Monitor app:** `MODvis_realtime_monitor`, a uifigure. It only reads what the worker writes,
-so a slow redraw or a crash can't stop processing. You can close and reopen it, or run another
-copy on a computer that mounts DEV3.
+**Monitor app (not built yet):** `MODvis_realtime_monitor`, a uifigure. It only reads what the
+worker writes, so a slow redraw or a crash can't stop processing. You can close and reopen it,
+or run another copy on a computer that mounts DEV3.
 
 A Matlab `timer` inside one session isn't used for two reasons: long processing freezes the
 plots, and one error in the timer callback stops it.
 
-**Files** in `<survey>/meta/realtime/`:
+**Files** in `<processed_root>/realtime/` (the worker):
 
 | File | What's in it |
 |---|---|
-| `status.json` | Active survey and worker state, file counts per stage, last file, lag behind the newest raw file, loop time |
-| `realtime.log` | Every action and error, appended. Also copied into `Processed/cruise_log.txt` for the whole cruise |
-| `problems.json` | Files that failed, with the error |
-| `control.json` | Written by the app: run, pause or stop |
+| `control.json` | `{"command": "run" \| "pause" \| "stop"}` - written by the app or by hand; set to `run` when the worker starts |
+| `worker.lock` | PID, host and start time of the running worker; removed when it exits |
+| `status.json` | Worker state, active survey, pass time, and per survey: state, file counts (raw/L0/L1/L2), casts, newest raw file time, lag, problems count, missing parameters, calibration notes; also unrouted raw files and broken links |
+| `cruise_log.txt` | One line per notable event for the whole cruise: worker start/stop, files linked, new problems, problems cleared |
 
-**Postprocessing** is the same call with `'by', 'profile', 'watch', false`: one pass, no other code.
+and in `<survey>/meta/realtime/` (each survey):
+
+| File | What's in it |
+|---|---|
+| `realtime.log` | Everything printed while that survey was processed (Matlab's `diary`), warnings included |
+| `problems.json` | Files or stages currently failing: `file`, `stage`, `identifier`, `message`, `first_seen_utc`, `last_seen_utc` |
+
+**Postprocessing** is the same call with `'by', 'profile'` and no `'watch'`, on a survey folder
+or yml: one pass, no other code.
 
 ## Stages
 
@@ -129,13 +162,14 @@ switch only changes what goes in and where the result goes.
 
 | # | Stage | Function | What it does |
 |---|---|---|---|
-| 0 | Route raw files | new `MODutil_route_raw_by_survey` | Reads each new file's `CTD.survey` from its header and symlinks it into `<survey>/raw/`. Symlinks follow a growing file, while hard links break when rsync replaces it. The active survey is the newest `depl_meta_data.yml`; a new one switches the worker over once the old survey's last files are done. |
-| 1 | modraw → L0 | `MODprocess_all_modraw_to_L0` | Already handles growing files. |
-| 2 | L0 → L1 | `MODprocess_all_L0_to_L1` | Physical units and calibrations. Microconductivity pre-emphasis removal moves here (new `mod_L1_ucond_remove_preemphasis`). The deployment-wide files in `meta/` (`time_index`, `pressure_time_series`, `twist_time_series`) are **appended to**, not rebuilt from every L1 file. The FP07 refit runs every N files. |
-| 2b | Casts | `modProcess_detect_profiles` on `pressure_time_series` | **One cast table** (`meta/casts.mat`) for both modes. Casts are keyed by start time, not by number, so they survive renumbering. A cast still in progress is left out until it ends. Realtime and postprocessing differ only in the parameters and any hand edits. Postprocessing also cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
-| 3 | → L2 | `MODprocess_all_L1_to_L2` | Copies the timeseries and adds `scans`. The modules that run depend on the manifest: CTD always; `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`); `fluor` → scan means. Scans are kept for up, down or both per `profiling_direction`. |
+| 0 | Route raw files (**built**) | `MODutil_route_raw_by_survey` | Reads each new file's `CTD.survey` from its header (once; kept in `Processed/raw_routing.mat`) and symlinks it into `<survey>/raw/`. Symlinks follow a growing file, and the new file rsync swaps in when it updates one; hard links would keep the old one. A file with no `CTD.survey` line (fctd_epsi before 2025, SOM-only vehicles) is reported as unrouted. Nothing in `RAW_full_cruise/` is ever changed. |
+| 1 | Metadata (**built**) | `MODsetup_build_yaml`, `MODsetup_preflight` | Builds `depl_meta_data.yml` each pass (rewritten only if a source changed) and checks it; see [Metadata](#metadata). |
+| 2 | modraw → L0 → L1 (**built**) | `MODprocess_all_modraw_to_L0`, `MODprocess_all_L0_to_L1` | Physical units and calibrations; per-file errors don't stop the run (`'continue_on_error'`), the growing file is throttled (`'newest_min_redo_s'`), and the FP07 refit runs every 10 new L1 files (`'fpo7_refit_new_files'`). The deployment-wide files in `meta/` (`time_index`, `pressure_time_series`, `twist_time_series`) are rebuilt from `meta/l1_file_cache.mat` (`MODprocess_L1_update_file_cache`), which rereads only new or changed L1 files; L1 files are never changed. Microconductivity pre-emphasis removal will move here (new `mod_L1_ucond_remove_preemphasis`, step 7). |
+| 2b | Casts (**built**) | `MODprocess_L1_update_cast_table` | **One cast table** (`meta/casts.mat`) for both modes, from `modProcess_detect_profiles`. A cast that runs into the end of the record is `complete = false` (still going); realtime leaves it out, postprocessing keeps it. Key per-cast results by `dnum_start` - numbers can change as the record grows. Postprocessing cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
+| 3 | → L2 (**built as today's L2; step 3 changes it**) | `MODprocess_all_L1_to_L2` | Step 3 makes it copy the timeseries and add `scans`. The modules that run depend on the manifest: CTD always; `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`); `fluor` → scan means. Scans are kept for up, down or both per `profiling_direction`. |
 | 4 | Grid | new `MODprocess_grid(metadata, 'by', 'file'\|'profile')` | Columns always come from the cast table. By file, each cast's data is found in the L2 files through `time_index`; by profile, it's read from `profiles_L2/`. Bins in pressure (dz from `grid.dz_m`); only new or changed casts are rebinned. Despiking and salinity cleanup happen here for now, as a separate function the grid calls, because despiking may move to L2 later (per scan, before spectra). |
 | 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | One winch and one spool serve every vehicle, so this chains **every survey of the cruise** in time order into one series. The count restarts at each spool change, from `MODprocess_find_spool_swaps` (**built**), which checks two sources against each other so a deleted file doesn't lose a change: every survey's `dev1_setup.yml` (`winch_spool`, and when it was written) and the cruise `Processed/spool_swap_log.csv` (Start New Deployment adds a row when the spool changes; a mid-deployment change is added by hand). It uses the log's time when both agree, falls back to whichever one has the change, and warns when they disagree. Output: `Processed/twist/twist_time_series.mat`. Each L1 file's own count still starts at 0; only this chained file carries the running total. |
+| - | Folder READMEs (**built**) | `MODutil_write_folder_readme` | `_README.txt` in `raw/`, `L0/`, `L1/`, `L2/` (and `profiles_L1/`, `profiles_L2/`): what the files hold, the steps, the parameters used, the vehicle, and the code's git commit. Rewritten only when that changes. |
 
 ## One format for every vehicle
 
@@ -235,15 +269,34 @@ Laid out after the 2018 FastCTD GUI, with epsi variables added:
 
 ## Testing: the simulator
 
-New `MODutil_simulate_acquisition(source_raw_dir, sandbox_incoming)` copies a real deployment's
-raw files into a sandbox `RAW_full_cruise/` over time, growing the last file the way
-`fctd_epsi` does. The worker and app run against it. It's tested on copies of:
-- `epsi_mako/blt2021_0715`;
-- `fctd_w_ucond`;
-- `fctd_w_ucond_fluor`.
+**Built:** `MODutil_simulate_acquisition(source_raw_dir, incoming_dir, 'first', i, 'n_files', n,
+'file_s', s, 'chunks', c)` copies a real deployment's raw files into a test `RAW_full_cruise/`
+one at a time, writing each in `c` pieces over `s` seconds the way `fctd_epsi` grows a file. Run
+it in a second Matlab while the worker watches. Use copies of real deployments only; the source
+is only read.
 
-Each run includes a new survey mid-run, a deliberately corrupt raw file, and a missing
-parameter.
+Tested in a scratchpad sandbox (2026-10-15), worker with `poll_s` 5 s and `regrow_min_s` 20 s:
+
+- **Survey A** (MAKO1, files 40-43 of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead`, each
+  written over 30 s): routed by their `CTD.survey` header, L0 → L1 → L2 as they grew, 11 casts
+  in `meta/casts.mat`.
+- **A corrupt raw file** (a real header plus 300 kB of random bytes): parsed without an error;
+  its readable part gave L1 data and 0 scans, with nothing odd in the pressure record. After it
+  was replaced with valid data, it was redone (42 scans).
+- **Survey B** (FCTD1, `fctd_w_ucond_fluor/25_0409_d05_fctd1_dye_survey`), set up mid-run while
+  `cruise_meta_data.yml` was hidden: the newest survey became the active one. When it was
+  restored and three files arrived, they were routed and processed, and survey A was left alone
+  (caught up).
+- **Stop** through `control.json`: the worker finished the stage and exited; `status.json` says
+  `stopped`.
+- **A survey set up while `cruise_meta_data.yml` is missing** shows "waiting for parameters" (15
+  missing for an FCTD2: no chi or epsilon needed) before any raw data arrives, and "waiting for
+  raw files" once the file is back.
+- **An earlier run** (4 growing files from the start of the canyonhead deployment) checked the
+  throttle: each file went through L0 → L1 → L2 twice over 22 passes, not on every pass.
+
+Still to test on the simulator: `fctd_w_ucond` (a 2023 FCTD, no `CTD.survey` line, so its files
+are reported as unrouted) and a mid-run raw file that never finishes.
 
 ## Other pieces in this round
 
@@ -282,3 +335,9 @@ yet.
 `MODutil_read_som3`, and the Start New Deployment winch spool field and Setup comment cleanup. Also:
 `MODsetup_read_yaml` now reads every processing parameter with one registry loop. Tested in a
 scratchpad sandbox - see `SESSION_LOG.md` (2026-10-14, step 1).
+
+**2026-10-15 - Step 2 built** (branch `main-fork`): the worker and one-pass driver
+(`MODprocess_deployment`), raw routing, the L1 file cache behind the deployment-wide files, the
+cast table, per-file error handling and redo throttling in the three per-file drivers, atomic
+saves, folder READMEs, the simulator and the `.command` launcher. Reviewed by an agent (9 bugs
+fixed) and tested on the simulator - see `SESSION_LOG.md` (2026-10-15, step 2).

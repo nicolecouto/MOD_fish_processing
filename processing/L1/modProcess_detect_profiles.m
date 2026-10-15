@@ -82,7 +82,7 @@ function profiles = modProcess_detect_profiles(PressureTimeseries, metadata)
 %   has fewer than 2 samples or nothing passes minLength_m filtering.
 %
 % CALLED BY
-%   MODprocess_all_extract_profiles.m
+%   MODprocess_L1_update_cast_table.m
 %
 % CALLS
 %   MODsetup_validate_metadata.m

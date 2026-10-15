@@ -292,6 +292,9 @@ CAL_LAYOUT = [
 CAL_SUBFOLDERS = {key: sub for key, sub, _, _ in CAL_LAYOUT}
 # FP07 calibration files aren't normally used, so a missing one isn't warned about
 NO_CAL_WARNING = {'fpo7_cal_path'}
+# Not used by fctd_epsi, but processing needs it for shear epsilon: the shear
+# charge-amp electronics response (MODsetup_define_filters.m reads it from here)
+SHEAR_CHARGEAMP_FILE = os.path.join('SHEAR', 'cap1nFres200Meg_5KohmInput.mat')
 
 
 def calibration_layout_text():
@@ -413,6 +416,12 @@ def validate(values, config=None):
                 and not os.path.isfile(os.path.join(d, sn, 'Calibration_%s.txt' % sn)):
             warnings.append('Slot %d (%s): no %s/%s/Calibration_%s.txt - fctd_epsi will record N/A for it'
                             % (i, names[i - 1], d, sn, sn))
+    if cal_root and os.path.isdir(cal_root) \
+            and any(v.get('ch%d_type' % i) == 'shear' for i in range(1, 5)) \
+            and not os.path.isfile(os.path.join(cal_root, SHEAR_CHARGEAMP_FILE)):
+        warnings.append('No %s in the calibrations folder - processing would compute epsilon without '
+                        'the shear charge-amp correction (copy it from MOD_fish_calibrations)'
+                        % SHEAR_CHARGEAMP_FILE)
     # fctd_epsi and processing (MODsetup_read_yaml.m) both read <root>/SBE/<SN>.CAL
     ctd_dir, ctd_sn = v.get('ctd_cal_path', ''), v.get('ctd_sn', '')
     if ctd_dir and ctd_sn and os.path.isdir(ctd_dir) and not os.path.isfile(os.path.join(ctd_dir, ctd_sn + '.CAL')):

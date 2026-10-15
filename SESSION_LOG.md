@@ -4,6 +4,64 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-15 (step 2) - The realtime worker: MODprocess_deployment, routing, cache, cast table, simulator (branch `main-fork`)
+
+Step 2 of `docs/workflow/realtime_processing.md`. The same driver does realtime and postprocessing.
+
+**New functions**
+- `processing/MODprocess_deployment.m`. One driver for both uses:
+  - realtime: `MODprocess_deployment(processed_root, 'watch', true)`;
+  - one-off or postprocessing: `MODprocess_deployment(survey, 'by', 'profile')`.
+  - Each pass it routes raw files, then per survey (newest = active) builds and preflights `depl_meta_data.yml`, runs modraw->L0->L1, the cast table, and L1->L2 (or profiles), and writes the folder READMEs.
+  - Missing parameters show "waiting for parameters", even before any raw data arrives; no raw files shows "waiting for raw files".
+  - Per-file errors go to `<survey>/meta/realtime/problems.json` and are cleared once the file goes through. A stage that fails is recorded the same way, and the next stage still runs.
+  - Worker-level files are in `Processed/realtime/`: `control.json` (run/pause/stop, checked between stages and every second while waiting), `status.json`, `cruise_log.txt` (repeated failures logged once) and `worker.lock` (PID; a second worker refuses to start). The per-survey `realtime.log` comes from Matlab's diary.
+  - A caught-up survey is skipped until `raw/` changes.
+- `util/MODutil_route_raw_by_survey.m` symlinks each `RAW_full_cruise` file into `<survey>/raw/` by its `CTD.survey` header (read once, cached in `raw_routing.mat`). A file with no survey is reported as unrouted.
+- `util/MODutil_list_surveys.m` lists surveys by when their `dev1_setup.yml` was written. `MODprocess_find_spool_swaps` now uses it.
+- `util/MODutil_needs_redo.m` holds the per-file redo rule.
+- `util/MODutil_save_atomic.m` writes to `.tmp` and then moves the file into place.
+- `util/MODutil_write_folder_readme.m` writes a `_README.txt` per level folder.
+- `util/MODutil_simulate_acquisition.m` replays a deployment's raw files, growing each one.
+- `processing/MODprocess_L1_update_file_cache.m` keeps `meta/l1_file_cache.mat`. `time_index`, `pressure_time_series` and `twist_time_series` are now built from it, rereading only new or changed L1 files.
+- `processing/L1/MODprocess_L1_update_cast_table.m` writes `meta/casts.mat`, the one cast table (`.complete` false for a cast still going). `MODprocess_all_extract_profiles` now uses it.
+- `Start Realtime Processing.command` launches the worker (reads `processed_root` from `acquisition/config.yml`; `--force`).
+
+**Changed drivers.** The three per-file drivers take `'newest_min_redo_s'` and `'continue_on_error'`, return `[files, problems, processed]`, save atomically, and skip broken links. L0->L1 also takes `'fpo7_refit_new_files'`. The defaults keep the old behaviour.
+
+**Calibration check.** Preflight and Start New Deployment now flag a missing shear charge-amp file (`<calibrations_root>/SHEAR/cap1nFres200Meg_5KohmInput.mat`). Without it, epsilon runs with no electronics correction and only a console warning. The cruise `config.yml` calibrations folder (`MOD_fish_lib/EPSILOMETER/CALIBRATION`) has no `SHEAR/` in the local copy.
+
+**Review.** A senior-review agent found 9 bugs, all fixed:
+- stage problems that could never clear;
+- a half-written `.mat` blocking a survey;
+- `RAW_full_cruise` only looked for at start;
+- the caught-up rule able to freeze a final L2;
+- two workers possible;
+- one routing failure blocking later files;
+- broken links treated as data;
+- Stop only between surveys;
+- a vanished survey recreated.
+
+It also found stale CALLED BY / "not built" notes and several nits.
+
+**Tested in scratchpad sandboxes**
+- Cache-built meta files are identical to the old full rebuild (`blt2021_0715`, cold and warm cache).
+- A throttled pass with nothing new does nothing.
+- 4 growing files: each went through twice over 22 passes.
+- The full scenario, twice (the second time after the review fixes), with `poll_s` 5 and `regrow_min_s` 20:
+  - the worker started before `RAW_full_cruise` existed;
+  - a second worker was refused;
+  - survey A (canyonhead MAKO1 files 40-43) routed and processed while growing: 11 casts;
+  - a corrupt raw file (real header plus random bytes) parsed without error, then was redone (42 scans) once replaced;
+  - survey B (FCTD1 dye) set up while `cruise_meta_data.yml` was hidden waited for parameters, then processed: 8 casts;
+  - a deleted raw file became a reported broken link;
+  - Stop exited in 5 s and removed the lock.
+- A 2023 FCTD file without `CTD.survey` is reported as unrouted.
+- The `.command` started and stopped the worker on a sandbox.
+- `checkcode`: no new warnings. `mkdocs build --strict` passes.
+
+**Not built yet:** L2 = L1 + scans (step 3), grid, cruise twist, the monitor app, microconductivity chi.
+
 ### 2026-10-14 (step 1, spool changes from two sources) - MODprocess_find_spool_swaps (branch `main-fork`)
 
 Nicole wanted spool changes taken from both the `dev1_setup.yml` files and a spool swap log, in case someone deletes a `dev1_setup.yml` along the way.

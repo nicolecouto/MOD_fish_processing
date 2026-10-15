@@ -1,7 +1,7 @@
-function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, meta_dir)
+function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta_dir)
 % MODprocess_L1_accumulate_twist_timeseries        Part of MOD_fish_processing
 %
-% TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, meta_dir)
+% TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta_dir)
 %
 % DESCRIPTION
 %   Chains every L1 file's twist field (added by mod_L1_add_twist.m)
@@ -16,9 +16,8 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, met
 %   hand-created file must not be silently ignored after this rename).
 %
 % INPUTS
-%   L1_dir   - directory containing L1 .mat files, each with top-level
-%              'vnav' and 'twist' variables (as saved by
-%              MODprocess_all_L0_to_L1.m's save(L1_file, '-struct', 'data'))
+%   cache    - from MODprocess_L1_update_file_cache.m: each L1 file's twist
+%              field and first vnav.dnum (so no L1 file is loaded here)
 %   meta_dir - directory to read spool_swap_log.csv from and save
 %              twist_time_series.mat into (deployment's meta/ folder)
 %
@@ -35,67 +34,24 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_dir, met
 %   MODprocess_all_L0_to_L1.m
 %
 % CALLS
-%   (none)
+%   (none - the cache comes from MODprocess_L1_update_file_cache.m)
 %
 % NOTES
 %   Also saves twist_time_series.mat into meta_dir. The twist field in each
 %   L1 file is self-contained (count starts from ~0 for each file), so
 %   reprocessing one file never corrupts the accumulated timeseries - this
-%   function just re-chains whatever's currently in L1_dir.
+%   function just re-chains whatever's currently in the cache (i.e. in L1/).
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-% files = struct that contains all the mat files in L1_dir
-files = dir(fullfile(L1_dir, '*.mat'));
-nFiles = numel(files);
-
-% checking that files loaded in
-if nFiles == 0
-    disp('Error: No Files');
-    return
-end
-
-% initiating variables
-sortKey = nan(nFiles, 1);
-twistData = cell(nFiles,1);
-validFile = false(nFiles,1);
-
-% checking that each file contains the needed data. L1 .mat files are
-% saved with save(L1_file, '-struct', 'data') (MODprocess_all_L0_to_L1.m),
-% so vnav/twist are top-level variables in the file, not nested under a
-% 'data' struct.
-%
-% Not every L1 file necessarily has vnav data - a raw file can legitimately
-% contain zero VNAV blocks (comms dropout, logging started mid-file, ...),
-% in which case L0 parsing sets vnav = [] and MODprocess_single_L0_to_L1
-% never calls mod_L1_add_twist, so 'twist' is simply absent from
-% that file. That's expected, not a processing failure - skip the file and
-% move on, rather than treat it as an error.
-for i = 1:nFiles
-    fpath = fullfile(L1_dir,files(i).name);
-    % S = current data file. 'twist'/'vnav' may legitimately not exist in
-    % this file (see above) - suppress load's "variable not found"
-    % warning for that expected case rather than let it print for every
-    % vnav-less file.
-    warnState = warning('off', 'MATLAB:load:variableNotFound');
-    S = load(fpath, 'vnav', 'twist');
-    warning(warnState);
-
-    if ~isfield(S, 'vnav') || isempty(S.vnav) ...
-        || ~isfield(S.vnav, 'dnum') || isempty(S.vnav.dnum) || ...
-         ~isfield(S, 'twist') || isempty(S.twist)
-        fprintf('MODprocess_L1_accumulate_twist_timeseries: skipping %s - no vnav/twist data in this file.\n', files(i).name);
-        continue
-    end
-
-    sortKey(i) = min(S.vnav.dnum);
-    twistData{i} = S.twist;
-    validFile(i) = true;
-end
-
-% Drop any files that were skipped
-sortKey   = sortKey(validFile);
-twistData = twistData(validFile);
+% Not every L1 file has twist data - a raw file can legitimately contain
+% zero VNAV blocks (comms dropout, logging started mid-file, ...), in which
+% case MODprocess_single_L0_to_L1 never calls mod_L1_add_twist and 'twist'
+% is absent from that file. That's expected, not a processing failure -
+% such files have an empty .twist in the cache and are skipped.
+has_twist = ~cellfun(@isempty, {cache.twist});
+sortKey   = [cache(has_twist).twist_sort_key];
+twistData = {cache(has_twist).twist};
 
 if isempty(twistData)
     disp('Error! No twist data.')

@@ -57,7 +57,7 @@ Orchestrator: loops over every raw file in `raw_dir` and calls `MODprocess_singl
 
 All required inputs are plain paths - no metadata object, no `mod_class`, nothing else required. `metadata` is optional and only passed through for EFE names/config; files already converted aren't redone just because it changed (L1 re-applies setup.yml anyway). Each saved `.mat` file contains only the data-type fields from `MODprocess_single_modraw_to_L0` plus a small `raw_file_info` field (`bytes`, `filename`) used to detect whether the raw file has changed since it was last converted. Returns `L0_files`, a cell array of full paths to every `.mat` file in `L0_dir` after the call.
 
-Skips re-converting a file if its `.mat` already exists and the raw file hasn't grown since (checked by byte size) — except the most recent file, which is always reconverted in case it's still being written to (useful for real-time/at-sea processing).
+Skips re-converting a file if its `.mat` already exists and the raw file hasn't grown since (checked by byte size) — except the most recent file, which is always reconverted in case it's still being written to (useful for real-time/at-sea processing). With `'newest_min_redo_s', s` (the realtime worker passes it) the newest file is reconverted only when it has grown, at most once per `s` seconds; `'continue_on_error', true` returns failing files in a second output (`problems`) instead of stopping - same options as the L0 → L1 and L1 → L2 drivers (see [L0 → L1](L0_to_L1_conversion.md)).
 
 ### EFE channels: volts/g at L0
 

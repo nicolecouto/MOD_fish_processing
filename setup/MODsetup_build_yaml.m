@@ -53,7 +53,7 @@ function [depl_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_dat
 %                .cruise_yml - the cruise file used ('' if none)
 %
 % CALLED BY
-%   (the realtime worker - not built yet; see docs/workflow/realtime_processing.md)
+%   MODprocess_deployment.m (each survey pass); by hand
 %
 % CALLS
 %   MODsetup_write_yaml_value.m, MODsetup_format_yaml_value.m,
