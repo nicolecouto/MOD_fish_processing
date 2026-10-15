@@ -58,9 +58,9 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   mod_scan_calc_chi_obs.m as noise_coefs. The AFE electronics/ADC
 %   deconvolution (metadata.AFE.(ch).electronics_filter,
 %   MODsetup_define_filters.m) happens inside
-%   mod_scan_fpo7_volts_to_Tg_spectrum.m, not here; missing (older
-%   metadata.mat) is not an error there, just no electronics correction
-%   for that channel. See docs/workflow/L2_calc_chi.md for the full chain.
+%   mod_scan_fpo7_volts_to_Tg_spectrum.m, not here. MODprocess_all_L1_to_L2.m
+%   adds it (MODsetup_add_derived_metadata.m); if a caller skips that, it's
+%   missing - not an error, just no electronics correction for that channel. See docs/workflow/L2_calc_chi.md for the full chain.
 %
 %   Computes epsilon (turbulent kinetic energy dissipation rate) per scan
 %   for every shear channel with a resolved metadata.AFE.(ch).cal (a

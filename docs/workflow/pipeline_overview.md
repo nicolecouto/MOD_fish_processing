@@ -54,7 +54,7 @@ flowchart LR
   subgraph SETS["setup - once per deployment"]
     direction LR
     YML[("setup.yml")] --> READYAML["MODsetup_<br/>read_yaml.m"]
-    READYAML --> DEFFILT["MODsetup_<br/>define_filters.m"]
+    READYAML --> DEFFILT["MODsetup_add_<br/>derived_metadata.m<br/>(define_filters +<br/>fpo7_calibration.mat)"]
     DEFFILT --> SAVEMETA["MODsetup_<br/>save_metadata.m"]
     SAVEMETA --> METAOUT[("meta/metadata.mat")]
   end
@@ -75,12 +75,14 @@ flowchart LR
 
   L0OUT --> L1ALL
   METAOUT --> L1ALL
-  FPO7CAL -.updates volts_to_C.-> METAOUT
+  FPO7CAL -.saves volts_to_C.-> FPO7OUT[("meta/fpo7_<br/>calibration.mat")]
+  FPO7OUT -.-> DEFFILT
 ```
 
 | Function | In → out | Role |
 |---|---|---|
 | `MODsetup_read_yaml.m` | setup_yml → metadata | Resolves AFE/CTD/altimeter manifest, calibration lookups, `has_epsi`/`has_vnav`/... flags |
+| `MODsetup_add_derived_metadata.m` | metadata → metadata | Adds what isn't in the yml: electronics filters (`MODsetup_define_filters.m`) and the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat`. Called by the L0 → L1 and L1 → L2 drivers |
 | `MODsetup_define_filters.m` | metadata → metadata | Resolves each channel's fixed electronics/ADC transfer function once per deployment |
 | `MODprocess_all_modraw_to_L0.m` | raw_dir, L0_dir → L0_files | Batch orchestrator; skips already-converted files |
 | `MODprocess_single_modraw_to_L0.m` | modraw_file, (metadata) → L0_data | Parses one raw file: `$`-block regex match, header decode, counts/hex → per-type structs; EFE counts → volts/g + `epsi_conversion` |

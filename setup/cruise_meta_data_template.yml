@@ -1,0 +1,226 @@
+# cruise_meta_data.yml - processing parameters for one cruise.
+#
+# Made by MODsetup_write_cruise_meta_data_template.m from
+# MODsetup_metadata_field_registry.m. Values are the registry's suggested
+# defaults - historical starting points. REVIEW EVERY VALUE before the cruise.
+#
+# Put the reviewed copy at <processed_root>/cruise_meta_data.yml.
+# MODsetup_build_yaml.m merges it with each survey's meta/dev1_setup.yml
+# (from Start New Deployment) into meta/depl_meta_data.yml, which
+# processing reads. Values in dev1_setup.yml win over this file.
+# A section may be left out if no vehicle on the cruise needs it.
+# Keep the 2-space indentation and plain "key: value" lines when editing.
+
+# EFE board (every vehicle - L0->L1 needs afe.sample_rate)
+afe:
+  # Nominal EFE board sample rate [Hz] (mod_scan_get_spectra.m, MODsetup_define_filters.m)
+  sample_rate: 320
+
+# CTD (every vehicle)
+ctd:
+  # Nominal CTD sample rate [Hz] (mod_scan_get_spectra.m) - used only to derive each scan's
+  # expected native-rate sample count (N_ctd) for computing ctd.P/T/C spectra. Unlike epsi's
+  # multi-segment 50%-overlapped Welch average, ctd spectra are a SINGLE periodogram per
+  # scan (no segment averaging, no overlap) - a scan window typically only contains a
+  # handful of native CTD samples (e.g. ~100 at 16 Hz over a ~6 s scan), too few to segment
+  # meaningfully. Default 16 Hz matches SBE49 (the common onboard CTD); set to 1 for SBE41.
+  # Only ever asked for when ctd.compute_spectra (this registry's compute_ctd_spectra entry)
+  # is explicitly true in setup.yml - see docs/concepts/spectral_windowing.md's "CTD
+  # spectra" section.
+  sample_rate: 16
+  # Whether to compute ctd.P/T/C spectra for this deployment (mod_scan_get_spectra.m).
+  compute_spectra: false
+
+# Scan and spectrum settings (every vehicle)
+spectral:
+  # FFT segment length [samples] - also the Hamming taper length (no separate zero-padding:
+  # taper length always equals fft_length). Power-of-2 recommended for FFT efficiency (not
+  # enforced - Rockland ODAS's own get_diss_odas.m doesn't enforce it either, just
+  # isnumeric/isscalar/>=2); matches Rockland ODAS's own field name (mod_scan_get_spectra.m,
+  # MODsetup_define_filters.m)
+  fft_length: 1024
+  # Number of Welch-averaged FFT segments per scan, at a hardcoded 50% overlap
+  # (mod_scan_fft_seg_starts.m's hardcoded overlap) - directly sets dof =
+  # 1.9*fft_segments_per_scan (processing/scans/mod_scan_dof.m, Nuttall 1971). scan_length
+  # is DERIVED from this and fft_length (processing/scans/mod_scan_length_from_segments.m:
+  # scan_length = fft_length*(fft_segments_per_scan+1)/2), not set directly - check the
+  # resulting scan_length's physical footprint (scan_length/Fs_epsi*fall_speed) against the
+  # instrument's own length before shipping a value, see
+  # docs/concepts/spectral_windowing.md. Should be >= 3 (ATOMIX floor - matches the old
+  # scan_length>=2*fft_length minimum ratio), recommended >= 5 (dof=9.5, Rockland's
+  # 'recommended' language) - Rockland's own shipped default (quick_look.m) is
+  # fft_segments_per_scan=7 (ratio=4)
+  fft_segments_per_scan: 3
+  # Fraction (0-1) of scan_length overlap between successive scans along the profile
+  # (mod_L2_tile_scans.m: scan_step = (1-scan_overlap)*scan_length). Matches Rockland ODAS's
+  # user-settable overlap parameter (get_diss_odas.m; their suggested default is also
+  # diss_length/2)
+  scan_overlap: 0.5
+  # Scan-window gap threshold for the epsi record: a sample-to-sample gap wider than
+  # epsi_gap_factor*(1/Fs_epsi) starts a new segment_id, and no FFT window is ever built
+  # spanning two segments (modProcess_extract_profile.m, mod_L2_tile_scans.m). Distinct from
+  # ctd_gap_factor above - epsi is uniformly clocked hardware (nominal-rate threshold),
+  # unlike the sparse/irregular ctd record (local-median threshold).
+  epsi_gap_factor: 3
+
+# Profiling direction and cast detection from the pressure time series (every vehicle)
+profile_detection:
+  # Profiling-direction detection: lowpass cutoff period = lowpass_factor*median(dt)
+  # (mod_L1_detect_profiling_direction.m)
+  lowpass_factor: 3
+  # Profiling-direction/profile-picking: gaps in the ctd/pressure record >
+  # ctd_gap_factor*median(dt) split the record, not interpolated across
+  # (mod_L1_detect_profiling_direction.m, modProcess_detect_profiles.m). Named
+  # ctd_gap_factor (not gap_factor) to pair with PROCESS.epsi_gap_factor below - the two
+  # operate on different timebases with different consequences, so they are separate,
+  # symmetrically-named fields, not one shared threshold.
+  ctd_gap_factor: 5
+  # Profiling-direction detection: pad each descending run by this many raw pressure samples
+  # on each side (mod_L1_detect_profiling_direction.m)
+  buffer_bins: 1
+  # Profile-picking: dPdt threshold [dbar/s] to START a downcast run
+  # (modProcess_detect_profiles.m)
+  speedLim_down_start_m_s: 0.3
+  # Profile-picking: dPdt threshold [dbar/s] to END a downcast run - lower than the start
+  # threshold, so a run continues through brief slowdowns (modProcess_detect_profiles.m)
+  speedLim_down_end_m_s: 0.1
+  # Profile-picking: -dPdt threshold [dbar/s] to START an upcast run
+  # (modProcess_detect_profiles.m)
+  speedLim_up_start_m_s: 0.1
+  # Profile-picking: -dPdt threshold [dbar/s] to END an upcast run
+  # (modProcess_detect_profiles.m)
+  speedLim_up_end_m_s: 0.05
+  # Profile-picking: minimum pressure range [dbar] for a detected run to count as a real
+  # profile (modProcess_detect_profiles.m)
+  minLength_m: 10
+  # Which cast direction(s) this deployment trusts enough to compute epsi spectra for -
+  # 'down', 'up', or 'both' (MODprocess_single_L1_to_L2.m). Every detected cast still gets a
+  # Profile####.mat with its CTD record either way - this only gates spectra, never
+  # CTD/pressure output.
+  profile_dir: 'down'
+
+# FP07 chi (only used when an AFE slot is fpo7)
+chi:
+  # FP07 time-constant coefficient tau0 [s] (mod_scan_fpo7_transfer_function.m: tau =
+  # tau0*abs(w)^exponent)
+  time_constant_s: 0.0083
+  # FP07 time-constant fall-speed exponent (mod_scan_fpo7_transfer_function.m: tau =
+  # tau0*abs(w)^exponent)
+  fall_speed_exponent: -0.32
+  # Fraction of f(end) (Nyquist) above which mod_scan_fpo7_cutoff.m normalizes the observed
+  # spectrum onto the bench noise floor's scale
+  noise_adjusted_to_f: 0.7
+  # movmean smoothing window [bins] applied to the observed spectrum before the noise-floor
+  # search (mod_scan_fpo7_cutoff.m)
+  n_smooth_f_spectrum: 15
+  # Signal-to-noise multiplier: the noise-floor cutoff is where the smoothed spectrum drops
+  # below sn_min x the bench noise floor (mod_scan_fpo7_cutoff.m)
+  sn_min: 3
+  # Number of lowest-frequency bins excluded from the noise-floor search
+  # (mod_scan_fpo7_cutoff.m)
+  n_skip: 2
+  # Low-wavenumber integration bound [cpm] for chi_obs/chi_mle (mod_scan_calc_chi_obs.m,
+  # mod_scan_calc_chi_mle.m)
+  kmin_obs: 3
+  # chi_mle grid-search low bound, as a multiplier on the chi_obs-seeded starting value
+  # (mod_scan_calc_chi_mle.m)
+  chi_mle_start_search: 0.001
+  # chi_mle grid-search high bound, as a multiplier on the chi_obs-seeded starting value
+  # (mod_scan_calc_chi_mle.m)
+  chi_mle_end_search: 1000
+  # Known FP07 electrical-contamination frequency [Hz] for this deployment -
+  # mod_scan_fpo7_cutoff.m caps the noise-floor cutoff here so a fixed spectral line can't
+  # hold the smoothed spectrum above the bench noise floor and pull kc out past it. Inf = no
+  # known contamination line for this deployment (no cap applied) - the historical/default
+  # behavior. See docs/workflow/L2_calc_chi.md, "Contamination-frequency cap" for how a real
+  # value is derived.
+  contam_freq_hz: .inf
+
+# Shear epsilon (only used when an AFE slot is shear)
+epsilon:
+  # Which epsilon estimate feeds chi_mle's epsilon input (mean across this deployment's
+  # shear channels, omitting NaN - see mod_L2_tile_scans.m; the full profile-level
+  # ratio-based per-channel selection modProcess_L2_qc.m will eventually do is not built
+  # yet): 'epsilon_co' (direct Nasmyth-fit) or 'epsilon_mle' (Nasmyth MLE fit). Default
+  # changed from the legacy 'epsilon_co' to 'epsilon_mle' once mod_scan_calc_epsilon.m
+  # shipped (branch epsilon_processing), adopting Jen's 2026 ASTRAL reprocess finding that
+  # epsilon_mle is better-behaved - see SESSION_LOG.md, 2026-09-02 and 2026-09-08.
+  epsilon_final_source: 'epsilon_mle'
+  # Low-wavenumber bound [cpm] for epsilon_obs/epsilon_obs_coh_corr's stage-1 integration
+  # (mod_scan_calc_epsilon_obs.m's calc_epsilon_direct, ported from eps1_mmp.m) - a
+  # genuinely different value from epsilon_kmin_obs (which governs stages 2-3), not a
+  # duplicate. CAUTION: this and stage1_kmax together define the exact band
+  # (eps_fit_shear10/shtotal_fit_shear10, mod_scan_calc_epsilon_obs.m) two empirical
+  # polynomial fits were derived over - changing either away from the historical 2-10 cpm
+  # band feeds those polynomials data outside their valid range, silently degrading stage
+  # 1's first-pass eps1 estimate. Made tunable (was a hardcoded literal in both eps1_mmp.m
+  # and this port) for traceability/consistency with every other formerly-hardcoded
+  # epsilon/chi bound in this repo - not because a different value is expected to be valid.
+  stage1_kmin: 2
+  # High-wavenumber bound [cpm] for epsilon_obs/epsilon_obs_coh_corr's stage-1 integration -
+  # see epsilon_stage1_kmin for the shared CAUTION about the two empirical polynomial fits
+  # this band feeds.
+  stage1_kmax: 10
+  # Low-wavenumber integration bound [cpm] for epsilon_obs/epsilon_obs_coh_corr's stages 2-3
+  # (mod_scan_calc_epsilon_obs.m) - mirrors PROCESS.CHI.kmin_obs, but a separate field since
+  # shear and fpo7 are independent channels that could in principle need different values.
+  # MOD_fish_lib's eps1_mmp.m hardcoded this at 3 cpm (not a caller-supplied argument at
+  # all) - made tunable here, same precedent as chi's own kmin_obs field.
+  kmin_obs: 3
+  # Known shear-channel vibration/electrical contamination frequency [Hz] for this
+  # deployment - mod_scan_calc_epsilon_obs.m caps the integration upper bound here (kmax =
+  # contam_freq_hz/abs(w)), the shear-channel analog of PROCESS.CHI.contam_freq_hz
+  # (MOD_fish_lib's Meta_Data.PROCESS.ctd_fc). Inf = no known contamination line for this
+  # deployment (no cap applied) - the historical/default behavior.
+  contam_freq_hz: .inf
+  # Shear probe's spatial cutoff wavelength [m] in the Oakey (1982) dynamic-response
+  # transfer function (mod_scan_shear_transfer_function.m). MOD_fish_lib's haf_oakey.m
+  # hardcoded this at 0.02 - made tunable here, same precedent as chi's
+  # time_constant_s/fall_speed_exponent fields.
+  oakey_lc_m: 0.02
+  # Low end of the frequency band mod_scan_shear_accel_coherence.m's band-integrated
+  # coherence diagnostic (spectra.(ch)_coh_a3_sum) sums over - not itself consumed by the
+  # epsilon calculation (which uses the full per-frequency coherence vector, not this sum).
+  # MOD_fish_lib's mod_efe_scan_coherence.m used Meta_Data.PROCESS.fc1/.fc2 for the same
+  # band - no historical numeric default found in this repo's reference deployments, so this
+  # suggested_default is a placeholder pending a real value; see
+  # docs/workflow/L2_calc_eps.md.
+  coherence_fmin_hz: 0
+  # High end of the frequency band mod_scan_shear_accel_coherence.m's band-integrated
+  # coherence diagnostic sums over - see coherence_fmin_hz. Placeholder default pending a
+  # real per-deployment value; see docs/workflow/L2_calc_eps.md.
+  coherence_fmax_hz: .inf
+  # epsilon_mle grid-search low bound, as a multiplier on the epsilon_obs_coh_corr-seeded
+  # starting value (mod_scan_calc_epsilon_mle.m,
+  # processing/scans/mod_scan_mle_grid_search.m). Mirrors PROCESS.CHI.chi_mle_start_search
+  # but registered separately - MOD_fish_lib's epsilon MLE search used a narrower
+  # one-decade-each-side range (0.1/10) than chi's three-decade range (1e-3/1e3), a real,
+  # deliberate difference in the legacy code, not an oversight to reconcile.
+  mle_start_search: 0.1
+  # epsilon_mle grid-search high bound, as a multiplier on the epsilon_obs_coh_corr-seeded
+  # starting value - see mle_start_search.
+  mle_end_search: 10
+  # Low-wavenumber bound [cpm] for the epsilon MLE fit (mirrors PROCESS.CHI.kmin_obs).
+  # Legacy mod_efe_scan_epsilon.m used a computed SpecObs.kli(1), not a fixed constant, so
+  # there is no historical scalar default to carry forward - 5 here is Jen's 2026 ASTRAL
+  # fork value (mirroring her chi-side kmin=5), not yet independently verified for this
+  # repo. See SESSION_LOG.md, 2026-09-02.
+  kmin_mle: 5
+  # Which acceleration-power QC check flags a scan/profile: 'rms_std' (log10(sumPa) > -rms +
+  # qc_accel_nstd*std, legacy default) or 'threshold' (sumPa > qc_accel_threshold, Jen's
+  # 2026 ASTRAL fork - found the rms_std version throwing out good data on that deployment).
+  # See SESSION_LOG.md, 2026-09-02.
+  qc_accel_method: 'rms_std'
+  # Fixed sumPa threshold used when qc_accel_method='threshold'. Jen's 2026 ASTRAL fork
+  # value - deployment-specific, not verified elsewhere.
+  qc_accel_threshold: 1e-05
+  # Std-dev multiplier used when qc_accel_method='rms_std' (legacy hardcoded value, never
+  # previously tunable).
+  qc_accel_nstd: 2
+
+# Gridding (every vehicle)
+grid:
+  # Vertical grid spacing [m] for L2->L3 profile gridding. 1 m is the legacy default; Jen's
+  # 2026 ASTRAL fork used 0.5 m, enabled by that deployment's smaller fft_length. See
+  # SESSION_LOG.md, 2026-09-02.
+  dz_m: 1

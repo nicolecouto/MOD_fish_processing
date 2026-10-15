@@ -11,10 +11,14 @@ function registry = MODsetup_metadata_field_registry()
 %   defaulted to. Consumed by MODsetup_validate_metadata.m (looks up each
 %   requested name to know what to check/prompt for) and
 %   MODsetup_write_yaml_value.m callers (to know which section/key to
-%   write). Not consumed by MODsetup_read_yaml.m - that function only ever
-%   sets a metadata field when setup.yml actually declares it (see its
-%   header); suggested_default here is purely the starting value shown in
-%   MODsetup_prompt_value.m's popup, never applied silently.
+%   write). MODsetup_read_yaml.m loops over it to read every parameter the
+%   yml declares (yaml_section.yaml_key -> metadata_path) - only when
+%   declared, never defaulted. MODsetup_preflight.m uses yaml_section to
+%   decide which parameters a manifest needs, and
+%   MODsetup_write_cruise_meta_data_template.m writes the cruise template
+%   from it. suggested_default is the starting value shown in
+%   MODsetup_prompt_value.m's popup and in that template - never applied
+%   silently.
 %
 %   The 10 PROCESS.CHI entries, 6 of the 7 profile-picking entries
 %   (modProcess_detect_profiles.m; profile_dir is validated in
@@ -59,7 +63,8 @@ function registry = MODsetup_metadata_field_registry()
 %                          shown as the prompt's starting value only
 %
 % CALLED BY
-%   MODsetup_validate_metadata.m
+%   MODsetup_validate_metadata.m, MODsetup_read_yaml.m, MODsetup_preflight.m,
+%   MODsetup_build_yaml.m, MODsetup_write_cruise_meta_data_template.m
 %
 % CALLS
 %   (none)
@@ -163,7 +168,7 @@ registry(end+1) = entry('fft_length', 'spectral', 'fft_length', ...
 
 registry(end+1) = entry('fft_segments_per_scan', 'spectral', 'fft_segments_per_scan', ...
     {'PROCESS', 'fft_segments_per_scan'}, ...
-    ['Number of Welch-averaged FFT segments per scan, at a hardcoded 50%% overlap ' ...
+    ['Number of Welch-averaged FFT segments per scan, at a hardcoded 50% overlap ' ...
      '(mod_scan_fft_seg_starts.m''s hardcoded overlap) - directly sets dof = ' ...
      '1.9*fft_segments_per_scan (processing/scans/mod_scan_dof.m, Nuttall 1971). scan_length is ' ...
      'DERIVED from this and fft_length (processing/scans/mod_scan_length_from_segments.m: ' ...

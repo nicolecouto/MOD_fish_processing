@@ -1,7 +1,9 @@
 # Realtime and postprocessing: one driver for every vehicle
 
-**Status:** design agreed 2026-10-14, not built yet. This page is the plan. Each section gets
-updated to describe the real code as it's built, and gets an entry in History below.
+**Status:** design agreed 2026-10-14. Built so far: [Metadata](#metadata) (`MODsetup_build_yaml`,
+the cruise template, `MODsetup_preflight`) and the [other pieces](#other-pieces-in-this-round)
+marked built. The worker, grid and monitor app are not built yet. Each section is updated as its
+code is built, with an entry in History below.
 
 ## Why
 
@@ -149,24 +151,69 @@ microconductivity and an FCTD with fluorometer all display with the same code.
 
 ## Metadata
 
-`MODsetup_build_yaml(survey_meta_dir)` writes `depl_meta_data.yml`, the file processing reads,
-from two files:
+**Built.** `MODsetup_build_yaml(survey_meta_dir)` writes `meta/depl_meta_data.yml`, the file
+processing reads, from two files:
 
-- `dev1_setup.yml`: written by [Start New Deployment](start_new_deployment.md); says what's on
-  the vehicle;
-- `cruise_meta_data.yml`: the cruise's processing parameters per sensor type (spectral, chi,
-  epsilon, profile detection, grid, sample rates).
+- `meta/dev1_setup.yml`: written by [Start New Deployment](start_new_deployment.md); says
+  what's on the vehicle;
+- `<processed_root>/cruise_meta_data.yml`: the cruise's processing parameters per sensor type
+  (spectral, chi, epsilon, profile detection, grid, sample rates).
 
-Values from `dev1_setup.yml` win over the cruise file, and an existing `depl_meta_data.yml` is
-kept as `.replaced_*`. Start New Deployment's `profiling_direction` is mapped to
-`profile_detection.profile_dir`, which is what processing reads.
+**Before the cruise:** copy `setup/cruise_meta_data_template.yml` to
+`<processed_root>/cruise_meta_data.yml` and review every value. The template is generated from
+`MODsetup_metadata_field_registry.m` by `MODsetup_write_cruise_meta_data_template.m`, with each
+parameter's description as a comment. Its values are the registry's suggested defaults, which
+are historical starting points, not choices made for this cruise. Rerun the generator after
+changing the registry.
+
+How the merge works (done on the text, so both files' comments are kept):
+
+- `dev1_setup.yml` comes first, unchanged.
+- Each cruise section that dev1 doesn't have is appended. For a section both have (`afe:`), only
+  the missing keys are added. On a key both set, dev1 wins.
+- dev1's `profiling_direction` is written to `profile_detection.profile_dir`, which is what
+  processing reads.
+- A parameter that only the old `depl_meta_data.yml` had (e.g. one saved from a prompt) is
+  carried over. If the sources now give a registry parameter a different value than the old
+  file had, it's reported, and the sources win.
+- The old file is kept as `.replaced_<UTC stamp>`.
+- If nothing would change, the file isn't rewritten, so the worker can call it every loop.
+
+```matlab
+[depl_yml, info] = MODsetup_build_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta');
+MODsetup_preflight(depl_yml)            % prints what's missing, or OK
+MODsetup_preflight(depl_yml, true)      % asks for each missing value and saves it
+```
 
 Those two files are enough: besides the registry parameters, `MODsetup_read_yaml` only reads
 the optional `ctd.type` and `ctd.sample_per_record`.
 
-**Preflight** (when the worker starts, and as a button in the app) checks every registry
-parameter the manifest needs. The worker lists anything missing in `status.json`; the app
-opens the usual prompt dialogs, which save to `depl_meta_data.yml`.
+**Preflight** (`MODsetup_preflight`; when the worker starts, and as a button in the app) checks
+every registry parameter the manifest needs:
+- always: `afe`, `ctd`, `spectral`, `profile_detection`, `grid`. L0 → L1 needs `fft_length`/`Fs_epsi` even on a CTD-only vehicle.
+  The exception is `ctd.sample_rate`, which is needed only when `ctd.compute_spectra` is true.
+- `chi`: only with an fpo7 slot.
+- `epsilon`: only with a shear slot.
+- Sensor types are matched ignoring case, the same way processing matches them.
+
+It also reports problems: a yml or calibration file that can't be read, and shear probes with
+no calibration file (no epsilon for them). The worker lists anything missing in `status.json`;
+the app opens the usual prompt dialogs, which save to `depl_meta_data.yml`.
+
+**Derived values** that aren't in any yml - the AFE electronics filters and the FP07 `volts_to_C`
+fit - are added by `MODsetup_add_derived_metadata.m` at the start of the L0 → L1 and L1 → L2
+drivers. The fit is read from `meta/fpo7_calibration.mat`, so every stage of the worker, in any
+session, sees it.
+- Each channel's fit is saved with its probe SN and fit time. A fit is applied only to a
+  channel with the same SN; otherwise a warning says that channel gets no chi until the next
+  refit.
+- A channel that can't be refit keeps its previous fit and fit time, with a warning.
+
+See [L0 → L1](L0_to_L1_conversion.md).
+
+If a source file doesn't parse (for example, 4-space indentation), `MODsetup_build_yaml` stops
+with a message naming that file. `depl_meta_data.yml` is left as it was, and a bad merge is
+kept as `depl_meta_data.yml.building` so you can look at it.
 
 ## Monitor app
 
@@ -200,10 +247,18 @@ parameter.
 
 ## Other pieces in this round
 
-- `MODutil_read_som3(modraw_file)`: prints and returns the `$SOM3` block of a raw file
-  (mission name, vehicle name, firmware, git id, revision, SN, ...).
-- Start New Deployment gets a `winch` field, and Setup loses its explanatory comment lines.
-  Setup keeps every key, because it's copied into every `.modraw` header.
+- **Built:** `MODutil_read_som3(modraw_file)` prints (or returns) a raw file's `$SOM3` block: the
+  SOM's own settings - mission name, vehicle name, firmware, the other text after it (git id,
+  revision, SN), and each module (`CAL`, `EFE4`, `SB49`, `SDIO`, `VOLT`, `ACTU`, `ALTI`, `VNAV`).
+  EFE4 is decoded per channel (name, probe SN, stored cal value); add `'hex', true` for the raw
+  bytes. Checked on raw files from blt2021_0715, canyonhead, fctd_w_ucond, DeepSolo and Minnow.
+  Firmware from 2023 on records probe SN `000` for every EFE channel, so `$SOM3` doesn't say
+  which probes were on; Setup and `dev1_setup.yml` do. The 2025 FCTD fluorometer files have no
+  `$SOM3` block.
+- **Built:** Start New Deployment has a `winch` field: remembered per vehicle, written to
+  `dev1_setup.yml` and the deployment log, with a warning when it's empty. Setup now has one
+  comment line (provenance) instead of the section notes. Setup keeps every key, because it's
+  copied into every `.modraw` header.
 - Fix: scan selection in `mod_L2_tile_scans.m` currently always keeps descending scans; it
   will follow `profiling_direction`.
 
@@ -213,3 +268,11 @@ parameter.
 Nicole, after reading MOD_fish_lib's `RUN_Auto_process_data.m`, `epsiAuto_process_data.m`,
 `fctdAuto_process_data.m`, the FCTD formatting/gridding chain and `FastCTD_GUI.m`. Not built
 yet.
+
+**2026-10-14 (later) - Step 1 built** (branch `main-fork`): `MODsetup_build_yaml`,
+`setup/cruise_meta_data_template.yml` (from `MODsetup_write_cruise_meta_data_template`),
+`MODsetup_preflight` (with a no-prompt mode added to `MODsetup_validate_metadata`),
+`MODsetup_add_derived_metadata` + `meta/fpo7_calibration.mat`, the prompt retry in L0 → L1,
+`MODutil_read_som3`, and the Start New Deployment winch field and Setup comment cleanup. Also:
+`MODsetup_read_yaml` now reads every processing parameter with one registry loop. Tested in a
+scratchpad sandbox - see `SESSION_LOG.md` (2026-10-14, step 1).

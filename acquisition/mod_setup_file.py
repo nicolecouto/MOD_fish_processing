@@ -383,6 +383,8 @@ def validate(values, config=None):
         warnings.append('Vehicle %s looks like a Mako, but fish type is FCTD' % values.get('vehicle'))
     elif flag == 'EPSI' and 'FCTD' in veh:
         warnings.append('Vehicle %s looks like an FCTD, but fish type is EPSI' % values.get('vehicle'))
+    if not str(values.get('winch', '') or '').strip():
+        warnings.append('No winch set - this survey\'s twist count won\'t be chained with other surveys on the same winch')
     # Calibration files, looked up the way fctd_epsi does (ctd.c InitFishCTD):
     # slots 1-2 in the FP07 folder and slots 3-4 in the shear folder (by slot,
     # not sensor type), as <folder>/<SN>/Calibration_<SN>.txt, and the CTD as
@@ -446,24 +448,21 @@ def _num(key, val, on=True):
 
 def render_setup(values):
     """Setup text in fctd_epsi's format. Same key order as the hand-edited
-    files; comments kept short because the whole file goes into every
-    .modraw header (MAX_SETUP_BYTES)."""
+    files; one comment line only (provenance), because the whole file goes
+    into every .modraw header (MAX_SETUP_BYTES)."""
     v = setup_values(values)
     pcode_on = bool(v.get('pcode_in_use', True))
     udp_on = bool(v.get('udp_in_use', True))
     L = [
-        '% Written by start_new_deployment.py ' + datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
-        '% Edit with the Start New Deployment window, not by hand',
-        '%TCPIP port for send and receive data',
+        '% Written by start_new_deployment.py ' + datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+        + ' - edit with the Start New Deployment window',
         _num('TCPIPSocket.portnum', v['tcpip_port']),
         _num('UDPSocket.portnum', v['udp_port'], udp_on),
-        '%SENSOR SETUP',
         _line('CTD.survey', v['survey']),
         _line('CTD.experiment', v['experiment']),
         _line('CTD.cruise', v['cruise']),
         _line('CTD.vehicle', v['vehicle']),
         _line('CTD.fish_pc', v['fish_pc']),
-        '% CTD.fishflag EPSI or FCTD',
         _line('CTD.fishflag', v['fish_flag']),
         _line('CTD.SerialNum', v['ctd_sn']),
         _line('CTD.shear_Probecal_path', v['shear_cal_path']),
@@ -471,17 +470,13 @@ def render_setup(values):
         _line('CTD.CTD_cal_path', v['ctd_cal_path']),
         _line('CTD.MicroCond', v.get('microcond_sn', '')),
         _line('CTD.Compass', v.get('compass_sn', '')),
-        '% AFE slots 1-4: type (fpo7/shear/fluor/microcond/none) and probe SN (000 = none)',
     ]
     for i in range(1, 5):
         L.append(_line('CTD.ch%d_type' % i, v['ch%d_type' % i]))
         L.append(_line('CTD.ch%d_sn' % i, v['ch%d_sn' % i]))
     L += [
-        '%Display CTD data: 0=status, 1=engineer format, 2 = debug',
         _num('CTD.printData', v['print_data']),
-        '%engineer display rate: times per second, 2 4 8 or 16',
         _num('CTD.engDispRate', v['eng_disp_rate']),
-        '%Serial port for Fish and PCode',
         _line('CTD.CTDPortName', v['ctd_port']),
         _line('CTD.CommandPortName', v['command_port']),
         _num('CTD.speed', v['speed']),
@@ -489,7 +484,6 @@ def render_setup(values):
         _num('CTD.output_format', v['output_format']),
         _line('PCode.PCodePortName', v['pcode_port'], pcode_on),
         _num('PCode.speed', v['pcode_speed'], pcode_on),
-        '%FILES',
         _line('Ascii_dataFile.runname', v['runname']),
         _line('Ascii_dataFile.path', v['data_path']),
         _num('Ascii_dataFile.dataFileSize', v['file_size']),
@@ -522,6 +516,7 @@ def render_dev1_setup_yml(values, config):
         'cruise: %s' % yq(values.get('cruise', '')),
         'experiment: %s' % yq(values.get('experiment', '')),
         'vehicle_name: %s' % yq(values.get('vehicle', '')),
+        'winch: %s # winch/cable; twist is chained per winch over the cruise' % yq(values.get('winch', '')),
         'pressure_case: %s' % yq(values.get('fish_pc', '')),
         'fish_flag: %s # EPSI or FCTD' % values['fish_flag'],
         'profiling_direction: %s # for turbulence data, up or down' % values.get('profiling_direction', 'down'),
@@ -598,7 +593,7 @@ def dev1_setup_yml_path(values, config):
     return os.path.join(config['processed_root'], values['survey'], 'meta', 'dev1_setup.yml')
 
 
-LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'fish_flag', 'fish_pc', 'ctd_sn',
+LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch', 'fish_flag', 'fish_pc', 'ctd_sn',
               'ch1_type', 'ch1_sn', 'ch2_type', 'ch2_sn', 'ch3_type', 'ch3_sn',
               'ch4_type', 'ch4_sn', 'microcond_sn', 'experiment', 'cruise',
               'setup_backup', 'dev1_setup_yml']
@@ -645,10 +640,20 @@ def write_all(values, config, write_yml=True):
         row['utc_written'] = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         row['setup_backup'] = os.path.basename(result['backup'])
         row['dev1_setup_yml'] = result['yml']
-        new_file = not os.path.isfile(log_path)
         d = os.path.dirname(log_path)
         if d:
             os.makedirs(d, exist_ok=True)
+        # An existing log with different columns (e.g. from before winch was
+        # added) is set aside, so rows never land under the wrong headers
+        if os.path.isfile(log_path):
+            with open(log_path, newline='') as f:
+                header = next(csv.reader(f), None)
+            if header != LOG_FIELDS:
+                old = _unused_path(log_path[:-4] + '_old_columns.csv' if log_path.endswith('.csv')
+                                   else log_path + '_old_columns')
+                os.replace(log_path, old)
+                result['log_rotated'] = old
+        new_file = not os.path.isfile(log_path)
         with open(log_path, 'a', newline='') as f:
             w = csv.DictWriter(f, fieldnames=LOG_FIELDS)
             if new_file:

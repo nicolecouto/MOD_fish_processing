@@ -137,7 +137,11 @@ L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L
 - **No CTD salinity despiking anywhere, ever** - confirmed (branch `chi_processing`, follow-up review) that legacy `MOD_fish_lib/EPSILOMETER` never despiked Epsi CTD data either, so this isn't a regression - but it is a real, open gap. Legacy FastCTD's version (`FastCTD_GridData.m`) is a low-pass filter on *depth-binned* salinity, so it has no natural home until this repo has an L3 gridding step (`modProcess_L3_grid_profiles.m` - not started); revisit then.
 - **Microconductivity/fluorometer channels get a raw spectrum, nothing more** - a channel repurposed for one of these (see "L2 spectra" above) gets `spectra.(ch)_volt_f` like any other channel, but no channel-specific processing exists yet (the microconductivity chi/turbulence algorithm itself isn't designed in this repo).
 
+Metadata straight from `MODsetup_read_yaml` is enough: `MODprocess_all_L1_to_L2` adds the derived values (electronics filters, FP07 `volts_to_C` from `meta/fpo7_calibration.mat`) itself with `MODsetup_add_derived_metadata.m`, at the start and after any reread of the yml - see [L0 → L1](L0_to_L1_conversion.md).
+
 ## History
+
+**2026-10-14 (branch `main-fork`)**: calls `MODsetup_add_derived_metadata.m` at the start and on its `yamlUpdated` retry, so a run in a new session (or after a prompted value is saved) still gets FP07 chi and the electronics correction - before, both were silently missing unless the caller's metadata came straight from `MODprocess_all_L0_to_L1` in the same session.
 
 Built on branch `l1_to_l2_conversion` (2026-07-26), following [L0 → L1](L0_to_L1_conversion.md). Prerequisite fixes to L0→L1 code (DeepSolo external CTD reader, `calibrate_ctd` → `process_ctd_fields` rename/guard, `pressure_time_series.mat`) are logged in that doc's History section, not duplicated here. Tested end-to-end against a sandbox copy of `epsi_deepsolo/26_0520_ljc` (45 L1 files, `reprocess_all=true`) - see `SESSION_LOG.md` (2026-07-26) for full numbers, including the file-boundary NaN-extrapolation bug caught and fixed during this test run (see `MODprocess_single_L1_to_L2.m`'s notes above).
 

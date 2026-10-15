@@ -64,6 +64,7 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %
 % CALLS
 %   MODprocess_single_L1_to_L2.m
+%   MODsetup_add_derived_metadata.m (at the start, and on the retry path)
 %   MODsetup_read_yaml.m (only on the retry path - see NOTES/DESCRIPTION)
 %   MODutil_short_path.m (console messages only)
 %
@@ -79,6 +80,12 @@ function L2_files = MODprocess_all_L1_to_L2(L1_dir, metadata, L2_dir, reprocess_
 %   spectra, since there's no epsi to tile), so this driver still writes
 %   one L2 file per input file rather than producing nothing.
 %
+%   The derived values not in the yml - the AFE electronics filters and
+%   the FP07 volts_to_C fit from meta/fpo7_calibration.mat - are added here
+%   (MODsetup_add_derived_metadata.m), so metadata straight from
+%   MODsetup_read_yaml.m, in any session, gets FP07 chi and the
+%   electronics correction.
+%
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 if nargin < 3 || isempty(L2_dir)
@@ -91,6 +98,8 @@ end
 if ~exist(L2_dir, 'dir')
     mkdir(L2_dir);
 end
+
+metadata = MODsetup_add_derived_metadata(metadata);
 
 pressure_timeseries_file = fullfile(metadata.paths.meta, 'pressure_time_series.mat');
 if ~exist(pressure_timeseries_file, 'file')
@@ -139,7 +148,7 @@ for i = 1:nfiles
             break
         catch ME
             if strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
-                metadata = MODsetup_read_yaml(metadata.paths.setup_yml);
+                metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
                 continue % retry this same file with fresh, complete metadata
             end
             rethrow(ME)

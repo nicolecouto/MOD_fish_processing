@@ -23,28 +23,29 @@ function MODsetup_write_yaml_value(yaml_file, section, key, value)
 %   file.
 %
 %   Only handles this repo's actual setup.yml shape (flat top-level
-%   blocks, simple scalar "key: value" children) - not a general YAML
-%   editor. Called by MODsetup_validate_metadata.m when an operator
-%   accepts saving a prompted value.
+%   blocks, simple scalar "key: value" children, 2-space indentation) -
+%   not a general YAML editor. Called by MODsetup_validate_metadata.m when
+%   an operator accepts saving a prompted value, and by
+%   MODsetup_build_yaml.m while merging.
 %
 % INPUTS
 %   yaml_file - full path to a deployment's setup.yml
 %   section   - top-level block name, e.g. 'chi' (MODsetup_metadata_field_registry.m's
 %               yaml_section)
 %   key       - key within that block, e.g. 'kmin_obs' (yaml_key)
-%   value     - scalar numeric, logical, or char/string to write. Numeric
-%               values are formatted with sprintf('%.10g', value) (clean,
-%               minimal-digit, matches how these files are hand-written
-%               today, e.g. 1e-3 not 0.0010000000).
+%   value     - scalar numeric, logical, or char/string to write,
+%               formatted by MODsetup_format_yaml_value.m (numbers with
+%               sprintf('%.10g'), e.g. 1e-3 not 0.0010000000; Inf/NaN as
+%               .inf/.nan; text single-quoted).
 %
 % OUTPUTS
 %   (none - edits yaml_file in place)
 %
 % CALLED BY
-%   MODsetup_validate_metadata.m
+%   MODsetup_validate_metadata.m, MODsetup_build_yaml.m
 %
 % CALLS
-%   (none)
+%   MODsetup_format_yaml_value.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -57,7 +58,7 @@ if ~isempty(lines) && isempty(lines{end})
     lines(end) = [];
 end
 
-value_str = format_yaml_value(value);
+value_str = MODsetup_format_yaml_value(value);
 section_line = find_top_level_key(lines, section);
 
 if isempty(section_line)
@@ -114,37 +115,5 @@ for i = 1:numel(lines)
         idx = i;
         return
     end
-end
-end
-
-%% Clean, minimal-digit yaml scalar formatting for the value types this
-% repo's registry actually uses (numeric, logical, char/string).
-function s = format_yaml_value(value)
-if islogical(value)
-    if value
-        s = 'true';
-    else
-        s = 'false';
-    end
-elseif isnumeric(value)
-    % YAMLMatlab's ReadYaml only recognizes Inf/-Inf spelled with a
-    % leading dot (YAML 1.1's .inf/-.inf) - the bare word "Inf" sprintf
-    % would otherwise produce round-trips back as a char, not a double
-    % (confirmed empirically - see MODsetup_read_yaml.m's chi/epsilon
-    % contam_freq_hz/coherence_fmax_hz fields, which default to Inf).
-    if isinf(value)
-        if value > 0
-            s = '.inf';
-        else
-            s = '-.inf';
-        end
-    else
-        s = sprintf('%.10g', value);
-    end
-elseif ischar(value) || isstring(value)
-    s = char(value);
-else
-    error('MODsetup_write_yaml_value:unsupportedType', ...
-        'Cannot format a value of class %s for yaml.', class(value));
 end
 end

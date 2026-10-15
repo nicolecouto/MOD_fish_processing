@@ -4,6 +4,50 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-14 (step 1) - depl_meta_data.yml, preflight, derived metadata, $SOM3 reader, winch (branch `main-fork`)
+
+Step 1 of `docs/workflow/realtime_processing.md`.
+
+**Metadata**
+- `MODsetup_build_yaml` merges `meta/dev1_setup.yml` and `<processed_root>/cruise_meta_data.yml` into `meta/depl_meta_data.yml`:
+  - the merge is on the text, so comments are kept, and dev1 wins on a key both set;
+  - `profiling_direction` is mapped to `profile_detection.profile_dir`;
+  - registry values that only the old file had are carried over; values the sources changed are reported;
+  - the old file is kept as `.replaced_*`, nothing is rewritten when nothing changes, and a file that doesn't parse stops the build with a message naming it.
+- `setup/cruise_meta_data_template.yml` is generated from the registry by `MODsetup_write_cruise_meta_data_template`. Its values are the registry suggested defaults; Nicole needs to review them before the cruise.
+- `MODsetup_preflight` checks the parameters each manifest needs:
+  - always afe/ctd/spectral/profile_detection/grid (`Fs_ctd` only if `compute_ctd_spectra`), plus chi with fpo7 and epsilon with shear, with types matched ignoring case;
+  - it uses a new no-prompt mode of `MODsetup_validate_metadata` (4th arg, 2nd output `missing`).
+- `MODsetup_read_yaml` reads every processing parameter with one registry loop instead of five hand lists. `grid.dz_m` was never read before. Also new: `metadata.winch`.
+- `MODsetup_format_yaml_value` was split out of `MODsetup_write_yaml_value`. It now quotes text and writes NaN as `.nan`.
+- Registry `50%%` typo fixed (the dialog showed it literally).
+
+**Found and fixed: derived metadata lost on reread.** `MODsetup_read_yaml` builds metadata from the yml alone. So L1->L2 in a new session, or after the yamlUpdated retry, had no electronics filters and no FP07 `volts_to_C`, and chi was skipped without an error. (`meta/metadata.mat` didn't help: the next read_yaml rewrites it without the fit.)
+- New `MODsetup_add_derived_metadata` (define_filters plus the fit from new `meta/fpo7_calibration.mat`, matched by probe SN, with a warning on mismatch). Both drivers call it at the start and on every reread.
+- L0->L1 saves the fit per channel with SN and fit time, written atomically. A channel that can't be refit keeps its previous fit with a warning. Added the yamlUpdated retry around `mod_L1_detect_profiling_direction`.
+
+**Acquisition**
+- Winch box: remembered per vehicle, cleared on a vehicle switch, written to `dev1_setup.yml` and the log, warned when empty.
+- A deployment log with old columns is set aside rather than appended to.
+- Setup has one provenance comment line. Per Nicole it keeps every key, since Setup is copied into each `.modraw` header.
+
+**`MODutil_read_som3`**
+- Prints or returns a `.modraw` file's `$SOM3` block: modules found by size+tag (sizes differ by firmware: 872/896/920 bytes), overlapping tags dropped, EFE4 decoded per channel, `'hex'` dump.
+- Firmware from 2023 on records probe SN `000` for every channel. The 2025 FCTD fluorometer files have no `$SOM3`.
+
+**Review.** A senior-review agent read the diff and found the log column shift, the winch carry-over between vehicles, the silent SN-mismatch skip, `Fs_ctd` always being required, case-sensitive type checks, the unclear failure on a 4-space-indented cruise file, and a stale fit re-saved with a new time. Also stale CALLED BY lists and doc lines. All fixed.
+
+**Tested in a scratchpad sandbox**
+- Metadata from the three real `data_for_reorg` setup.yml files is identical before/after the registry loop, apart from the new `winch` field.
+- Build cases: no cruise file (40 missing), template (preflight OK), rebuild unchanged (not rewritten), carry-over, a changed value reported with a backup, dev1 `up` wins, and a bad cruise file stops with a message naming the file.
+- modraw->L0->L1->L2 on three `blt2021_0715` files under `-batch`, with metadata reread fresh for L1->L2: FP07 chi and epsilon computed, no prompts. A rerun of L0->L1 updates the fit time with the same fit. A wrong SN in the yml gives the warning and no fit for that channel only.
+- A deleted `buffer_bins` prompted at the console mid-L0->L1, was saved, and the run finished.
+- Python:
+  - Setup round-trips (1463 bytes) and the old log is rotated;
+  - window driven: the winch clears when switching vehicles, and the empty-winch warning appears.
+- `$SOM3` read on 5 datasets.
+- `checkcode`: no new warnings. `mkdocs build --strict` passes.
+
 ### 2026-10-14 (later) - Realtime/postprocessing driver design written up (branch `main-fork`)
 
 Nicole asked for a sketch of realtime processing on the ship, after a read of MOD_fish_lib's `RUN_Auto_process_data.m` (`epsiAuto`/`fctdAuto` split: two cast detectors, two time indices, FCTD files written twice, two grids with different names, microconductivity chi only on the FCTD side, a timer that stops on any error, twist counting as a separate session). The design went through several rounds with Nicole and is written up in `docs/workflow/realtime_processing.md`, linked from the nav and from `pipeline_overview.md`; nothing is built yet. Main decisions:

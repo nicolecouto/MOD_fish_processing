@@ -21,6 +21,17 @@ Setup** shows the changes, then:
 The window warns if the vehicle name and fish type disagree (MAKO or EPSI
 in the name with FCTD selected, or FCTD in the name with EPSI selected).
 
+**Winch** names the winch/cable the vehicle is on. Twist counts are chained
+over the cruise per winch, so every survey on the same winch should use the
+same name. It's remembered per vehicle, written to `dev1_setup.yml` (`winch:`)
+and the deployment log (not to `Setup` - `fctd_epsi` doesn't use it), and the
+window warns if it's empty.
+
+If `deployment_log.csv` already exists with different columns (e.g. one
+written before the winch column), it's set aside as
+`deployment_log_old_columns.csv` and a new log is started, so rows never end
+up under the wrong headers. The Create Setup message says when this happens.
+
 **Advanced settings** (ports, network, CTD data, raw files, calibration
 paths, and where `dev1_setup.yml` and the deployment log go) default to
 `config.yml`. Changes there apply to that window only - edit `config.yml`
@@ -30,7 +41,7 @@ Raw file names start with the fish type - `EPSI...` for a Mako, `FCTD...`
 for an FCTD - so the prefix can't be left on the wrong one.
 
 **Create Setup** also saves what you entered for that vehicle, so picking
-the vehicle next time fills in the same probes, CTD and pressure case. Every
+the vehicle next time fills in the same probes, CTD, pressure case and winch. Every
 serial number used is also added to that sensor type's dropdown.
 The window opens filled in from the current `Setup` (or the first vehicle
 preset if there isn't one), and warns if the survey date isn't today or the
@@ -92,7 +103,11 @@ From `fctd_epsi`'s source (`main.c` ReadSetupFile, `file_utils.c`,
 - Names (survey, vehicle, probe serial numbers, ports, ...) are at most 31
   characters - longer ones silently run into the next field.
 - The whole file must stay under ~2000 bytes (it is copied into every
-  `.modraw` header through a fixed-size buffer).
+  `.modraw` header through a fixed-size buffer). So `Setup` has a single
+  comment line - when and how it was written - and no section notes.
+- Keys `fctd_epsi` never reads (`CTD.MicroCond`, `CTD.Compass`,
+  `CTD.output_format`, `CTD.ch1-4_type`) are still written: they end up in
+  every `.modraw` header, so a raw file says what was on each slot.
 
 ## dev1_setup.yml
 
@@ -115,6 +130,12 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/dev1
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-14 (later) - Winch field; one comment line in Setup** (branch `main-fork`). Added
+the Winch box (remembered per vehicle; `winch:` in `dev1_setup.yml`; a `winch` column in the
+deployment log; warning when empty) for chaining twist per winch over the cruise. Setup's
+section-note comment lines removed, leaving one provenance line. Tested in a scratchpad sandbox:
+Setup round-trips through the fctd_epsi tokenizer (`check_roundtrip`), 1463 bytes for MAKO1.
 
 **2026-10-14 - Brought onto `main-fork` from `modvis_export`** (commits 784b06d..6b04bc3,
 copied as files - the two branches share no history). The processing yml the window writes was

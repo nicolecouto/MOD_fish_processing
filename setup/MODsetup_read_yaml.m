@@ -87,6 +87,11 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     file (paths.ctd) rather than
 %                                     $SB49/$SB41 blocks in the raw stream
 %                                     - see MODprocess_read_external_ctd.m
+%     winch                        - winch/cable the vehicle is on, from
+%                                     setup.yml (Start New Deployment writes
+%                                     it to dev1_setup.yml). Used to chain
+%                                     twist counts over a cruise. '' if not
+%                                     declared.
 %     manifest.has_vnav/.has_isap/.has_alt/.has_gps/.has_fluor
 %                                   - presence flags from setup.yml's
 %                                     instrument_manifest block. false when
@@ -305,7 +310,8 @@ function metadata = MODsetup_read_yaml(setup_yml)
 % CALLED BY
 %   (top-level scripts / notebooks) - called once per session, before
 %   MODprocess_all_L0_to_L1.m or MODprocess_single_L0_to_L1.m, not by them.
-%   Also called directly by MODprocess_all_L1_to_L2.m and
+%   Also called by MODsetup_preflight.m and MODsetup_add_derived_metadata.m,
+%   and directly by MODprocess_all_L0_to_L1.m, MODprocess_all_L1_to_L2.m and
 %   MODprocess_all_extract_profiles.m, but only inside their
 %   MODsetup_validate_metadata.m:yamlUpdated retry loop, to reload metadata
 %   fresh after a prompted value gets saved to setup.yml mid-run - see that
@@ -314,9 +320,9 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 % CALLS
 %   toolbox/YAMLMatlab_0.4.3/ReadYaml.m
-%   MODsetup_save_metadata.m
+%   MODsetup_save_metadata.m, MODsetup_metadata_field_registry.m
 %   (local subfunctions: read_sbe_cal, read_probe_cal, probe_cal_subdir,
-%    lookup_altimeter_geometry, hash_file)
+%    lookup_altimeter_geometry, field_ignoring_case, hash_file)
 %
 % NOTES
 %   MATLAB has no built-in YAML reader (checked in R2024b: no yaml.*
@@ -375,87 +381,24 @@ metadata.vehicle_name = '';
 if isfield(yml, 'vehicle_name')
     metadata.vehicle_name = yml.vehicle_name;
 end
-
-%% EFE sample rate - only set if setup.yml declares it. See
-% MODsetup_metadata_field_registry.m/MODsetup_validate_metadata.m for how
-% a consuming function asks for (and, if missing, prompts for and
-% persists) this and every other field below - never silently defaulted
-% here, since not every deployment needs every value.
-if isfield(yml, 'afe') && isfield(yml.afe, 'sample_rate')
-    metadata.PROCESS.Fs_epsi = yml.afe.sample_rate;
+metadata.winch = '';
+if isfield(yml, 'winch')
+    metadata.winch = char(string(yml.winch));
 end
 
-%% Spectral processing parameters (mod_scan_get_spectra.m, mod_L2_tile_scans.m)
-if isfield(yml, 'spectral')
-    spectral_fields = {'fft_length', 'fft_segments_per_scan', 'scan_overlap', 'epsi_gap_factor'};
-    for iF = 1:numel(spectral_fields)
-        field = spectral_fields{iF};
-        if isfield(yml.spectral, field)
-            metadata.PROCESS.(field) = yml.spectral.(field);
-        end
-    end
-end
-
-%% Profiling-direction detection parameters
-% (mod_L1_detect_profiling_direction.m). Namespaced under PROFILES (not
-% PROCESS) to match the old Meta_Data.PROFILES.* convention from
-% epsiProcess_get_profiles_from_PressureTimeseries.m, so a future full
-% profile-picker port can extend this same setup.yml section.
-if isfield(yml, 'profile_detection')
-    if isfield(yml.profile_detection, 'lowpass_factor')
-        metadata.PROFILES.lowpass_factor = yml.profile_detection.lowpass_factor;
-    end
-    if isfield(yml.profile_detection, 'ctd_gap_factor')
-        metadata.PROFILES.ctd_gap_factor = yml.profile_detection.ctd_gap_factor;
-    end
-    if isfield(yml.profile_detection, 'buffer_bins')
-        metadata.PROFILES.buffer_bins = yml.profile_detection.buffer_bins;
-    end
-    % Full profile-picker parameters (modProcess_detect_profiles.m) - not
-    % every deployment needs these yet (only picking discrete profiles
-    % does, not the realtime per-file L1->L2 path), so - same rule as
-    % everything else in this function - only set when setup.yml actually
-    % declares them.
-    profile_picker_fields = {'speedLim_down_start_m_s', 'speedLim_down_end_m_s', ...
-        'speedLim_up_start_m_s', 'speedLim_up_end_m_s', 'minLength_m', 'profile_dir'};
-    for iF = 1:numel(profile_picker_fields)
-        field = profile_picker_fields{iF};
-        if isfield(yml.profile_detection, field)
-            metadata.PROFILES.(field) = yml.profile_detection.(field);
-        end
-    end
-end
-
-%% Chi processing parameters (mod_scan_fpo7_cutoff.m, mod_scan_get_spectra.m,
-% mod_scan_calc_chi_obs.m, mod_scan_calc_chi_mle.m)
-if isfield(yml, 'chi')
-    chi_fields = {'time_constant_s', 'fall_speed_exponent', 'noise_adjusted_to_f', ...
-        'n_smooth_f_spectrum', 'sn_min', 'n_skip', 'contam_freq_hz', ...
-        'kmin_obs', 'chi_mle_start_search', 'chi_mle_end_search'};
-    for iF = 1:numel(chi_fields)
-        field = chi_fields{iF};
-        if isfield(yml.chi, field)
-            metadata.PROCESS.CHI.(field) = yml.chi.(field);
-        end
-    end
-end
-
-%% Epsilon processing parameters (mod_scan_shear_volts_to_shear_spectrum.m,
-% mod_scan_shear_accel_coherence.m, mod_scan_calc_epsilon_obs.m,
-% mod_scan_calc_epsilon_mle.m, mod_L2_tile_scans.m's epsilon_final_source
-% selection). Mirrors the chi: block immediately above - see
-% MODsetup_metadata_field_registry.m for each field's yaml_key (identical
-% to its metadata_path leaf name here) and historical default.
-if isfield(yml, 'epsilon')
-    epsilon_fields = {'epsilon_final_source', 'kmin_obs', 'contam_freq_hz', 'oakey_lc_m', ...
-        'stage1_kmin', 'stage1_kmax', ...
-        'coherence_fmin_hz', 'coherence_fmax_hz', 'kmin_mle', 'mle_start_search', 'mle_end_search', ...
-        'qc_accel_method', 'qc_accel_threshold', 'qc_accel_nstd'};
-    for iF = 1:numel(epsilon_fields)
-        field = epsilon_fields{iF};
-        if isfield(yml.epsilon, field)
-            metadata.PROCESS.EPSILON.(field) = yml.epsilon.(field);
-        end
+%% Processing parameters - every value MODsetup_metadata_field_registry.m
+% knows about (spectral, profile_detection, chi, epsilon, grid, plus
+% afe.sample_rate and ctd.sample_rate/compute_spectra), copied from its
+% yaml_section.yaml_key to its metadata_path only when setup.yml declares
+% it. One loop over the registry, so a parameter added there is read here
+% with no second list to keep in step. Never defaulted here - a missing
+% value is filled by MODsetup_validate_metadata.m when a consumer needs it.
+registry = MODsetup_metadata_field_registry();
+for iR = 1:numel(registry)
+    spec = registry(iR);
+    if isfield(yml, spec.yaml_section) && isstruct(yml.(spec.yaml_section)) ...
+            && isfield(yml.(spec.yaml_section), spec.yaml_key)
+        metadata = setfield(metadata, spec.metadata_path{:}, yml.(spec.yaml_section).(spec.yaml_key));
     end
 end
 
@@ -553,23 +496,13 @@ metadata.PROCESS.channels = channel_names;
 %% CTD - optional: not every deployment carries a CTD, and (since
 % compute_spectra/sample_rate below share this same yaml block) a
 % deployment can have a ctd: block without type/sample_per_record at all
-% (e.g. DeepSolo, whose only ctd: content is compute_spectra) - each field
-% is read independently rather than assuming the whole block is present.
+% (e.g. DeepSolo, whose only ctd: content is compute_spectra - read with the
+% other processing parameters above) - each field is read independently.
 if isfield(yml, 'ctd') && isfield(yml.ctd, 'type')
     metadata.CTD.name = yml.ctd.type;
 end
 if isfield(yml, 'ctd') && isfield(yml.ctd, 'sample_per_record')
     metadata.CTD.sample_per_record = yml.ctd.sample_per_record;
-end
-
-%% CTD spectra processing parameters (mod_scan_get_spectra.m) - only set if
-% setup.yml declares them; never silently defaulted here (same prompt-if-
-% missing mechanism as every other field in this file applies downstream).
-if isfield(yml, 'ctd') && isfield(yml.ctd, 'compute_spectra')
-    metadata.PROCESS.compute_ctd_spectra = yml.ctd.compute_spectra;
-end
-if isfield(yml, 'ctd') && isfield(yml.ctd, 'sample_rate')
-    metadata.PROCESS.Fs_ctd = yml.ctd.sample_rate;
 end
 
 %% Instrument manifest ctd sub-block - whether this deployment's CTD

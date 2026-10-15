@@ -1,7 +1,8 @@
-function metadata = MODsetup_validate_metadata(metadata, yaml_file, list_of_variables)
+function [metadata, missing] = MODsetup_validate_metadata(metadata, yaml_file, list_of_variables, prompt)
 % MODsetup_validate_metadata        Part of MOD_fish_processing
 %
 % metadata = MODsetup_validate_metadata(metadata, yaml_file, list_of_variables)
+% [metadata, missing] = MODsetup_validate_metadata(metadata, yaml_file, list_of_variables, false)
 %
 % DESCRIPTION
 %   Called as the first thing a processing function does, with the exact
@@ -41,6 +42,11 @@ function metadata = MODsetup_validate_metadata(metadata, yaml_file, list_of_vari
 %       to get out of sync with - no retry needed, the current call just
 %       proceeds with the answer it got.
 %
+%   With prompt = false nothing is asked or written: the names that are
+%   missing come back in missing and metadata is unchanged. That's how
+%   MODsetup_preflight.m checks a deployment before an unattended
+%   (-batch) run, which can't prompt.
+%
 % INPUTS
 %   metadata          - metadata struct to check (and possibly patch)
 %   yaml_file         - full path to the deployment's setup.yml, or ''
@@ -56,11 +62,16 @@ function metadata = MODsetup_validate_metadata(metadata, yaml_file, list_of_vari
 %                        {'kmin_obs','time_constant_s'}. An unrecognized
 %                        name errors immediately (a typo should fail
 %                        loud, not silently skip validation).
+%   prompt            - (optional) default true. false = only report what's
+%                        missing (see DESCRIPTION).
 %
 % OUTPUTS
 %   metadata - unchanged if everything requested was already present, or
 %              patched in-memory with newly-prompted (not saved-to-yaml)
 %              values. Never returned after a yaml save - see DESCRIPTION.
+%   missing  - cellstr of the requested names that were missing. With
+%              prompt = true it lists what was asked for; with false, what
+%              still needs a value.
 %
 % CALLED BY
 %   mod_scan_get_spectra.m, mod_scan_fpo7_cutoff.m,
@@ -70,7 +81,7 @@ function metadata = MODsetup_validate_metadata(metadata, yaml_file, list_of_vari
 %   mod_scan_shear_accel_coherence.m, mod_scan_shear_volts_to_shear_spectrum.m,
 %   mod_L1_detect_profiling_direction.m, modProcess_detect_profiles.m,
 %   modProcess_extract_profile.m, MODprocess_single_L1_to_L2.m,
-%   mod_L2_tile_scans.m, MODsetup_define_filters.m
+%   mod_L2_tile_scans.m, MODsetup_define_filters.m, MODsetup_preflight.m
 %
 % CALLS
 %   MODsetup_metadata_field_registry.m, MODsetup_prompt_value.m,
@@ -95,7 +106,11 @@ for iV = 1:numel(list_of_variables)
     end
 end
 
-if isempty(missing_specs)
+missing = cellfun(@(spec) spec.name, missing_specs, 'UniformOutput', false);
+if nargin < 4 || isempty(prompt)
+    prompt = true;
+end
+if isempty(missing_specs) || ~prompt
     return
 end
 

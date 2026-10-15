@@ -23,7 +23,7 @@ For each FP07 channel (`metadata.AFE.(ch).type == 'fpo7'`), concatenates that ch
 
 This is **not** a lookup like shear's `Sv` - an FP07 bead's sensitivity isn't a fixed, bench-measured probe property, it has to be fit in-situ per deployment against a real temperature reference. No CTD temperature (DeepSolo) → `volts_to_C` simply never gets set, same "missing calibration is not an error" convention as shear's `.cal`.
 
-Wired into `MODprocess_all_L0_to_L1.m`, gated on `~isempty(metadata.CTD.cal)` (real onboard CTD, not DeepSolo's P-only external CTD), right after `meta/pressure_time_series.mat` is built - persisted back to `meta/metadata.mat` via the existing `MODsetup_save_metadata.m` "derived value" convention.
+Wired into `MODprocess_all_L0_to_L1.m`, gated on `~isempty(metadata.CTD.cal)` (real onboard CTD, not DeepSolo's P-only external CTD), right after `meta/pressure_time_series.mat` is built - saved to `meta/fpo7_calibration.mat` with each probe's SN (and recorded in `meta/metadata.mat`). `MODsetup_add_derived_metadata.m` loads it back for L1 → L2 in any session.
 
 **Real result** (`blt2021_0715` sandbox, whole deployment, descending samples only): `t1.volts_to_C = [-32.86, 51.70]` (n=725,673), `t2.volts_to_C = [-30.62, 45.53]` (same n). Both slopes negative (volts decrease as T increases, expected for this AFE's divider circuit), both intercepts land the predicted T in a physically sane 3-20°C range matching a July DY132/BLT water column. t1's (volts, T) scatter is tight; t2's is visibly noisier (see "Known limitation" below).
 
@@ -50,7 +50,7 @@ This is the one term the whole branch is about. A physical FP07 bead can't insta
 ### 2b. `setup/MODsetup_define_filters.m` — AFE electronics/ADC transfer function
 
 ```matlab
-metadata = MODsetup_define_filters(metadata)   % once per deployment, right after MODsetup_read_yaml.m
+metadata = MODsetup_define_filters(metadata)   % via MODsetup_add_derived_metadata.m, right after MODsetup_read_yaml.m
 ```
 
 Ports the rest of `MOD_fish_lib`'s `get_filters_SOM.m` - everything that depends only on `f` (from `metadata.PROCESS.fft_length`/`.Fs_epsi`) and `metadata.AFE.(ch)`, not on per-scan fall speed, so (unlike Module 2's thermal rolloff) it's a genuine deployment-level constant, resolved once and persisted the same way `volts_to_C` is:

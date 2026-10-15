@@ -55,8 +55,9 @@ function metadata = MODsetup_define_filters(metadata)
 %              convention as metadata.AFE.(ch).cal/.volts_to_C.
 %
 % CALLED BY
-%   MODprocess_all_L0_to_L1.m (once per deployment, right after
-%   MODsetup_read_yaml.m - needs no L0/L1 data)
+%   MODsetup_add_derived_metadata.m (called by MODprocess_all_L0_to_L1.m
+%   and MODprocess_all_L1_to_L2.m, right after MODsetup_read_yaml.m -
+%   needs no L0/L1 data)
 %
 % CALLS
 %   mod_scan_adc_filter.m

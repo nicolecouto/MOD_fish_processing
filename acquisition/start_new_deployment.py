@@ -59,7 +59,7 @@ ADVANCED_NOTES = {
 }
 # config.yml keys that write_all/validate read from config, editable under Advanced
 CONFIG_OVERRIDES = ['processed_root', 'deployment_log', 'calibrations_root']
-REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'vnav', 'alt', 'fluor'] + \
+REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'winch', 'vnav', 'alt', 'fluor'] + \
     ['ch%d_%s' % (i, k) for i in range(1, 5) for k in ('type', 'sn')]
 TYPE_BY_LABEL = {v: k for k, v in msf.SENSOR_LABELS.items()}
 
@@ -217,6 +217,8 @@ class StartNewDeployment:
         ttk.Label(ins, text='Profiling').grid(row=0, column=4, sticky='e', **pad)
         ttk.Combobox(ins, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up'],
                      state='readonly', width=6).grid(row=0, column=5, sticky='w', **pad)
+        ttk.Label(ins, text='Winch').grid(row=0, column=6, sticky='e', **pad)
+        ttk.Entry(ins, textvariable=self.var('winch'), width=12).grid(row=0, column=7, sticky='w', **pad)
 
         ttk.Label(ins, text='AFE slot', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=0, sticky='w', **pad)
         ttk.Label(ins, text='Sensor', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=1, sticky='w', **pad)
@@ -324,9 +326,12 @@ class StartNewDeployment:
         d = dict(self.presets.get(name, {}))
         d.update({k: v for k, v in self.read_last_used().get(name, {}).items() if v is not None})
         d.pop('vehicle', None)
-        if d:
-            self.set_values(d)
-        elif name:
+        # Winch isn't in the presets: clear it unless this vehicle remembers one,
+        # so the previous vehicle's winch is never carried over
+        known_vehicle = bool(d)
+        d.setdefault('winch', '')
+        self.set_values(d)
+        if not known_vehicle and name:
             self.status('New vehicle %s - fill in the fish type and instruments; they are remembered '
                         'for %s when you click Create Setup.' % (name, name))
 
@@ -492,6 +497,8 @@ class StartNewDeployment:
             lines.append('dev1_setup.yml: ' + res['yml'])
         if res['log']:
             lines.append('Logged in: ' + res['log'])
+        if res.get('log_rotated'):
+            lines.append('(The old log had different columns - kept as %s)' % os.path.basename(res['log_rotated']))
         lines += ['', 'Restart ./fctd_epsi to start recording with it.']
         messagebox.showinfo('Start New Deployment', '\n'.join(lines))
 

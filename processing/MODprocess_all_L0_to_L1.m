@@ -46,10 +46,11 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   non-empty - not just any has_ctd source, since an external-CTD vehicle
 %   like DeepSolo never has real temperature), also fits and persists each
 %   FP07 channel's in-situ volts->degC calibration
-%   (MODprocess_L1_apply_fpo7_calibration.m -> metadata.AFE.(ch).volts_to_C,
-%   saved back to meta/metadata.mat via MODsetup_save_metadata.m). This is
-%   the calibration mod_scan_calc_chi_obs.m needs; deployments without
-%   a real CTD simply never get it set.
+%   (MODprocess_L1_apply_fpo7_calibration.m -> metadata.AFE.(ch).volts_to_C),
+%   saved to meta/fpo7_calibration.mat with each probe's SN (and recorded in
+%   meta/metadata.mat via MODsetup_save_metadata.m). This is the calibration
+%   mod_scan_calc_chi_obs.m needs; MODsetup_add_derived_metadata.m loads it
+%   back for later steps. Deployments without a real CTD never get it.
 %
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
@@ -69,7 +70,7 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   (top-level scripts / notebooks)
 %
 % CALLS
-%   MODsetup_define_filters.m, MODsetup_save_metadata.m (unconditional)
+%   MODsetup_add_derived_metadata.m, MODsetup_save_metadata.m (unconditional)
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
 %   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
@@ -78,14 +79,21 @@ function L1_files = MODprocess_all_L0_to_L1(L0_dir, metadata, L1_dir, reprocess_
 %   MODprocess_L1_make_time_index.m (unconditional - see below)
 %   MODprocess_L1_apply_fpo7_calibration.m, MODsetup_save_metadata.m
 %   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
+%   MODsetup_read_yaml.m (only to reread the yml after a prompted value is
+%   saved to it - MODsetup_validate_metadata.m's yamlUpdated)
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
 %   The in-memory metadata passed in as an argument is NOT updated with a
-%   newly-fit volts_to_C - only the on-disk meta/metadata.mat is (via
-%   MODsetup_save_metadata.m), same as pressure_time_series.mat above. A
-%   caller that needs volts_to_C in the same session (e.g. immediately
-%   running L1->L2 afterward) should reload metadata.mat after this call.
+%   newly-fit volts_to_C. A later step doesn't need it to be:
+%   MODprocess_all_L1_to_L2.m calls MODsetup_add_derived_metadata.m, which
+%   loads the fit from meta/fpo7_calibration.mat. (meta/metadata.mat is a
+%   record only - the next MODsetup_read_yaml.m call rewrites it without
+%   the fit.)
+%
+%   A value prompted for and saved to the yml (MODsetup_validate_metadata.m
+%   throws yamlUpdated) is handled here: metadata is reread and the step
+%   retried, the same way MODprocess_all_L1_to_L2.m does it.
 %   metadata is loaded once by the caller (MODsetup_read_yaml.m) and
 %   passed in here rather than re-read per file - it does not change
 %   file-to-file within a deployment.
@@ -115,8 +123,10 @@ end
 % Deployment-constant electronics/ADC transfer functions
 % (metadata.AFE.(ch).electronics_filter) - needs only metadata.PROCESS/
 % .AFE, no L0/L1 data, so resolved unconditionally here rather than gated
-% on CTD presence like fpo7_calibration below. See MODsetup_define_filters.m.
-metadata = MODsetup_define_filters(metadata);
+% on CTD presence like fpo7_calibration below - plus the last FP07 fit, if
+% there is one. See MODsetup_add_derived_metadata.m (it handles a prompted
+% value being saved to the yml itself).
+metadata = MODsetup_add_derived_metadata(metadata);
 MODsetup_save_metadata(metadata, metadata.paths.meta, ...
     'define_filters', mfilename('fullpath'));
 
@@ -206,7 +216,18 @@ has_ctd = (~isempty(metadata.CTD.cal)) || ~isempty(external_ctd_full);
 if has_ctd
     PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_dir);
     if ~isempty(PressureTimeseries.dnum)
-        PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
+        while true
+            try
+                PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
+                break
+            catch ME
+                % A prompted value was saved to the yml - reread it and retry
+                if ~strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
+                    rethrow(ME)
+                end
+                metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
+            end
+        end
         save(fullfile(metadata.paths.meta, 'pressure_time_series.mat'), '-struct', 'PressureTimeseries');
 
         % FP07 in-situ volts->degC calibration: needs real CTD temperature,
@@ -216,7 +237,12 @@ if has_ctd
         % Gated on PressureTimeseries.dnum being non-empty too since the
         % fit needs is_down, just computed above.
         if ~isempty(metadata.CTD.cal)
+            % Refit from scratch: the fit loaded by MODsetup_add_derived_metadata
+            % is set aside, so a channel that can't be refit isn't saved again
+            % as if it were new (save_fpo7_calibration keeps it, with its old time)
+            [metadata, previous_fit] = set_aside_fpo7_fits(metadata);
             metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, PressureTimeseries);
+            metadata = save_fpo7_calibration(metadata, previous_fit);
             MODsetup_save_metadata(metadata, metadata.paths.meta, ...
                 'fpo7_calibration', mfilename('fullpath'));
         end
@@ -224,6 +250,73 @@ if has_ctd
 end
 
 end %end function
+
+%% Remove every fpo7 channel's volts_to_C before a refit; return what was
+% removed (volts_to_C.(ch)) so save_fpo7_calibration can keep it for a
+% channel that can't be refit
+function [metadata, previous] = set_aside_fpo7_fits(metadata)
+previous = struct();
+for iC = 1:numel(metadata.PROCESS.channels)
+    ch = metadata.PROCESS.channels{iC};
+    if strcmpi(metadata.AFE.(ch).type, 'fpo7') && isfield(metadata.AFE.(ch), 'volts_to_C')
+        previous.(ch) = metadata.AFE.(ch).volts_to_C;
+        metadata.AFE.(ch) = rmfield(metadata.AFE.(ch), 'volts_to_C');
+    end
+end
+end
+
+%% Save every fpo7 channel's volts_to_C fit, with its probe SN, to
+% meta/fpo7_calibration.mat - where MODsetup_add_derived_metadata.m loads
+% it from in any later session or after a yml reread. Fields:
+% volts_to_C.(ch) = [slope, intercept], sn.(ch) = probe SN as char ('' if
+% none), fitted.(ch) = UTC time of that channel's fit. A channel that
+% couldn't be refit this time keeps its previous fit and fit time (with a
+% warning). Written to a temp file and moved into place, so a reader never
+% sees half a file.
+function metadata = save_fpo7_calibration(metadata, previous)
+cal_file = fullfile(metadata.paths.meta, 'fpo7_calibration.mat');
+old_fitted = struct();
+if isfile(cal_file)
+    old = load(cal_file);
+    if isfield(old, 'fitted') && isstruct(old.fitted)
+        old_fitted = old.fitted;
+    end
+end
+now_utc = char(datetime('now', 'TimeZone', 'UTC', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+volts_to_C = struct();
+sn = struct();
+fitted = struct();
+for iC = 1:numel(metadata.PROCESS.channels)
+    ch = metadata.PROCESS.channels{iC};
+    a = metadata.AFE.(ch);
+    if ~strcmpi(a.type, 'fpo7')
+        continue
+    end
+    if isfield(a, 'volts_to_C')
+        fitted.(ch) = now_utc;
+    elseif isfield(previous, ch)
+        metadata.AFE.(ch).volts_to_C = previous.(ch);
+        fitted.(ch) = '';
+        if isfield(old_fitted, ch)
+            fitted.(ch) = old_fitted.(ch);
+        end
+        warning('MODprocess_all_L0_to_L1:fpo7NotRefit', ...
+            '%s: FP07 fit could not be redone this time - keeping the previous fit (from %s).', ch, fitted.(ch));
+    else
+        continue
+    end
+    volts_to_C.(ch) = metadata.AFE.(ch).volts_to_C;
+    sn.(ch) = '';
+    if isfield(a, 'SN')
+        sn.(ch) = char(string(a.SN));
+    end
+end
+if ~isempty(fieldnames(volts_to_C))
+    tmp_file = [tempname(metadata.paths.meta) '.mat'];
+    save(tmp_file, 'volts_to_C', 'sn', 'fitted');
+    movefile(tmp_file, cal_file, 'f');
+end
+end
 
 %% Slice a deployment-length external CTD struct down to one L0 file's
 % time range, by the min/max dnum found in that file's epsi/vnav data
