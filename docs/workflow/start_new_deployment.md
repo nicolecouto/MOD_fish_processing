@@ -101,6 +101,14 @@ the window from the `Setup` again - it doesn't write or save anything.
    `acquisition/last_used.json`.
 5. Make an alias of `acquisition/Start New Deployment.command` on the
    Desktop and double-click it.
+6. Check each computer (DEV1 and DEV3) with
+   `bash acquisition/check_software/check_ship_setup.sh`. It only reads (apart
+   from a `git fetch`) and prints OK, FIX or note for: the clone's branch,
+   remotes and whether it is up to date with GitHub; the `config.yml` folders;
+   the MOD_fish_calibrations clone and the files processing needs; what is in
+   the processed-data folder (`cruise_meta_data.yml`, `RAW_full_cruise`,
+   `spool_swap_log.csv`, a leftover `realtime/worker.lock`); and python3 with
+   tkinter and matlab. Give it the clone's path if it isn't run from the clone.
 
 ## AFE slots
 
@@ -150,6 +158,11 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/dev1
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-15 - Ship setup check** (branch `main-fork`). Added
+`acquisition/check_software/check_ship_setup.sh` (setup step 6). Tested on the laptop clone
+(git checks pass; ship paths reported as FIX since DEV1/DEV3 aren't mounted there), run from
+inside and outside the clone.
 
 **2026-10-14 (later) - Winch spool field; one comment line in Setup** (branch `main-fork`). Added
 the Winch spool box (one spool for every vehicle: carried over from the last Create Setup, not

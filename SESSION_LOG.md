@@ -4,6 +4,10 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-15 - Ship setup check script (branch `main-fork`)
+
+Added `acquisition/check_software/check_ship_setup.sh`: a read-only check, run on DEV1 and DEV3, of the clone's branch, remotes and whether it is up to date with GitHub, the `acquisition/config.yml` folders (`setup_dir`, `processed_root`, `calibrations_root`), the MOD_fish_calibrations clone and its required files (`SBE/*.CAL`, `SHEAR_PROBES/`, `FPO7/`, `SHEAR/cap1nFres200Meg_5KohmInput.mat`, `FPO7/FPO7_benchnoise.mat`), the processed-data folder (`cruise_meta_data.yml`, `RAW_full_cruise`, `spool_swap_log.csv`, `realtime/worker.lock`), and python3/tkinter and matlab. Documented in `start_new_deployment.md` (setup step 6), `realtime_processing.md` and `README.md`. Tested on the laptop clone, from inside and outside the repo: git checks pass, and the ship paths come out as FIX because DEV1/DEV3 aren't mounted on the laptop.
+
 ### 2026-10-15 - Calibration files committed; stale doc notes removed (branch `main-fork`)
 
 `FPO7/FPO7_benchnoise.mat` and `SHEAR/cap1nFres200Meg_5KohmInput.mat` are committed to `MOD_fish_calibrations` (`bed972c`, pushed to modscripps `main`). Removed the four "not yet committed" notes in `docs/workflow/L2_calc_chi.md` and added a History entry. `docs/workflow/start_new_deployment.md` no longer says the processing yml is "not built yet" (it points to `MODsetup_build_yaml.m` and `depl_meta_data.yml`). Checked that every calibration path on `main-fork` comes from `calibrations_root`; the remaining `EPSILOMETER` mentions in code and docs are provenance notes only. Docs only, so no code tests; `mkdocs build --strict` passes.

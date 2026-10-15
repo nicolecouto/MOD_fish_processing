@@ -4,6 +4,7 @@ Data processing pipeline and field commands for MOD profiling fish
 
 acquisition
     start_new_deployment.py - Start New Deployment window (Python/tkinter) for the acquisition Mac: writes the Setup file fctd_epsi reads, the deployment's meta/dev1_setup.yml, and a row in the cruise deployment log - see docs/workflow/start_new_deployment.md
+    check_software/check_ship_setup.sh - read-only check of a ship computer (DEV1/DEV3): branch and remotes, up to date with GitHub, config.yml folders, MOD_fish_calibrations files, cruise_meta_data.yml, python3/tkinter and matlab
 
 setup
     MODsetup_build_yaml.m - merges a survey's meta/dev1_setup.yml (Start New Deployment) with the cruise's cruise_meta_data.yml into meta/depl_meta_data.yml, the yml processing reads

@@ -199,6 +199,8 @@ processing reads, from two files:
 parameter's description as a comment. Its values are the registry's suggested defaults, which
 are historical starting points, not choices made for this cruise. Rerun the generator after
 changing the registry.
+`acquisition/check_software/check_ship_setup.sh` reports whether `cruise_meta_data.yml` is there (see
+[Start New Deployment](start_new_deployment.md), setup step 6).
 
 How the merge works (done on the text, so both files' comments are kept):
 
