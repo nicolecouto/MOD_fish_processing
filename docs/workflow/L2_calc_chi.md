@@ -56,7 +56,7 @@ metadata = MODsetup_define_filters(metadata)   % via MODsetup_add_derived_metada
 Ports the rest of `MOD_fish_lib`'s `get_filters_SOM.m` - everything that depends only on `f` (from `metadata.PROCESS.fft_length`/`.Fs_epsi`) and `metadata.AFE.(ch)`, not on per-scan fall speed, so (unlike Module 2's thermal rolloff) it's a genuine deployment-level constant, resolved once and persisted the same way `volts_to_C` is:
 
 - **fpo7**: `electronics_filter = H_adc²`, where `H_adc = (sinc(f/(2*f(end))))⁴` is the AFE's sinc⁴ ADC anti-alias response (`metadata.AFE.(ch).ADCfilter`, defaulted to `'sinc4'` by `MODsetup_read_yaml.m` if the yaml doesn't specify one) - matches `get_filters_SOM.m`'s `H.electFPO7.^2` term inside `H.FPO7`.
-- **shear**: `electronics_filter = (H_ca .* H_adc)²`, where `H_ca` is the probe's charge-amp response, interpolated from a network-analysis measurement (`cap1nFres200Meg_5KohmInput.mat`, vendored from `MOD_fish_lib` into `calibrations_root/SHEAR/` - not yet committed, see "Calibration file" below). Missing file → warning, channel left without `electronics_filter`, same "missing calibration is not exceptional" convention as shear's `.cal`/fpo7's `.volts_to_C`.
+- **shear**: `electronics_filter = (H_ca .* H_adc)²`, where `H_ca` is the probe's charge-amp response, interpolated from a network-analysis measurement (`cap1nFres200Meg_5KohmInput.mat`, vendored from `MOD_fish_lib` into `calibrations_root/SHEAR/` - see "Calibration file" below). Missing file → warning, channel left without `electronics_filter`, same "missing calibration is not exceptional" convention as shear's `.cal`/fpo7's `.volts_to_C`.
 - **acc**: `electronics_filter = H_adc²` (gain 1).
 
 Not ported: the old "Tdiff" term (see Module 2's bullet above - no current deployment uses it).
@@ -199,11 +199,11 @@ as the prompt's starting point only, never applied on its own).
 
 Copied from `MOD_fish_lib/EPSILOMETER/CALIBRATION/FPO7/FPO7_notdiffnoise.mat`, renamed for clarity (see `MOD_fish_calibrations/FPO7/README.md` for full provenance) - contents (`n0`, `n1`, `n2`, `n3`) unchanged. "notdiffnoise" ("not differentiated") describes that this is the noise floor for raw FP07 voltage, as opposed to an analog-differentiated dT/dt signal (`FPO7_noise.mat`, the "Tdiff" variant - not copied, not relevant here, see Module 2 above). Not per-probe - one shared bench constant, resolved via `metadata.paths.calibrations_root` the same way SBE/shear cal files are, just without a per-SN subfolder.
 
-**Not yet committed to `MOD_fish_calibrations`** - that repo has an unrelated, in-progress uncommitted `README.md` edit (tag-naming convention update) that shouldn't be swept up in this branch's commit.
+Committed to `MOD_fish_calibrations` in `bed972c` (2026-10-15).
 
 ## Calibration file: `MOD_fish_calibrations/SHEAR/cap1nFres200Meg_5KohmInput.mat`
 
-Copied from `MOD_fish_lib/EPSILOMETER/EPSILON/FILTER/cap1nFres200Meg_5KohmInput.mat` (a network-analysis measurement, `freq`/`coef_filt`) - the shear probe charge-amp electronics filter `MODsetup_define_filters.m`'s shear branch needs. Not per-probe - one shared bench measurement, like the FPO7 noise file above. Also **not yet committed** to `MOD_fish_calibrations`, same reason as above.
+Copied from `MOD_fish_lib/EPSILOMETER/EPSILON/FILTER/cap1nFres200Meg_5KohmInput.mat` (a network-analysis measurement, `freq`/`coef_filt`) - the shear probe charge-amp electronics filter `MODsetup_define_filters.m`'s shear branch needs. Not per-probe - one shared bench measurement, like the FPO7 noise file above. Committed to `MOD_fish_calibrations` in the same commit, `bed972c`.
 
 ## Running a tau/chi_obs-vs-chi_mle comparison
 
@@ -261,7 +261,6 @@ Back-solving `Profile100.mat`'s own stored `Pt_Tg_k` for the deconvolution it wa
 - **t1/t2 chi discrepancy on `blt2021_0715` not yet root-caused** - see "Real test results" above. Worth investigating before trusting t2 for anything gamma-related on that deployment.
 - **Full-profile `chi_obs`/`Profile.chi` match still has a wide residual even with `electronics_filter` applied** (see "ASTRAL `Profile100.mat` vs. `electronics_filter`" above) - median per-scan ratio ~0.4, not the ~0.9-1.0 seen for the subset of scans where `kc` matches `Profile.tg_kc`. Traced (not yet root-caused) to `kc` itself diverging from `Profile.tg_kc` for many scans despite identical bench noise coefficients and algorithm - not a gap in the electronics/thermal deconvolution math, which is independently verified against Profile100's own stored spectrum to 4 significant figures.
 - **`cal_profile`-based `volts_to_C` in `analysis/chi_tau_mle_comparison.m` is old-format-specific** - it reads a pressure-binned in-situ calibration already present in `Profile100.mat`, not a fresh deployment-wide fit from `MODprocess_L1_apply_fpo7_calibration.m`. Fine for this comparison, but not a template for how this repo's own L1→L2 pipeline gets `volts_to_C`.
-- **`FPO7_benchnoise.mat`/`cap1nFres200Meg_5KohmInput.mat` not yet committed** to `MOD_fish_calibrations` (see "Calibration file" sections above).
 
 Two limitations this section used to list here are resolved as of branch `epsilon_processing` - `chi_mle` is now wired in (see Module 8 above) and shear/accel `electronics_filter` now has a real consumer (`mod_scan_shear_volts_to_shear_spectrum.m`) - see [Epsilon (shear turbulence)](L2_calc_eps.md) for what's still open on that side (its own "Known limitations" covers the epsilon-specific gaps: the per-scan, not profile-level, epsilon selection feeding `chi_mle` here; the unconfirmed coherence-band field values; `modProcess_L2_qc.m` not built).
 
@@ -272,3 +271,5 @@ Built on branch `chi_processing`, off `l1_to_l2_conversion`. `chi_obs` (original
 **2026-09-08, branch `epsilon_processing`:** `chi_mle` wired into `mod_L2_tile_scans.m`, and its grid-search zoom (`mle_search_chi`) split out into the shared `toolbox/mod_scan_mle_grid_search.m` once `mod_scan_calc_epsilon_mle.m` needed the identical search machinery - see [Epsilon (shear turbulence)](L2_calc_eps.md) for the full epsilon module this unblocked. Verified behavior-preserving by a synthetic-data regression check (a known-chi Batchelor spectrum, noiseless, recovered to <0.01% by the refactored search) before and conceptually after the extraction - see that doc's "How to run it"/verification notes.
 
 `MODsetup_define_filters.m` (AFE electronics/ADC term, Module 2b) - also 2026-07-28, found while comparing this repo's `chi_obs` directly against a real `Profile100.mat`'s `Profile.chi` (a comparison the `chi_mle` validation above didn't do): `chi_obs` came out systematically low, traced to the AFE sinc⁴ ADC response `mod_scan_fpo7_transfer_function.m`'s own docstring had already flagged as deliberately excluded. Implemented per PLAN.md Section 6.2's design note (fpo7/shear/acc, not just fpo7 - shear/acc resolved for future use, not yet consumed). See `SESSION_LOG.md` entry (2026-07-28) and "ASTRAL `Profile100.mat` vs. `electronics_filter`" above for validation results and the residual full-profile `kc` question this surfaced.
+
+**2026-10-15, branch `main-fork`:** `FPO7_benchnoise.mat` and `cap1nFres200Meg_5KohmInput.mat` are now committed to `MOD_fish_calibrations` (`bed972c`); the "not yet committed" notes above are removed.

@@ -135,8 +135,9 @@ From `fctd_epsi`'s source (`main.c` ReadSetupFile, `file_utils.c`,
 metadata, not all of it: it says what is on the vehicle (`data_root`, `calibrations_root`,
 survey/cruise/vehicle, `fish_flag`, `instrument_manifest` with CTD and AFE slot SNs, and
 `afe.channels` full range/ADC config). It has no processing parameters (`spectral:`, `chi:`,
-`epsilon:` ...), so L0 → L1 still asks for `fft_length`/`Fs_epsi` - those will come from a
-separate processing yml (not built yet).
+`epsilon:` ...): those come from `cruise_meta_data.yml`, and `MODsetup_build_yaml.m` merges the
+two into `depl_meta_data.yml`, the file processing reads (see
+[Realtime processing](realtime_processing.md)).
 
 `MODsetup_read_yaml.m` reads it directly:
 

@@ -4,6 +4,10 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-15 - Calibration files committed; stale doc notes removed (branch `main-fork`)
+
+`FPO7/FPO7_benchnoise.mat` and `SHEAR/cap1nFres200Meg_5KohmInput.mat` are committed to `MOD_fish_calibrations` (`bed972c`, pushed to modscripps `main`). Removed the four "not yet committed" notes in `docs/workflow/L2_calc_chi.md` and added a History entry. `docs/workflow/start_new_deployment.md` no longer says the processing yml is "not built yet" (it points to `MODsetup_build_yaml.m` and `depl_meta_data.yml`). Checked that every calibration path on `main-fork` comes from `calibrations_root`; the remaining `EPSILOMETER` mentions in code and docs are provenance notes only. Docs only, so no code tests; `mkdocs build --strict` passes.
+
 ### 2026-10-15 (step 2) - The realtime worker: MODprocess_deployment, routing, cache, cast table, simulator (branch `main-fork`)
 
 Step 2 of `docs/workflow/realtime_processing.md`. The same driver does realtime and postprocessing.
