@@ -11,10 +11,15 @@ function result = MODutil_route_raw_by_survey(raw_dir, processed_root)
 %
 %   The survey is the CTD.survey line fctd_epsi copies from Setup into each
 %   file's header (Start New Deployment sets it). Files are linked with
-%   symbolic links, not copies or hard links: a symlink follows a file that
-%   is still growing, and also the new file rsync swaps in when it updates
-%   one (a hard link would keep pointing at the old one). Nothing is ever
-%   moved, renamed or deleted in raw_dir.
+%   hard links: each raw/ file is a real file - the same file as in
+%   raw_dir, so it takes no extra space - and any copy of a survey (Finder,
+%   cp, rsync, the share drive, a hard drive) gets real files. When rsync
+%   updates a growing file it writes a new file in its place, so a raw/
+%   link that is no longer the same file as raw_dir's is linked again (the
+%   next call, up to one worker pass behind). A symlink left from before
+%   2026-10-16 is replaced the same way. Nothing is ever moved, renamed or
+%   deleted in raw_dir; a file deleted there stays in raw/. raw_dir and
+%   processed_root must be on the same disk (hard links can't cross disks).
 %
 %   Each file's header is read once; the answer is kept in
 %   <processed_root>/raw_routing.mat. A file with no CTD.survey line yet is
@@ -28,10 +33,14 @@ function result = MODutil_route_raw_by_survey(raw_dir, processed_root)
 %
 % OUTPUTS
 %   result - struct:
-%     .linked    - cellstr '<survey>/raw/<name>' linked by this call
+%     .linked    - cellstr '<survey>/raw/<name>' linked by this call for
+%                  the first time
+%     .relinked  - cellstr '<survey>/raw/<name>' linked again by this call
+%                  (rsync had replaced the file, or it was a symlink)
 %     .surveys   - cellstr of every survey seen in raw_dir (sorted)
 %     .unrouted  - struct array (.file, .reason) of files with no survey
-%     .broken    - cellstr of links in survey raw/ folders whose file is gone
+%     .broken    - cellstr of symlinks (from before hard links) in survey
+%                  raw/ folders whose file is gone
 %
 % CALLED BY
 %   MODprocess_deployment.m (every pass, when given processed_root)
@@ -50,7 +59,7 @@ function result = MODutil_route_raw_by_survey(raw_dir, processed_root)
 
 HEADER_BYTES = 2^16; % the Setup copy is in the first few kB of each file
 
-result = struct('linked', {{}}, 'surveys', {{}}, ...
+result = struct('linked', {{}}, 'relinked', {{}}, 'surveys', {{}}, ...
     'unrouted', struct('file', {}, 'reason', {}), 'broken', {{}});
 routing_file = fullfile(processed_root, 'raw_routing.mat');
 routing = struct('name', {}, 'survey', {}, 'bytes', {});
@@ -89,21 +98,34 @@ for i = 1:numel(files)
     end
     link_dir = fullfile(processed_root, survey, 'raw');
     link = fullfile(link_dir, name);
-    if ~is_link_or_file(link)
-        try
+    source = fullfile(files(i).folder, name);
+    try
+        if ~is_link_or_file(link)
             if ~isfolder(link_dir)
                 mkdir(link_dir);
             end
-            no_attributes = javaArray('java.nio.file.attribute.FileAttribute', 0);
-            java.nio.file.Files.createSymbolicLink(java.io.File(link).toPath(), ...
-                java.io.File(fullfile(files(i).folder, name)).toPath(), no_attributes);
+            hard_link(link, source);
             result.linked{end+1} = fullfile(survey, 'raw', name);
-        catch ME
-            % e.g. no permission, or something else already at that path -
-            % this file waits, the others still get linked
-            result.unrouted(end+1) = struct('file', fullfile(raw_dir, name), ...
-                'reason', sprintf('could not link it into %s (%s)', link_dir, ME.message));
+        elseif is_link(link) || ~same_file(link, source)
+            % link a temporary name, then rename it over the old one, so
+            % raw/<name> is never missing
+            tmp = fullfile(link_dir, ['.' name '.relink']);
+            if is_link_or_file(tmp)
+                delete(tmp);
+            end
+            hard_link(tmp, source);
+            replace_with(tmp, link);
+            result.relinked{end+1} = fullfile(survey, 'raw', name);
         end
+    catch ME
+        % e.g. no permission, a different disk, or something else already
+        % at that path - this file waits, the others still get linked
+        reason = sprintf('could not link it into %s (%s)', link_dir, ME.message);
+        if contains(ME.message, 'cross-device', 'IgnoreCase', true)
+            reason = sprintf(['%s and %s are on different disks - hard links can''t cross disks, ' ...
+                'so put the processed folder on the same disk as the raw folder'], raw_dir, processed_root);
+        end
+        result.unrouted(end+1) = struct('file', source, 'reason', reason);
     end
 end
 
@@ -114,7 +136,7 @@ if changed
 end
 result.surveys = reshape(unique({routing(~cellfun(@isempty, {routing.survey})).survey}), 1, []);
 
-% Links whose file has gone (deleted or renamed in raw_dir)
+% Symlinks (from before hard links) whose file has gone
 for iS = 1:numel(result.surveys)
     listing = dir(fullfile(processed_root, result.surveys{iS}, 'raw'));
     for iD = 1:numel(listing)
@@ -154,4 +176,19 @@ end
 
 function tf = is_link_or_file(p)
 tf = isfile(p) || is_link(p);
+end
+
+function hard_link(link, source)
+java.nio.file.Files.createLink(java.io.File(link).toPath(), java.io.File(source).toPath());
+end
+
+function tf = same_file(a, b)
+tf = java.nio.file.Files.isSameFile(java.io.File(a).toPath(), java.io.File(b).toPath());
+end
+
+function replace_with(tmp, target)
+options = javaArray('java.nio.file.CopyOption', 2);
+options(1) = javaMethod('valueOf', 'java.nio.file.StandardCopyOption', 'REPLACE_EXISTING');
+options(2) = javaMethod('valueOf', 'java.nio.file.StandardCopyOption', 'ATOMIC_MOVE');
+java.nio.file.Files.move(java.io.File(tmp).toPath(), java.io.File(target).toPath(), options);
 end

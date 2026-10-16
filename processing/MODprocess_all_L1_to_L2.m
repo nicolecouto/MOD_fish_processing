@@ -25,9 +25,9 @@ function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metad
 %   + mod_L1_detect_profiling_direction.m) and passes it into every
 %   MODprocess_single_L1_to_L2.m call, so the per-file work stays a pure
 %   function while the file-I/O cost is paid once per batch run rather than
-%   once per file. Passing it even for an already direction-pure profile
-%   is harmless - per-scan direction gating just becomes a no-op confirm
-%   in that case (mod_L2_tile_scans.m).
+%   once per file. For an already direction-pure profile, per-scan
+%   direction gating mostly confirms the direction and drops scans slower
+%   than speedLim_scan_m_s at the profile's ends (mod_L2_tile_scans.m).
 %
 %   Each file's MODprocess_single_L1_to_L2.m call is wrapped in a
 %   retry-on-metadata-update loop: since metadata is constant across every

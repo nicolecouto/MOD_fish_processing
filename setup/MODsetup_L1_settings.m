@@ -44,7 +44,7 @@ settings.epsi_gap_factor = get_field(metadata, {'PROCESS', 'epsi_gap_factor'});
 settings.CTD_cal = get_field(metadata, {'CTD', 'cal'});
 settings.GEOMETRY = get_field(metadata, {'GEOMETRY'}); % altimeter
 % profiling direction is detected at L1 (mod_L1_detect_profiling_direction.m)
-settings.lowpass_factor = get_field(metadata, {'PROFILES', 'lowpass_factor'});
+settings.lowpass_sec = get_field(metadata, {'PROFILES', 'lowpass_sec'});
 settings.ctd_gap_factor = get_field(metadata, {'PROFILES', 'ctd_gap_factor'});
 settings.buffer_bins = get_field(metadata, {'PROFILES', 'buffer_bins'});
 end %end function

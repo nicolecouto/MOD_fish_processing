@@ -58,12 +58,18 @@ profiles_L2_files = MODprocess_all_L1_to_L2(metadata.paths.profiles_L1, metadata
 % Or, instead of 5-6, L2 by file (whole L1 files tiled into scans, as realtime):
 % L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L2);
 
-%% 7. _README.txt in each folder (what's in it, the run, the steps, the parameters)
+%% 7. Grid (processed/<run>/grid/grid.mat: one column per cast, in depth bins of
+% grid.z_bin_m: CTD = mean of the L1 samples in each bin, turbulence = mean of the
+% scans whose center is in it). 'profile' reads profiles_L1/ and profiles_L2/;
+% with L2 by file above, use 'file'.
+gridded = MODprocess_grid(metadata, 'profile');   % not 'grid': that's Matlab's grid on/off
+
+%% 8. _README.txt in each folder (what's in it, the run, the steps, the parameters)
 % (with L1_from set, leave out 'L1' - that README is the other run's)
-for level = {'raw', 'L0', 'L1', 'profiles_L1', 'profiles_L2'}
+for level = {'raw', 'L0', 'L1', 'profiles_L1', 'profiles_L2', 'grid'}
     MODutil_write_folder_readme(metadata.paths.(level{1}), level{1}, metadata);
 end
 
-%% 8. Look at it
+%% 9. Look at it
 MODvis_timeseries(metadata.paths.profiles_L1);   % time series, one Profile####.mat at a time
 MODvis_spectra(metadata.paths.profiles_L2);      % scans, with their profiles_L1 time series

@@ -15,7 +15,7 @@ function written = MODutil_write_folder_readme(folder, level, metadata)
 %
 % INPUTS
 %   folder   - the level folder (e.g. metadata.paths.L1)
-%   level    - 'raw', 'L0', 'L1', 'L2', 'profiles_L1' or 'profiles_L2'
+%   level    - 'raw', 'L0', 'L1', 'L2', 'profiles_L1', 'profiles_L2' or 'grid'
 %   metadata - from MODsetup_read_yaml.m (for the deployment and parameters)
 %
 % OUTPUTS
@@ -31,7 +31,7 @@ function written = MODutil_write_folder_readme(folder, level, metadata)
 
 switch level
     case 'raw'
-        what = {'Links to this survey''s raw files (.modraw) in the cruise-wide RAW_full_cruise/ folder, as fctd_epsi wrote them.'};
+        what = {'This survey''s raw files (.modraw), as fctd_epsi wrote them. On DEV3 each is a hard link to the same file in the cruise-wide RAW_full_cruise/ folder: a real file, so a copy of this folder has the data.'};
         steps = {'Linked here by MODutil_route_raw_by_survey.m from the CTD.survey line in each file''s header. Nothing is changed in the raw files.'};
         sections = {};
     case 'L0'
@@ -57,6 +57,10 @@ switch level
         what = {'One Profile####.mat per cast, with the same name as in profiles_L1/: the same per-scan spectra and turbulence as L2, computed on the whole cast. Scans only - the time series are in profiles_L1/.'};
         steps = {'MODprocess_all_L1_to_L2.m pointed at profiles_L1/ (postprocessing).'};
         sections = {'spectral', 'ctd', 'profile_detection', 'chi', 'epsilon'};
+    case 'grid'
+        what = {'grid.mat: one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. CTD = mean of every L1 CTD sample in the bin; turbulence = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans). grid.variables lists each field''s unit and description.'};
+        steps = {'MODprocess_grid.m, from the L1 and L2 files (by file) or profiles_L1/ and profiles_L2/ (by profile) - see grid.source. Only new or changed casts are rebinned.'};
+        sections = {'grid', 'profile_detection'};
     otherwise
         error('MODutil_write_folder_readme:unknownLevel', 'Unknown level "%s".', level);
 end
@@ -74,7 +78,7 @@ if ismember(level, {'raw', 'L0'}) && ~isempty(run_name)
     L{end+1, 1} = 'Shared by every processing run of this survey (processed/<run>/).';
 elseif ~isempty(run_name)
     L{end+1, 1} = sprintf('Processing run: %s (settings: meta/meta_data_%s.yml in the survey folder)', run_name, run_name);
-    if ismember(level, {'L2', 'profiles_L1', 'profiles_L2'})
+    if ismember(level, {'L2', 'profiles_L1', 'profiles_L2', 'grid'})
         if isempty(metadata.run.L1_from)
             L{end+1, 1} = sprintf('From L1: this run''s own (processed/%s/L1)', run_name);
         else

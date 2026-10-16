@@ -37,11 +37,13 @@ function summary = MODprocess_deployment(target, varargin)
 %     4. 'by' 'file' (realtime): L1 -> L2, whole L1 files tiled into scans.
 %        'by' 'profile' (postprocessing): profiles_L1/ from the cast table
 %        (MODprocess_all_extract_profiles.m), then -> profiles_L2/.
-%     5. _README.txt in each level folder (MODutil_write_folder_readme.m)
-%   'from' and 'until' run only some of stages 2-4 (L0, L1, casts, L2);
-%   'until', 'yml' only builds and checks the yml (for every stage from
-%   'from' on). (Gridding and the
-%   cruise twist count are later stages, not built yet.)
+%     5. the grid: one column per cast, in depth bins (MODprocess_grid.m),
+%        from L1/L2 by file or profiles_L1/profiles_L2 by profile
+%     6. _README.txt in each level folder (MODutil_write_folder_readme.m)
+%   'from' and 'until' run only some of the stages (L0, L1, casts, L2,
+%   grid); 'until', 'yml' only builds and checks the yml (for every stage
+%   from 'from' on). (The cruise twist count is a later stage, not built
+%   yet.)
 %
 %   A file that fails doesn't stop anything: it's logged, listed in the
 %   run's meta/log/problems.json, retried on later passes (it's only
@@ -97,7 +99,7 @@ function summary = MODprocess_deployment(target, varargin)
 %                              settings must match). [] (default) = as the
 %                              run already has it; '' = its own L1
 %     'from', 'until'        - first and last stage: 'L0', 'L1', 'casts',
-%                              'L2' (default 'L0' to 'L2'); 'until' 'yml'
+%                              'L2', 'grid' (default 'L0' to 'grid'); 'until' 'yml'
 %                              only builds and checks the yml
 %     'ask'                  - default true in an interactive Matlab when
 %                              not watching: ask for missing parameters
@@ -147,11 +149,11 @@ addParameter(ip, 'run', '');
 addParameter(ip, 'cruise_yml', []);
 addParameter(ip, 'L1_from', []);
 addParameter(ip, 'from', 'L0');
-addParameter(ip, 'until', 'L2');
+addParameter(ip, 'until', 'grid');
 addParameter(ip, 'ask', []);
 parse(ip, varargin{:});
 opts = ip.Results;
-STAGES = {'L0', 'L1', 'casts', 'L2'};
+STAGES = {'L0', 'L1', 'casts', 'L2', 'grid'};
 i_from = find(strcmp(STAGES, opts.from));
 i_until = find(strcmp([{'yml'}, STAGES], opts.until)) - 1;
 if isempty(i_from) || isempty(i_until)
@@ -504,7 +506,20 @@ if ismember('L2', stages)
     end
 end
 
-% 5. folder READMEs (the L1 one only when this run made the L1)
+% 5. grid
+if ismember('grid', stages) && ~isfile(fullfile(metadata.paths.meta, 'casts.mat'))
+    fprintf('No %s yet - no grid.\n', fullfile(metadata.paths.meta, 'casts.mat'));
+end
+if ismember('grid', stages) && isfile(fullfile(metadata.paths.meta, 'casts.mat'))
+    try
+        MODprocess_grid(metadata, opts.by);
+        done(end+1) = struct('stage', 'grid', 'files', {{}});
+    catch ME
+        current(end+1) = stage_problem('grid', ME);
+    end
+end
+
+% 6. folder READMEs (the L1 one only when this run made the L1)
 levels = {'raw', 'L0', 'L1', 'L2'};
 if ~isempty(metadata.run.L1_from)
     levels = {'raw', 'L0', 'L2'};
@@ -512,6 +527,7 @@ end
 if strcmp(opts.by, 'profile')
     levels = [levels, {'profiles_L1', 'profiles_L2'}];
 end
+levels{end+1} = 'grid';
 readme_ok = true;
 for lv = levels
     try

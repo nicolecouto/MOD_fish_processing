@@ -259,7 +259,7 @@ an unattended batch run is easy to never see. What actually shipped instead:
   returns a struct array — one entry per configurable value, with its `setup.yml` section/key, its
   `metadata` field path, a description, and a historical default (shown only as a prompt's starting
   value, never applied silently). Currently covers the 10 `PROCESS.CHI.*` chi parameters plus
-  `Fs_epsi`/`nfft`/`dof`/`PROFILES.lowpass_factor`/`.gap_factor`/`.buffer_bins` (data only for the
+  `Fs_epsi`/`nfft`/`dof`/`PROFILES.lowpass_sec` (was `lowpass_factor` until 2026-10-16)/`.gap_factor`/`.buffer_bins` (data only for the
   latter 6 — see "Deferred" below).
 - **`MODsetup_read_yaml.m` never silently defaults anything**, for any field, full stop — a metadata
   field simply doesn't exist if `setup.yml` doesn't declare it. No warning-and-substitute step.
@@ -335,7 +335,7 @@ deployment_root/
 | **L0** | Raw binary files | Per-file `.mat` with raw counts/volts (EFE in volts/g, standard board) | Parse bytes, no calibrations, read headers; EFE counts → volts/g with the standard EFE config, no setup.yml needed |
 | **L1** | L0 `.mat` files | Per-file `.mat` with calibrated, filtered, despiked data + `twist` field | CTD→P/T/C/S; shear→dshear/dz; FPO7→dT/dt; filters; twist timeseries for this file |
 | **L2** | L1 `.mat` (+ profile indices, for vehicles that use them) | `Profile####.mat` per cast, **or** one `.mat` per L1 file (`epsi_deepsolo` — see Section 4 note below) | Per-scan spectra, epsilon, chi, QC flags |
-| **L3** | L2 profiles | Gridded sections | Interpolate onto standard pressure grid |
+| **L3** | L1 + L2 (by file or by profile) | `grid/grid.mat`, one column per cast | Bin means in depth (`MODprocess_grid.m`) |
 
 **Done and merged to `main`:** L0 (raw → .mat, no calibrations, no metadata beyond what's in the file). Originally prototyped on the `nicole` branch of `MOD_fish_lib` as `MODprocess_modraw_to_L0.m` / `MODprocess_allnew_modraw_to_L0.m`; see `SESSION_LOG.md` for what changed on the port. Documented in `MOD_fish_processing/docs/workflow/L0_modraw_conversion.md`.
 
@@ -352,7 +352,7 @@ deployment_root/
 The pipeline above forks into two modes once L1 exists, matching two different jobs:
 
 - **Realtime**: `modraw → L0 → L1 → L2` (per-file). Runs on each raw file as it lands during a deployment - never waits for a complete profile, so it works even mid-cast. This is what the on-deployment/at-sea visualization tools (`MODvis_timeseries.m`, `MODvis_twist_timeseries.m`) consume - L1 fields directly, plus L2's per-L1-file spectra (`MODprocess_single_L1_to_L2.m`/`MODprocess_all_L1_to_L2.m`, gated on `metadata.manifest.has_epsi` - see Section 6.4). No profile-cutting involved.
-- **Postprocess**: `modraw → L1 → profiles → grid`. Run once a deployment (or a leg of one) is done, against a complete L1 dataset - produces the final science-quality output: one `Profile####.mat` per detected cast in `metadata.paths.profiles` (`modProcess_detect_profiles.m` + `modProcess_extract_profile.m` + `MODprocess_single_L1_to_L2_profile.m`/`MODprocess_all_L1_to_L2_profiles.m` - see Section 6.3), then interpolated onto a standard pressure grid (`modProcess_L3_grid_profiles.m`, Section 6.5 - not started). Every detected cast gets a CTD record regardless of direction; `profile_dir` only gates whether a given profile also gets epsi spectra (Section 6.3/6.4).
+- **Postprocess**: `modraw → L1 → profiles → grid`. Run once a deployment (or a leg of one) is done, against a complete L1 dataset - produces the final science-quality output: one `Profile####.mat` per detected cast in `metadata.paths.profiles` (`modProcess_detect_profiles.m` + `modProcess_extract_profile.m` + `MODprocess_single_L1_to_L2_profile.m`/`MODprocess_all_L1_to_L2_profiles.m` - see Section 6.3), then gridded (`MODprocess_grid.m`, Section 6.5 - built 2026-10-16: depth bins, one column per cast). Every detected cast gets a CTD record regardless of direction; `profile_dir` only gates whether a given profile also gets epsi spectra (Section 6.3/6.4).
 
 Both L2 paths share the same windowing core (`mod_L2_tile_scans.m`) but today compute spectra independently - realtime's per-file output and postprocess's per-profile output are not deduplicated against each other (the original simplicity-over-storage-optimization call, confirmed with Nicole - see `SESSION_LOG.md`, 2026-08-28). L0 and L1 are shared unmodified by both modes; the fork happens entirely at the L2 step.
 
@@ -490,12 +490,12 @@ Proposed split, following the pattern `MODsetup_read_yaml.m`/`MODprocess_L1_appl
 
 ### 6.4 L1 → L2
 
-**For `epsi_deepsolo`, this step deliberately does not use profile indices from Section 6.3** — it computes per-scan spectra directly across each L1 file's continuous timeseries, gated by `mod_L1_detect_profiling_direction.m`'s per-sample `is_down` classification rather than discrete profile start/end indices. See `docs/workflow/L1_to_L2_conversion.md` for the full writeup of why and how.
+**For `epsi_deepsolo`, this step deliberately does not use profile indices from Section 6.3** - it computes per-scan spectra directly across each L1 file's continuous timeseries, gated by `mod_L1_detect_profiling_direction.m`'s `dPdt_smoothed` and `profile_detection.speedLim_scan_m_s` (`is_down` until 2026-10-16) rather than discrete profile start/end indices. See `docs/workflow/L1_to_L2_conversion.md` for the full writeup of why and how.
 
 | Function | Description | Source | Status |
 |----------|-------------|--------|--------|
 | `mod_scan_get_spectra.m` | Per-scan: pwelch on shear/fpo7/accel channels (raw, uncorrected — no `h_freq` transfer function yet). No coherence subtract | `get_scan_spectra.m` (stripped down — no epsilon/chi/coherence) | Done (branch `l1_to_l2_conversion`) — spectra only, see Section 4 |
-| `MODprocess_single_L1_to_L2.m` | Per-L1-file: 50% overlap scan tiling, gate by `PressureTimeseries.is_down`, assemble scan-dimension arrays | NEW | Done (branch `l1_to_l2_conversion`) |
+| `MODprocess_single_L1_to_L2.m` | Per-L1-file: 50% overlap scan tiling, gate by `PressureTimeseries.dPdt_smoothed` and `PROFILES.speedLim_scan_m_s` (was `is_down` until 2026-10-16), assemble scan-dimension arrays | NEW | Done (branch `l1_to_l2_conversion`) |
 | `MODprocess_all_L1_to_L2.m` | Batch orchestrator, mirrors `MODprocess_all_L0_to_L1.m`'s shape | NEW | Done (branch `l1_to_l2_conversion`) |
 | `mod_scan_calc_epsilon.m` | Nasmyth fit → epsilon, called per shear channel from `mod_L2_tile_scans.m`'s per-scan loop (not a `metadata.manifest.shear_channels` list - channels are filtered inline the same way `chi_obs_channels` already is, for consistency) | `mod_efe_scan_epsilon.m` | Done (branch `epsilon_processing`, 2026-09-08; renamed/moved from `processing/L2/modProcess_L2_calc_epsilon.m` to `processing/scans/mod_scan_calc_epsilon.m` later the same day) - see `docs/workflow/L2_calc_eps.md` |
 | `mod_scan_fpo7_volts_to_Tg_spectrum.m` | Shared first stage for both chi estimators: raw FP07 volts spectrum → tau-deconvolved temperature-gradient wavenumber spectrum | `mod_efe_scan_chi.m` (steps 1-3) | Done (branch `chi_processing`) — split out of `MODprocess_L2_calc_chi.m` once `chi_mle` needed the identical conversion |
@@ -511,7 +511,7 @@ Proposed split, following the pattern `MODsetup_read_yaml.m`/`MODprocess_L1_appl
 
 | Function | Description | Source |
 |----------|-------------|--------|
-| `modProcess_L3_grid_profiles.m` | Interpolate profiles onto standard P axis | `epsiProcess_gridProfiles.m` |
+| `MODprocess_grid.m` (was planned as `modProcess_L3_grid_profiles.m`) | One column per cast, depth bins: CTD bin means of the L1 samples, turbulence bin means of the scan centers. **Done** 2026-10-16 (branch `main-fork`), see `docs/workflow/processing_data.md` | `epsiProcess_gridProfiles.m`, `FastCTD_GridData.m` |
 
 ---
 

@@ -172,7 +172,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     mod_L2_tile_scans.m), from setup.yml's
 %                                     spectral.epsi_gap_factor. NOT set if
 %                                     absent.
-%     PROFILES.lowpass_factor,
+%     PROFILES.lowpass_sec,
 %              .ctd_gap_factor,
 %              .buffer_bins          - profiling-direction detection
 %                                     parameters for
@@ -187,9 +187,11 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     PROCESS.epsi_gap_factor above.
 %     PROFILES.speedLim_down_start_m_s, .speedLim_down_end_m_s,
 %              .speedLim_up_start_m_s, .speedLim_up_end_m_s,
-%              .minLength_m, .profile_dir
-%                                   - full profile-picker parameters for
-%                                     modProcess_detect_profiles.m, from
+%              .minLength_m, .profile_dir, .speedLim_scan_m_s
+%                                   - profile-picker parameters for
+%                                     modProcess_detect_profiles.m, and
+%                                     the scan direction gate for
+%                                     mod_L2_tile_scans.m, from
 %                                     setup.yml's profile_detection: block.
 %                                     NOT set if the block or the specific
 %                                     key is absent.
@@ -417,6 +419,7 @@ metadata.paths.L0                = fullfile(survey_dir, 'L0');
 metadata.paths.L2                = fullfile(run_dir, 'L2');
 metadata.paths.profiles_L2       = fullfile(run_dir, 'profiles_L2');
 metadata.paths.profiles_L1       = fullfile(run_dir, 'profiles_L1');
+metadata.paths.grid              = fullfile(run_dir, 'grid');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file

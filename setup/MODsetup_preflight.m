@@ -23,8 +23,9 @@ function [report, metadata] = MODsetup_preflight(run_yml, prompt, varargin)
 %     - L2: afe, ctd, spectral, profile_detection, plus chi if an AFE slot
 %       is type fpo7 and epsilon if one is type shear (types matched
 %       ignoring case, as processing does)
+%     - grid: grid
 %     Exception: ctd.sample_rate (Fs_ctd) only when ctd.compute_spectra is
-%     true. (grid: parameters are needed once the grid stage exists.)
+%     true.
 %   A run that takes its L1 from another run (run.L1_from) doesn't run L0
 %   or L1.
 %
@@ -56,8 +57,8 @@ function [report, metadata] = MODsetup_preflight(run_yml, prompt, varargin)
 %             other yml MODsetup_read_yaml.m reads works too)
 %   prompt  - (optional) default false
 %   Name-value options:
-%     'stages'    - stages about to run, any of {'L0','L1','casts','L2'}.
-%                   Default: all four.
+%     'stages'    - stages about to run, any of {'L0','L1','casts','L2','grid'}.
+%                   Default: all five.
 %     'ask_paths' - default = prompt. true: ask for a calibrations_root
 %                   that isn't a folder here (needs a display)
 %     'ask_fn'    - default @uigetdir: called as ask_fn(start, title),
@@ -88,7 +89,7 @@ if nargin < 2 || isempty(prompt)
     prompt = false;
 end
 ip = inputParser;
-addParameter(ip, 'stages', {'L0', 'L1', 'casts', 'L2'});
+addParameter(ip, 'stages', {'L0', 'L1', 'casts', 'L2', 'grid'});
 addParameter(ip, 'ask_paths', prompt);
 addParameter(ip, 'ask_fn', @uigetdir);
 parse(ip, varargin{:});
@@ -213,6 +214,17 @@ if ~isempty(old)
         'goes to processed/<run>/. Move or delete them.'], metadata.paths.data_root, strjoin(old, ', '));
 end
 
+% settings that are no longer read (renamed 2026-10-16)
+retired = {'lowpass_factor', 'profile_detection.lowpass_sec (the pressure smoothing, now in seconds, default 1)'
+    'dz_m', 'grid.z_bin_m (the depth bin size, default 1 m)'};
+yml_text = fileread(run_yml);
+for iR = 1:size(retired, 1)
+    if any(regexp(yml_text, ['(^|\n)\s*' retired{iR, 1} '\s*:'], 'once'))
+        report.notes{end+1} = sprintf('%s is no longer used - it is now %s. Change it in the cruise yml.', ...
+            retired{iR, 1}, retired{iR, 2});
+    end
+end
+
 report.plan = plan_lines(metadata, run_yml, stages, report);
 report.ok = isempty(report.missing) && isempty(report.problems);
 report = done(report, nargout);
@@ -322,6 +334,9 @@ if ismember('L2', stages)
     if any(strcmpi(types, 'shear'))
         sections{end+1} = 'epsilon';
     end
+end
+if ismember('grid', stages)
+    sections{end+1} = 'grid';
 end
 names = {registry(ismember({registry.yaml_section}, unique(sections))).name};
 % Fs_ctd is only read when CTD spectra are on (mod_scan_get_spectra.m)

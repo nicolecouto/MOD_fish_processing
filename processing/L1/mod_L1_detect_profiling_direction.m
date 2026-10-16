@@ -4,12 +4,14 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 % PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata)
 %
 % DESCRIPTION
-%   Classifies every sample in a deployment-length pressure timeseries
-%   (from MODprocess_L1_make_pressure_timeseries.m) as descending
-%   ('is_down' = true, dPdt > 0) or not, so mod_scan_get_spectra.m
-%   only computes spectra for downcast data (shear/high-res temperature are
-%   only trustworthy on the way down for vehicles like DeepSolo - see
-%   PLAN.md Section 4). This is deliberately an L1-level function, not L2 -
+%   Smooths a deployment-length pressure timeseries (from
+%   MODprocess_L1_make_pressure_timeseries.m) and computes its rate of
+%   change, dPdt_smoothed, plus is_down (dPdt > 0, buffered). This is a
+%   rough "going down or up" for realtime processing, not a profile picker
+%   (that's modProcess_detect_profiles.m, with its own speed limits):
+%   mod_L2_tile_scans.m keeps a scan as down or up from dPdt_smoothed and
+%   speedLim_scan_m_s, and MODprocess_L1_apply_fpo7_calibration.m fits on
+%   is_down samples. This is deliberately an L1-level function, not L2 -
 %   it operates purely on the pressure record, the same data level as
 %   ctd.dPdt itself, and its output (meta/pressure_time_series.mat) is small
 %   enough that any single-L1-file L2 call can just load it, rather than L2
@@ -17,18 +19,15 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 %
 %   Written to be read, not just run - the four steps below are the actual
 %   algorithm, in order, each with the reasoning for why it's built this
-%   way. This matters most for sparse, irregularly-sampled pressure
-%   records (e.g. DeepSolo's fallrise data, ~60-120 s between samples,
-%   occasional multi-hour gaps) where the usual assumptions (uniform
-%   sampling, a fixed smoothing window in seconds) don't hold.
+%   way.
 %
 % INPUTS
 %   PressureTimeseries - struct with dnum, P (from
 %                         MODprocess_L1_make_pressure_timeseries.m)
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
-%     metadata.PROFILES.lowpass_factor - default 3. Sets the lowpass
-%         cutoff period as lowpass_factor * (local median sample interval).
-%         Must be > 2 - see STEP 2 below for why. Smaller = less smoothing.
+%     metadata.PROFILES.lowpass_sec - default 1. Lowpass cutoff period
+%         [s]; the sample rate sets how many samples that is - see STEP 2.
+%         Larger = more smoothing.
 %     metadata.PROFILES.ctd_gap_factor - default 5. A gap between
 %         consecutive samples wider than ctd_gap_factor * (whole-record
 %         median sample interval) splits the record into independent
@@ -51,9 +50,9 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 %                     forced excluded (see STEP 1).
 %     is_down       - logical, one value per input sample. true where this
 %                     sample is classified as (or buffered next to)
-%                     descending. mod_L2_tile_scans.m nearest-matches each
-%                     scan's center time against this (and against
-%                     dPdt_smoothed for upward scans).
+%                     descending. MODprocess_L1_apply_fpo7_calibration.m
+%                     fits on these samples; mod_L2_tile_scans.m uses
+%                     dPdt_smoothed instead (with speedLim_scan_m_s).
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
@@ -64,12 +63,10 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 % NOTES
 %   Ported in spirit from
 %   MOD_fish_lib/EPSILOMETER/epsilib/epsiProcess_get_profiles_from_PressureTimeseries.m's
-%   cheby2 + filtfilt lowpass, but re-derived for sparse data - that
-%   function's fixed 4 s cutoff period assumed ~Hz-rate pressure sampling
-%   (a fast CTD or FastCTD stream), where 4 s covers many samples. DeepSolo's
-%   fallrise data is 60-120 s/sample, so a fixed 4 s window would be
-%   sub-sample and not a real filter at all - the cutoff here is derived
-%   from the data's own sample spacing instead (STEP 2).
+%   cheby2 + filtfilt lowpass with a cutoff period in seconds (4 s there,
+%   lowpass_sec here). A record too sparse for that cutoff to be a real
+%   filter (e.g. DeepSolo's fallrise data, 60-120 s/sample) is used
+%   unsmoothed - see STEP 2.
 %
 %   This function does not build actual profile objects (start/end indices,
 %   merging adjacent same-direction casts, minimum-length filtering, etc.)
@@ -83,16 +80,13 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'lowpass_factor', 'ctd_gap_factor', 'buffer_bins'});
-lowpass_factor = metadata.PROFILES.lowpass_factor;
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'lowpass_sec', 'ctd_gap_factor', 'buffer_bins'});
+lowpass_sec = metadata.PROFILES.lowpass_sec;
 ctd_gap_factor = metadata.PROFILES.ctd_gap_factor;
 buffer_bins = metadata.PROFILES.buffer_bins;
-if lowpass_factor <= 2
-    error('mod_L1_detect_profiling_direction:invalidLowpassFactor', ...
-        ['metadata.PROFILES.lowpass_factor must be > 2 (got %.2f) - the normalized filter ' ...
-         'cutoff Fc = 2/lowpass_factor must be strictly less than 1 (Nyquist) for cheby2 to ' ...
-         'accept it. lowpass_factor = 2 gives Fc = 1 exactly (degenerate); 3 (Fc ~= 0.67) is ' ...
-         'the default, chosen as the smallest safely-valid margin.'], lowpass_factor);
+if ~(isnumeric(lowpass_sec) && isscalar(lowpass_sec) && lowpass_sec > 0)
+    error('mod_L1_detect_profiling_direction:invalidLowpassSec', ...
+        'metadata.PROFILES.lowpass_sec must be one number > 0 s (got %s).', mat2str(lowpass_sec));
 end
 
 dnum = PressureTimeseries.dnum(:);
@@ -140,32 +134,24 @@ for iSeg = 1:numel(seg_starts)
     seg_dt   = diff(seg_dnum) * 86400;
     seg_median_dt = median(seg_dt);
 
-    %% STEP 2 - Cheby2 lowpass, cutoff derived from this segment's own
-    % sample spacing (not a fixed number of seconds).
-    %   cutoff_period_s = lowpass_factor * seg_median_dt
-    %   Fc (normalized cutoff passed to cheby2, 1.0 = Nyquist)
-    %     = (1/cutoff_period_s) / (Fs/2), with Fs = 1/seg_median_dt
-    %     = 2 / lowpass_factor   <- independent of dt; this is why
-    %       lowpass_factor alone controls how much smoothing happens,
-    %       regardless of how sparse or dense this particular segment is.
-    % lowpass_factor = 2 -> Fc = 1 exactly: right at Nyquist, degenerate
-    % (cheby2 requires Fc strictly in (0,1) - rejected above). Larger
-    % lowpass_factor -> smaller Fc -> more smoothing. The default of 3
-    % (Fc ~= 0.67) is deliberately the smallest safely-valid choice: for
-    % data this sparse, more smoothing than that would start to blur real,
-    % short descent/ascent legs rather than just reject sample-to-sample
-    % jitter - "should not smooth much or at all", per the reasoning this
-    % function exists to make explicit.
-    Fc = 2 / lowpass_factor;
-
+    %% STEP 2 - Cheby2 lowpass with a cutoff period of lowpass_sec.
+    % The normalized cutoff passed to cheby2 (1.0 = Nyquist) is
+    %   Fc = (1/lowpass_sec) / (Fs/2) = 2 * seg_median_dt / lowpass_sec,
+    % so the sample rate sets how many samples the cutoff spans (16 for
+    % lowpass_sec = 1 at 16 Hz). Fc >= 1 means lowpass_sec is two samples
+    % or less - nothing to filter - so the pressure is used as it is (also
+    % for Fc = 0, a segment whose median interval is 0 from repeated
+    % times).
+    %
     % filtfilt (zero-phase) needs a minimum segment length to pad the
     % edges - roughly 3x the filter order. A cheby2 order-3 filter needs
     % this segment to have at least ~13 samples; shorter segments (e.g. a
-    % short stretch trapped between two gaps) fall back to the raw,
-    % unsmoothed pressure - still gives a usable (if noisier) dPdt sign,
-    % rather than erroring or silently skipping real data.
+    % short stretch trapped between two gaps) also use the raw pressure -
+    % still a usable (if noisier) dPdt sign, rather than erroring or
+    % silently skipping real data.
+    Fc = 2 * seg_median_dt / lowpass_sec;
     min_len_for_filter = 13;
-    if seg_n >= min_len_for_filter
+    if Fc > 0 && Fc < 1 && seg_n >= min_len_for_filter
         [b, a] = cheby2(3, 20, Fc, 'low');
         seg_P_smooth = filtfilt(b, a, fillmissing(seg_P, 'linear'));
     else

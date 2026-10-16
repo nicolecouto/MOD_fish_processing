@@ -60,9 +60,9 @@ function H = mod_scan_fpo7_transfer_function(f, w, tau0, exponent)
 %              only defined for a probe that is actually moving through
 %              water; this is the same implicit precondition
 %              mod_efe_scan_chi.m always had (it divides by w too, via
-%              k = f./w), and is guaranteed upstream by only ever calling
-%              this on scans PressureTimeseries.is_down already marked
-%              descending.
+%              k = f./w), and is normally ensured upstream:
+%              mod_L2_tile_scans.m keeps only scans moving faster than
+%              speedLim_scan_m_s when it's given a pressure record.
 %   tau0     - (optional) time constant coefficient [s], default 0.005.
 %   exponent - (optional) fall-speed exponent (dimensionless), default
 %              -0.32.

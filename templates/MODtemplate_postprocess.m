@@ -31,7 +31,7 @@ cruise_yml        = '';          % this run's processing values: '' = the one it
                                  % or cruise_meta_data.yml next to the survey folder for a new run
 L1_from           = '';          % use this run's L1 instead of making one ('' = own L1)
 by                = 'file';      % 'file': whole L1 files tiled into scans; 'profile': per cast
-until_stage       = 'L2';        % last stage: 'yml', 'L0', 'L1', 'casts' or 'L2'
+until_stage       = 'grid';      % last stage: 'yml', 'L0', 'L1', 'casts', 'L2' or 'grid'
 
 % MOD_fish_processing must be on the path, e.g.
 % addpath(genpath('/path/to/MOD_fish_processing'))
@@ -39,7 +39,7 @@ assert(exist('MODprocess_deployment', 'file') == 2, 'Add MOD_fish_processing to 
 opts = {'run', run_name, 'cruise_yml', cruise_yml, 'L1_from', L1_from, 'by', by};
 
 %% 1. Build and check the run yml - prints what it will use
-% (checks every stage through L2; step 2 only needs what its stages use)
+% (checks every stage through the grid; step 2 only needs what its stages use)
 summary = MODprocess_deployment(survey_folder, opts{:}, 'until', 'yml');
 if isempty(summary) || isempty(summary.preflight) || ~summary.preflight.ok
     fprintf('Check the problems and missing parameters above before going on.\n');

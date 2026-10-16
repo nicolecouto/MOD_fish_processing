@@ -30,7 +30,7 @@ Click any diagram to expand it.
     (`MODprocess_deployment.m`): processing runs (one yml in the survey's `meta/` and one
     `processed/<run>/` folder each; raw/ and L0/ shared), the realtime worker, the
     postprocessing templates (`templates/`), an L2 that holds scans only, gridding from one cast
-    table (not built yet) and a live monitor app (not built yet). This page describes the
+    table (`MODprocess_grid.m`) and a live monitor app (`MODvis_realtime_monitor.m`). This page describes the
     per-step functions.
 
 ## Shared foundation: modraw → L0 → L1
@@ -170,8 +170,8 @@ flowchart LR
   SPEC2 --> PROFOUT[("profiles_L2/Profile####.mat<br/>scans only, spectra gated")]
   TILE2 -.->|"direction doesn't match"| PROFOUT
 
-  PROFOUT -.-> GRID["modProcess_L3_<br/>grid_profiles.m<br/>(not started)"]
-  GRID -.-> GRIDOUT[("L3/ gridded sections<br/>(not started)")]
+  PROFOUT --> GRID["MODprocess_grid.m"]
+  GRID --> GRIDOUT[("grid/grid.mat<br/>one column per cast, depth bins")]
 ```
 
 | Function | In → out | Role |
@@ -184,7 +184,7 @@ flowchart LR
 | `MODprocess_single_L1_to_L2.m` | data, metadata, PressureTimeseries → L2data | Same function as realtime; carries through profile_number/direction/filenames/dnum_start/dnum_end when present on `data` |
 | `mod_L2_tile_scans.m` | epsi, ctd, metadata → L2data | Same core as realtime; `segment_id` skips any window spanning a real gap |
 | `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Identical function, same as realtime path |
-| `modProcess_L3_grid_profiles.m` | profiles → gridded sections | **Not started** - interpolate onto a standard pressure axis |
+| `MODprocess_grid.m` | metadata, by → grid | One column per cast (down and up), depth bins of `grid.z_bin_m`: CTD = mean of the L1 samples in the bin, turbulence = mean of the scans whose center is in it. By file (L1/L2 through `time_index`) or by profile (`profiles_L1/`, `profiles_L2/`); only new or changed casts are rebinned |
 
 ## Chi and epsilon - wired into `mod_L2_tile_scans.m`
 

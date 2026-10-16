@@ -45,11 +45,12 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   name, so nothing is stored twice. Load both to see a scan in context.
 %
 %   Only scans in the direction(s) profile_detection.profile_dir trusts
-%   (down, up or both, from PressureTimeseries at the scan's center time)
-%   get processed, when PressureTimeseries is given -
-%   MODprocess_all_L1_to_L2.m passes it in both modes. For a profile from
-%   modProcess_detect_profiles.m (already one direction) it mostly confirms
-%   the profile's direction - see mod_L2_tile_scans.m's DESCRIPTION.
+%   (down, up or both), moving faster than
+%   profile_detection.speedLim_scan_m_s at the scan's center time, get
+%   processed, when PressureTimeseries is given - MODprocess_all_L1_to_L2.m
+%   passes it in both modes. For a profile from modProcess_detect_profiles.m
+%   (already one direction) it mostly confirms the profile's direction and
+%   drops slow scans at its ends - see mod_L2_tile_scans.m's DESCRIPTION.
 %
 %   Also computes chi_obs (direct-integration thermal variance dissipation
 %   rate) per scan for every fpo7 channel that has a resolved
@@ -105,7 +106,7 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %               mod_scan_get_spectra.m, mod_scan_calc_chi_obs.m,
 %               mod_scan_calc_epsilon.m, mod_scan_calc_chi_mle.m - see each
 %               one's own header for the specific fields it reads.
-%   PressureTimeseries - (optional) struct with dnum, is_down, dPdt_smoothed (from
+%   PressureTimeseries - (optional) struct with dnum, dPdt_smoothed (from
 %               mod_L1_detect_profiling_direction.m via
 %               pressure_time_series.mat) - the whole-deployment
 %               record, not sliced to this file/profile. Passed straight

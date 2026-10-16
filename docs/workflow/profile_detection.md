@@ -15,7 +15,7 @@ It runs as two explicit phases (PLAN.md Phase A refactor), not one combined pass
 
 Splitting these means `MODprocess_single_L1_to_L2_profile.m` no longer does any file I/O itself and no longer needs a `TimeIndex` argument - it accepts any already-extracted epsi/ctd record with the right shape, not necessarily one produced by `modProcess_extract_profile.m` at all, matching `MODprocess_single_L1_to_L2.m`'s realtime mode, which was already extraction-free.
 
-Both modes are kept side by side deliberately (not one replacing the other): realtime mode stays cheap and streaming-friendly for a future per-file spectra QC viewer (a `MODvis_spectra`-style tool, not built yet); this mode is what a final gridded product (L3, not built yet) should be built from. The two compute their spectra fully independently - no result is shared or reused between them, a deliberate simplicity-over-storage-optimization choice (see PLAN.md Section 6.3's design discussion) that can be revisited later if data volume becomes a real problem.
+Both modes are kept side by side deliberately (not one replacing the other): realtime mode stays cheap and streaming-friendly for a future per-file spectra QC viewer (a `MODvis_spectra`-style tool, not built yet); this mode is what a final gridded product should be built from (`MODprocess_grid(metadata, 'profile')`). The two compute their spectra fully independently - no result is shared or reused between them, a deliberate simplicity-over-storage-optimization choice (see PLAN.md Section 6.3's design discussion) that can be revisited later if data volume becomes a real problem.
 
 ## Profile detection
 
@@ -165,6 +165,8 @@ L2_files = MODprocess_all_L1_to_L2(metadata.paths.profiles_L1, metadata, metadat
 - **No storage/dedup optimization** - realtime and profile-cut spectra are fully independent computations, even for the interior of a profile that a per-file pass already covered. Acceptable for now (see PLAN.md Section 6.3); revisit if data volume becomes a real problem.
 
 ## History
+
+**2026-10-16 - Pressure smoothed over `lowpass_sec`** (branch `main-fork`). `dPdt_smoothed`, which the speed limits here are applied to, is now lowpassed over `profile_detection.lowpass_sec` (default 1 s) instead of 3 samples - see [L1 → L2](L1_to_L2_conversion.md). On 12 canyonhead files the cast table was unchanged in count and direction (30 casts); cast starts moved by up to 4.8 s and ends by up to 16.5 s.
 
 Built on branch `chi_processing`, following [L1 → L2: direction-gated spectra](L1_to_L2_conversion.md) and [FP07 calibration and chi](L2_calc_chi.md). Prompted by a design discussion about what happens when a profile spans two raw files - investigation found `MOD_fish_lib`'s legacy `epsiProcess_crop_timeseries.m`/`epsiProcess_merge_mat_files.m` solves this by concatenating raw arrays across the boundary with no gap detection at all, while Rockland's ODAS library sidesteps the problem by assuming one profile always lives in one raw file. This step's real gap detection (rather than either extreme) was a deliberate choice, confirmed with Nicole.
 

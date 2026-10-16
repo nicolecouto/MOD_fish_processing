@@ -16,9 +16,10 @@ function [casts, metadata] = MODprocess_L1_update_cast_table(metadata)
 %
 %   A cast that runs into the end of the pressure record (its last sample
 %   is the record's last sample) is marked complete = false: during
-%   realtime acquisition it's still going. Realtime gridding leaves it out
-%   until it ends; postprocessing keeps it (the deployment is over, so it's
-%   real, if cut-off, data).
+%   realtime acquisition it's still going. The grid keeps it (marked
+%   cast_complete false) and rebins it every call until it ends
+%   (MODprocess_grid.m); postprocessing keeps it too (the deployment is
+%   over, so it's real, if cut-off, data).
 %
 %   Casts are numbered in time order across both directions
 %   (profile_number - the number Profile####.mat uses). Numbers can change when the

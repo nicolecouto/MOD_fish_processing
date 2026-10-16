@@ -124,7 +124,7 @@ T = filloutliers(ctd_T, 'linear', 'movmean', 100);
 % outside PressureTimeseries' time range has no direction information at
 % all, so interp1 returning NaN (and the > 0 comparison treating that as
 % "not down") is correct here, same reasoning as
-% MODprocess_single_L1_to_L2.m's scan-center is_down lookup.
+% mod_L2_tile_scans.m's scan-center dPdt_smoothed lookup.
 is_down_at_ctd = interp1(PressureTimeseries.dnum, double(PressureTimeseries.is_down), ...
     ctd_dnum, 'nearest') > 0;
 

@@ -2,9 +2,10 @@
 
 **Status:** design agreed 2026-10-14. Built so far: [processing runs](#processing-runs),
 [Metadata](#metadata), the worker ([Realtime](#realtime)), the [postprocessing
-templates](#postprocessing), stages 0-3, the folder READMEs, the simulator, and the [other
-pieces](#other-pieces-in-this-round) marked built. Not built yet: the grid, the cruise twist, the
-monitor app, microconductivity chi. Each section is updated as its code is built, with an entry
+templates](#postprocessing), stages 0-4 (through the grid), the folder READMEs, the simulator,
+the [monitor app](#monitor-app-built-modvis_realtime_monitor), and the [other
+pieces](#other-pieces-in-this-round) marked built. Not built yet: the cruise twist,
+microconductivity chi. Each section is updated as its code is built, with an entry
 in History below.
 
 The shared parts come first (runs, folders, stages, metadata), then [Realtime](#realtime) and
@@ -57,7 +58,7 @@ so trying something new never overwrites what's there:
     dev1_setup.yml           ship record (Start New Deployment), never edited
     meta_data_realtime.yml   one yml per run: meta_data_<run>.yml
     meta_data_nfft512.yml
-  raw/                       links to RAW_full_cruise/ - shared by every run
+  raw/                       hard links to RAW_full_cruise/ (real files) - shared by every run
   L0/                        shared by every run (L0 makes no choices; L1 re-applies the manifest)
   processed/
     realtime/  meta/  L1/  L2/  profiles_L1/  profiles_L2/
@@ -107,12 +108,12 @@ Run nfft512 - .../26_1015_fctd2_deck_test/meta/meta_data_nfft512.yml
 
 | Folder | What's in each file |
 |---|---|
-| `raw/` | Symlinks to this survey's `.modraw` files in the cruise-wide `RAW_full_cruise/` |
+| `raw/` | This survey's `.modraw` files: real files, hard links to the same files in the cruise-wide `RAW_full_cruise/` |
 | `L0/` | Parsed blocks: counts, and EFE volts/g from the standard board |
 | `processed/<run>/L1/` | Physical-unit timeseries: `epsi`, `ctd`, `alt`, `vnav`, `gps`, `fluor`, `twist`, ... |
 | `processed/<run>/L2/` | **Scans only**, one file per L1 file with the **same name**: spectra, FP07 chi, epsilon and CTD values at each scan (microconductivity chi and fluorometer scan means later, steps 7-8). The time series stay in the L1 file, so nothing is stored twice; the viewers load both (`MODutil_level_folders.m`). |
 | `processed/<run>/profiles_L1/`, `profiles_L2/` | By-profile runs: `Profile####.mat` cut by cast (time series), and its scans under the same name |
-| `processed/<run>/grid/` | `grid.mat`: one column per cast, binned in pressure (not built yet) |
+| `processed/<run>/grid/` | `grid.mat`: one column per cast (down and up), in depth bins of `grid.z_bin_m` - see [The grid](#the-grid) |
 | `processed/<run>/meta/` | Files built from this run's L1 (`time_index.mat`, `pressure_time_series.mat`, `twist_time_series.mat`, `fpo7_calibration.mat`, `l1_file_cache.mat` - with the L1 they came from), this run's `casts.mat`, `metadata.mat`, and `log/` (`processing.log`, `problems.json`) |
 
 L1 is never rewritten after it's made.
@@ -144,27 +145,53 @@ So it's clear from the folder what has been done.
 
 Each stage is an existing `MODprocess_all_*` function unless marked new. The by-file/by-profile
 switch only changes what goes in and where the result goes. `'from'` and `'until'` (`L0`, `L1`,
-`casts`, `L2`) run only some of stages 2-3; `'until', 'yml'` runs stage 1 only.
+`casts`, `L2`, `grid`) run only some of stages 2-4; `'until', 'yml'` runs stage 1 only.
 
 | # | Stage | Function | What it does |
 |---|---|---|---|
-| 0 | Route raw files (**built**) | `MODutil_route_raw_by_survey` | Reads each new file's `CTD.survey` from its header (once; kept in `Processed/raw_routing.mat`) and symlinks it into `<survey>/raw/`. Symlinks follow a growing file, and the new file rsync swaps in when it updates one; hard links would keep the old one. A file with no `CTD.survey` line (fctd_epsi before 2025, SOM-only vehicles) is reported as unrouted. Nothing in `RAW_full_cruise/` is ever changed. |
-| 1 | Metadata (**built**) | `MODsetup_build_yaml`, `MODsetup_preflight` | Builds the run yml, `meta/meta_data_<run>.yml` (realtime: each pass, rewritten only if a source changed; other runs: once), checks it and prints the run's plan; see [Metadata](#metadata). |
+| 0 | Route raw files (**built**) | `MODutil_route_raw_by_survey` | Reads each new file's `CTD.survey` from its header (once; kept in `Processed/raw_routing.mat`) and hard-links it into `<survey>/raw/`, so each `raw/` file is a real file (the same file as in `RAW_full_cruise/`, no extra space) and any copy of a survey gets real files. When rsync updates a growing file it writes a new one, so the next pass links it again (up to one pass behind). A file with no `CTD.survey` line (fctd_epsi before 2025, SOM-only vehicles) is reported as unrouted. Nothing in `RAW_full_cruise/` is ever changed. |
+| 1 | Metadata (**built**) | `MODsetup_build_yaml`, `MODsetup_preflight` | Builds the run yml, `meta/meta_data_<run>.yml` (rebuilt from `dev1_setup.yml` + the cruise yml every call, rewritten only if something changed), checks it and prints the run's plan; see [Metadata](#metadata). |
 | 2 | modraw → L0 → L1 (**built**) | `MODprocess_all_modraw_to_L0`, `MODprocess_all_L0_to_L1` | L0 into the survey's `L0/` (shared); L1 into the run's `L1/`, with physical units and calibrations. Per-file errors don't stop the run (`'continue_on_error'`), the growing file is throttled (`'newest_min_redo_s'`), and the FP07 refit runs every 10 new L1 files while watching (`'fpo7_refit_new_files'`; a one-off pass refits every time). The files built from L1 in the run's `meta/` (`time_index`, `pressure_time_series`, `twist_time_series`) are rebuilt from `l1_file_cache.mat` (`MODprocess_L1_update_file_cache`), which rereads only new or changed L1 files; L1 files are never changed. Skipped for a run with `L1_from`. Microconductivity pre-emphasis removal will move here (new `mod_L1_ucond_remove_preemphasis`, step 7). |
-| 2b | Casts (**built**) | `MODprocess_L1_update_cast_table` | **One cast table** per run (`processed/<run>/meta/casts.mat`) for both modes, from `modProcess_detect_profiles` on the L1's pressure record. A cast that runs into the end of the record is `complete = false` (still going); realtime leaves it out, postprocessing keeps it. Key per-cast results by `dnum_start` - numbers can change as the record grows. Postprocessing cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
+| 2b | Casts (**built**) | `MODprocess_L1_update_cast_table` | **One cast table** per run (`processed/<run>/meta/casts.mat`) for both modes, from `modProcess_detect_profiles` on the L1's pressure record. A cast that runs into the end of the record is `complete = false` (still going); the grid keeps it as `cast_complete` false and rebins it until it ends. Key per-cast results by `dnum_start` - numbers can change as the record grows. Postprocessing cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
 | 3 | → L2 (**built**) | `MODprocess_all_L1_to_L2` | Scans only, one file per L1 file (or per `profiles_L1/` profile) with the same name. The modules that run depend on the manifest: `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`, step 7); `fluor` → scan means (step 8); CTD scan values always. By file, scans are kept for down, up or both per `profile_detection.profile_dir` (from Start New Deployment's `profiling_direction`). |
-| 4 | Grid | new `MODprocess_grid(metadata, 'by', 'file'\|'profile')` | Columns always come from the cast table. By file, each cast's data is found in the L2 files through `time_index`; by profile, it's read from `profiles_L2/`. Bins in pressure (dz from `grid.dz_m`); only new or changed casts are rebinned. Despiking and salinity cleanup happen here for now, as a separate function the grid calls, because despiking may move to L2 later (per scan, before spectra). |
+| 4 | Grid (**built**) | `MODprocess_grid(metadata, by)` | Columns come from the cast table, down and up casts both. By file, each cast's L1 and L2 files are found through `time_index`; by profile, they're its `profiles_L1/` and `profiles_L2/` files. Depth bins of `grid.z_bin_m`; only new or changed casts are rebinned. See [The grid](#the-grid). No despiking or salinity smoothing yet: that will be its own step, once the gridded data have been looked at. |
 | 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | One winch and one spool serve every vehicle, so this chains **every survey of the cruise** in time order into one series. The count restarts at each spool change, from `MODprocess_find_spool_swaps` (**built**), which checks two sources against each other so a deleted file doesn't lose a change: every survey's `dev1_setup.yml` (`winch_spool`, and when it was written) and the cruise `Processed/spool_swap_log.csv` (Start New Deployment adds a row when the spool changes; a mid-deployment change is added by hand). It uses the log's time when both agree, falls back to whichever one has the change, and warns when they disagree. Output: `Processed/twist/twist_time_series.mat`. Each L1 file's own count still starts at 0; only this chained file carries the running total. |
-| - | Folder READMEs (**built**) | `MODutil_write_folder_readme` | `_README.txt` in `raw/`, `L0/`, `L1/`, `L2/` (and `profiles_L1/`, `profiles_L2/`): what the files hold, the run and its yml, the steps, the parameters used, the vehicle, and the code's git commit. Rewritten only when that changes. |
+| - | Folder READMEs (**built**) | `MODutil_write_folder_readme` | `_README.txt` in `raw/`, `L0/`, `L1/`, `L2/`, `grid/` (and `profiles_L1/`, `profiles_L2/`): what the files hold, the run and its yml, the steps, the parameters used, the vehicle, and the code's git commit. Rewritten only when that changes. |
 
 ## One format for every vehicle
 
-`grid/grid.mat` contains:
-- axes `time`, `pressure`, `z`, `cast_direction`, `cast_start`, `cast_end`;
-- `source` (by file or by profile);
-- CTD always (`T`, `SP`, `CT`, `SR`, `sigma0`, `w`);
-- then only what's on board: `epsilon_final`, `chi_t1`/`chi_t2`/`chi_c1`, fluorometer channels, `alt_hab`;
-- `variables` (name, unit and description from `setup/MODunits_L3.m`) and the manifest.
+### The grid
+
+`MODprocess_grid(metadata, by)` writes `processed/<run>/grid/grid.mat`: one column per cast in the
+run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_m` meters
+(Nicole's choices, 2026-10-16). Every value is a bin mean, and nothing is interpolated:
+
+- **CTD** (`T`, `SP`, `SR`, `CT`, `sigma0`, `w`, `P`): the mean of every L1 CTD sample in the bin,
+  at the CTD's full rate (like the old FCTD grid).
+- **Turbulence** (`epsilon_final`, `chi_obs_<ch>`, `chi_mle_<ch>`): the mean of the L2 scans whose
+  center is in the bin. A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m
+  bins and a scan every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts
+  have scans.
+
+`grid.mat` contains:
+- axes `z` (bin centers, m, positive down), `z_bin_m` and `latitude`; per cast `time`, `cast_start`,
+  `cast_end`, `cast_direction`, `cast_complete`, `profile_number`;
+- the CTD and turbulence fields above, only those that exist (the manifest decides);
+- `variables` (name, unit and description from `setup/MODunits_L3.m`), `source` (`'file'` or
+  `'profile'`), `source_stamp` and `provenance`.
+
+A cast keeps its column while its start, end and source files (their times) don't change, so
+each call only rebins new or changed casts, and `grid.mat` isn't rewritten when none changed; a
+cast still in progress (`cast_complete` false) is rebinned every call until it ends. A different
+`by`, `z_bin_m` or `latitude` rebins every cast. `by` must match how the run made its L2: a `by`
+with no files to read is refused, so it can't replace a run's grid with an empty one. Call the
+output something other than `grid` (e.g. `G`): `grid` is Matlab's `grid on`. Fluorometer channels and `alt_hab` come later (steps 8 and
+after).
+
+Tested on a sandbox copy of 8 canyonhead raw files (2026-10-16): 20 casts, 107 bins of 1 m, by
+file and by profile; a CTD bin and a scan bin matched their direct means; the steps template's
+grid was identical to the driver's; a second call rebinned only the casts touching the newest
+file (always redone in a one-off pass).
 
 The monitor app and any later viewer loop over `variables`, so a Mako, an FCTD with
 microconductivity and an FCTD with fluorometer all display with the same code.
@@ -233,8 +260,8 @@ about to run need, for this manifest:
 - casts: `profile_detection`;
 - L2: `afe`, `ctd`, `spectral`, `profile_detection`, plus `chi` with an fpo7 slot and `epsilon`
   with a shear slot;
-- `ctd.sample_rate` only when `ctd.compute_spectra` is true. `grid` parameters will be needed
-  once the grid stage exists.
+- `ctd.sample_rate` only when `ctd.compute_spectra` is true. The grid stage needs the `grid`
+  section.
 - Sensor types are matched ignoring case, the same way processing matches them.
 
 It also reports problems: a `calibrations_root` that isn't a folder here (asked for in
@@ -311,8 +338,9 @@ Nothing stops the worker except **Stop**:
 - Output files are written to `<file>.tmp` and then moved into place, so a Matlab killed mid-save
   (Terminal closed, power cut) never leaves a half-written `.mat`; an unreadable L0 or L1 file is
   redone or retried rather than blocking the survey.
-- A raw file deleted from `RAW_full_cruise/` leaves a broken link in `raw/`; it's listed in
-  `status.json` (`broken_links`) and otherwise left out, not processed.
+- A raw file deleted from `RAW_full_cruise/` stays in `raw/` (a hard link is a real file). A
+  symlink left from before 2026-10-16 is replaced by a hard link; one whose file is gone is
+  listed in `status.json` (`broken_links`) and left out, not processed.
 - The worker never prompts, since `-batch` can't. A survey whose parameters are incomplete
   shows "waiting for parameters" (with the list) until they're added to `cruise_meta_data.yml`
   or `meta_data_realtime.yml`; a survey with no raw files yet shows "waiting for raw files". The
@@ -326,12 +354,13 @@ Nothing stops the worker except **Stop**:
 - `RAW_full_cruise/` is looked for on every pass, so the worker can be started before the first
   rsync creates it.
 
-**Monitor app (not built yet):** `MODvis_realtime_monitor`, a uifigure. It only reads what the
+**Monitor app (built):** `MODvis_realtime_monitor`, a uifigure. It only reads what the
 worker writes, so a slow redraw or a crash can't stop processing. You can close and reopen it,
 or run another copy on a computer that mounts DEV3.
 
-A Matlab `timer` inside one session isn't used for two reasons: long processing freezes the
-plots, and one error in the timer callback stops it.
+Processing doesn't run on a Matlab `timer` inside the monitor's session, for two reasons: long
+processing would freeze the plots, and one error in the timer callback stops it. (The monitor
+does use a timer, only to redraw every 10 s.)
 
 **Files** in `<processed_root>/realtime/` (the worker only - a one-off pass on one survey writes
 none of these):
@@ -350,23 +379,61 @@ and in `<survey>/processed/<run>/meta/log/` (each run, realtime or not):
 | `processing.log` | Everything printed while that run was processed (Matlab's `diary`), warnings included |
 | `problems.json` | Files or stages currently failing: `file`, `stage`, `identifier`, `message`, `first_seen_utc`, `last_seen_utc` |
 
-### Monitor app layout (not built yet)
+### Monitor app (built: `MODvis_realtime_monitor`)
 
-Laid out after the 2018 FastCTD GUI, with epsi variables added:
+`MODvis_realtime_monitor()` (or with the processed folder). How to use it, with an example: see
+[Plots and visualization](../visualization/index.md#modvis_realtime_monitorm). It reads the
+worker's files every 10 s and writes only `control.json` and saved PNGs, so it can't stop
+processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi variables added:
 
 - **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
-  last update; problems count.
-- **Left, colour sections:** time vs pressure, one column per cast, sigma0 contours. Variables
+  last update; problems count; missing parameters.
+- **Left, colour sections:** depth vs time, one column per cast, sigma0 contours. Variables
   are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
 - **Middle:**
   - pressure vs time;
   - TS of the last ~5 casts, coloured by age, to catch conductivity problems;
-  - cruise twist count vs time (all vehicles - one winch spool), with spool changes marked;
+  - cruise twist count vs time (all vehicles - one winch spool), with spool changes marked (for
+    now the survey's own twist count, until the cruise twist is built);
   - space left for more panels.
 - **Bottom, streaming log**, with errors highlighted (click one for the full message).
 - **Right, control panel:** Start / Pause / Stop, Preflight, time span, depth range, colour
-  limits and colormaps per variable, open the selected time in `MODvis_timeseries` /
-  `MODvis_spectra`, Save PNG. Every plot setting is editable here and shown on the plot.
+  limits and colormap, open the run in `MODvis_timeseries` / `MODvis_spectra` (clicking the
+  section shows which L1/L2 file holds that time), Save PNG. Every plot setting is editable here
+  and shown on the plot.
+
+### Before the cruise: dry run on DEV1 and DEV3
+
+Run once on the ship computers, with the code that will be used at sea:
+
+1. **Code, on DEV1 and on DEV3.** In `Software_current_cruise/MOD_fish_processing`: `git switch
+   main-fork`, `git pull`, then `bash acquisition/check_software/check_ship_setup.sh` and fix
+   every `FIX` line. In `MOD_fish_calibrations`: `git pull` and `git fetch --tags`.
+2. **The cruise yml** (`Processed/cruise_meta_data.yml` on DEV3): compare it with
+   `setup/cruise_meta_data_template.yml`. Values added or renamed since it was made are listed by
+   preflight as missing, or in a "no longer used" note (2026-10-16: `lowpass_sec` and
+   `speedLim_scan_m_s` new, `lowpass_factor` and `dz_m` gone, `dz_m` is now `grid.z_bin_m`).
+3. **The simulator on DEV3**, in a test folder (not `Current_Cruise`), so nothing under
+   `FCTD_EPSI_DATA` is written. In `Simulated_Data/Processed/`: copy `cruise_meta_data.yml`, and
+   make `<survey>/meta/dev1_setup.yml` for the survey being replayed (its name must match the
+   raw files' `CTD.survey`). Start the worker on that folder:
+   `"./Start Realtime Processing.command" /Users/Shared/EPSI_PROCESSING/Simulated_Data/Processed`.
+   In a second Matlab, replay a copy of a real deployment into its `RAW_full_cruise/` with
+   `MODutil_simulate_acquisition` (above). Check `realtime/status.json` and `cruise_log.txt`;
+   in the survey: `raw/` files are real files (`stat -f %l <file>` is 2), and L0, L1, L2,
+   `casts.mat` and `grid/grid.mat` are made. Stop it with `{"command": "stop"}` in
+   `realtime/control.json`. If `status.json` lists the files as unrouted ("could not link"),
+   hard links don't work on that path: `acquisition/config.yml` has `processed_root` as
+   `/Volumes/DEV3_HD/...`, and if that is a network mount on DEV3 itself, use DEV3's local
+   path (`/Users/Shared/...`) there instead. (Not checked yet.)
+4. **The real path, DEV1 to DEV3.** Start New Deployment on DEV1 for a short deck test, record a
+   few minutes, and start the worker on DEV3 with no argument (`Current_Cruise/Processed`). The
+   files should arrive through `sync_data_dev1_to_dev3.sh`, be routed into the survey's `raw/`,
+   and go through L0 and L1. On deck the fish isn't profiling, so there are no casts and no
+   scans, and the grid is empty.
+5. **The share drive**, 5 minutes later: the deck-test survey is in `RR2609/MOD/03_raw_data/`
+   with real files in `raw/`. Copy it to a laptop and run `templates/MODtemplate_postprocess_steps.m`
+   on the copy (see [Where to postprocess](#where-to-postprocess-a-copy-not-dev3-or-the-share)).
 
 ### Testing: the simulator
 
@@ -470,6 +537,20 @@ MODvis_spectra(fullfile(S, 'processed', 'nfft512'))                   % its L2, 
 - `'until', 'yml'` checks every stage from `'from'` on; the processing call itself only needs the
   parameters of the stages it runs.
 
+### Where to postprocess: a copy, not DEV3 or the share
+
+- DEV1 and DEV3 are for acquisition and the realtime worker - don't postprocess on them.
+- Every 5 minutes a cron job (`muri2026_rsync_to_sharedrive.sh`, `rsync -au --delete`) copies
+  DEV3's `Processed/` to the share drive (`RR2609/MOD/03_raw_data/`). Anything written into a
+  folder on the share that isn't on DEV3 is deleted by the next sync, so don't process there
+  either.
+- Copy what you need from the share to your own computer and process the copy: one raw file, a
+  few, or a whole survey folder. Since 2026-10-16 each survey's `raw/` holds real files (hard
+  links on DEV3), so any copy has the data.
+- For a copied survey, `survey_folder` is the copy. Copy `cruise_meta_data.yml` too and put it
+  next to the survey folder (it's found there by name), or give its path as `cruise_yml`.
+  Preflight asks once for the calibrations folder if the ship's isn't on your computer.
+
 ## Other pieces in this round
 
 - **Built:** `MODutil_read_som3(modraw_file)` prints (or returns) a raw file's `$SOM3` block: the
@@ -491,11 +572,11 @@ MODvis_spectra(fullfile(S, 'processed', 'nfft512'))                   % its L2, 
   (provenance) instead of the section notes. Setup keeps every key, because it's copied into
   every `.modraw` header.
 - **Built:** by-file scan selection in `mod_L2_tile_scans.m` follows `profile_detection.profile_dir`
-  (`down`, `up` or `both`) instead of always keeping descending scans. "Up" is not descending and
-  `dPdt_smoothed < 0`; gaps and times outside the pressure record are dropped in every case.
-  There's no speed threshold yet: a slow, nearly stationary stretch counts as whichever way it's
-  drifting (with `both`, almost every scan with a pressure rate is kept), and `is_down` is
-  widened by `buffer_bins` while "up" isn't.
+  (`down`, `up` or `both`) instead of always keeping descending scans. Since 2026-10-16 a scan is
+  down if `dPdt_smoothed > speedLim_scan_m_s` (0.05 dbar/s) at its center and up if it's below
+  `-speedLim_scan_m_s`, with the pressure smoothed over `lowpass_sec` (1 s); slower scans,
+  gaps and times outside the pressure record are dropped. See
+  [L1 → L2](L1_to_L2_conversion.md#diagnostic-scan-direction-on-16-hz-ctd-pressure).
 
 ## History
 
@@ -548,3 +629,5 @@ rebuilt the same way every time (no "made once" runs); other values come from an
 unreachable calibrations folder, and a working one in the run yml is kept). A run remembers its
 cruise yml and `L1_from`. New template `MODtemplate_postprocess_steps.m` (one line per level, no
 driver).
+
+**2026-10-16 - raw/ holds real files (hard links); where to postprocess** (branch `main-fork`). Nicole: the files in `<survey>/raw/` must be real files people can copy, one, a few or a whole survey, and readable from the hard drive after the cruise. `MODutil_route_raw_by_survey` now makes hard links instead of symlinks, and links a file again when rsync has replaced it (a growing file) or when it's an old symlink. New "Where to postprocess" section: copy from the share, don't process on DEV3 or on the share (`--delete`). Scan direction now uses `lowpass_sec` and `speedLim_scan_m_s` (see [L1 → L2](L1_to_L2_conversion.md)). Tested in a scratchpad sandbox (`SESSION_LOG.md`, 2026-10-16).

@@ -25,12 +25,12 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %     - Direction gating (PressureTimeseries) is OPTIONAL (3rd arg).
 %       MODprocess_all_L1_to_L2.m passes it - a scan's center time is nearest-matched
 %       against it, and a scan is kept only when the fish was moving in a
-%       direction metadata.PROFILES.profile_dir trusts: 'down' (is_down),
-%       'up' (not is_down and dPdt_smoothed < 0) or 'both' (either).
-%       Gaps (NaN dPdt) and times outside the pressure record are dropped
-%       in every case. There is no speed threshold: a slow, nearly
-%       stationary stretch counts as whichever way it's drifting, and
-%       is_down is widened by buffer_bins while 'up' isn't. For a profile cut by
+%       direction metadata.PROFILES.profile_dir trusts: 'down'
+%       (dPdt_smoothed > speedLim_scan_m_s), 'up' (dPdt_smoothed <
+%       -speedLim_scan_m_s) or 'both' (either). A scan slower than that
+%       (surface, turnarounds), in a gap in the pressure record (two
+%       samples more than ctd_gap_factor median intervals apart) or
+%       outside it is dropped. For a profile cut by
 %       modProcess_detect_profiles.m (already one direction) this mostly
 %       confirms the direction; called without it, every candidate scan
 %       is kept.
@@ -51,8 +51,9 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %              metadata.PROCESS.fft_length, .fft_segments_per_scan
 %              (together derive N_epsi/scan_length, dof, and
 %              fft_seg_starts - see OUTPUTS), .scan_overlap, .Fs_epsi,
-%              and, with PressureTimeseries, PROFILES.profile_dir.
-%   PressureTimeseries - (optional) struct with dnum, is_down, dPdt_smoothed (from
+%              and, with PressureTimeseries, PROFILES.profile_dir,
+%              PROFILES.speedLim_scan_m_s and PROFILES.ctd_gap_factor.
+%   PressureTimeseries - (optional) struct with dnum, dPdt_smoothed (from
 %              mod_L1_detect_profiling_direction.m via
 %              meta/pressure_time_series.mat) - the whole-deployment
 %              record, not sliced to this epsi record. When provided,
@@ -118,17 +119,29 @@ if nargin < 3
 end
 have_direction_gate = ~isempty(PressureTimeseries);
 if have_direction_gate
-    metadata = MODsetup_validate_metadata(metadata, yaml_file, {'profile_dir'});
+    metadata = MODsetup_validate_metadata(metadata, yaml_file, {'profile_dir', 'speedLim_scan_m_s', 'ctd_gap_factor'});
     profile_dir = lower(char(string(metadata.PROFILES.profile_dir)));
     if ~any(strcmp(profile_dir, {'down', 'up', 'both'}))
         error('mod_L2_tile_scans:badProfileDir', ...
             'profile_detection.profile_dir must be down, up or both (got ''%s'').', profile_dir);
     end
-    has_dPdt = isfield(PressureTimeseries, 'dPdt_smoothed');
-    if ~has_dPdt && ~strcmp(profile_dir, 'down')
-        error('mod_L2_tile_scans:noDPdt', ['profile_dir ''%s'' needs PressureTimeseries.dPdt_smoothed ' ...
-            '(rebuild meta/pressure_time_series.mat with the current L0 -> L1).'], profile_dir);
+    if ~isfield(PressureTimeseries, 'dPdt_smoothed')
+        error('mod_L2_tile_scans:noDPdt', ['Scan direction needs PressureTimeseries.dPdt_smoothed ' ...
+            '(rebuild meta/pressure_time_series.mat with the current L0 -> L1).']);
     end
+    speed_lim = metadata.PROFILES.speedLim_scan_m_s;
+    if ~(isnumeric(speed_lim) && isscalar(speed_lim) && speed_lim >= 0)
+        error('mod_L2_tile_scans:badSpeedLim', ...
+            'profile_detection.speedLim_scan_m_s must be a number >= 0 dbar/s.');
+    end
+    % A scan center between two pressure samples further apart than
+    % ctd_gap_factor * (median sample interval) is in a gap in the pressure
+    % record (mod_L1_detect_profiling_direction.m STEP 1): dPdt_smoothed
+    % isn't NaN there (it's computed per segment), so the gap is checked
+    % here. A record of fewer than 2 samples has no direction anywhere.
+    pt_dnum = PressureTimeseries.dnum(:);
+    pt_index = (1:numel(pt_dnum))';
+    max_gap = metadata.PROFILES.ctd_gap_factor * median(diff(pt_dnum));
 end
 have_segment_id = isfield(epsi, 'segment_id') && ~isempty(epsi.segment_id);
 
@@ -160,6 +173,36 @@ idx1_all = nan(nbscan_candidate, 1);
 dnum_all = nan(nbscan_candidate, 1);
 keep = false(nbscan_candidate, 1);
 
+% Direction of every candidate scan at once, from dPdt_smoothed at its
+% center time. Deliberately no 'extrap': a center outside
+% [min(PressureTimeseries.dnum), max(PressureTimeseries.dnum)] has no real
+% pressure information at all (e.g. epsi logging that started hours before
+% DeepSolo's pressure record begins), and neither has one inside a gap -
+% both get NaN, which counts as neither down nor up, rather than being
+% nearest-matched to a potentially far-distant, meaningless sample.
+if have_direction_gate
+    centers = epsi.dnum(scan_starts + floor(N_epsi / 2) - 1);
+    centers = centers(:);
+    dPdt = nan(nbscan_candidate, 1);
+    if numel(pt_dnum) >= 2
+        i_before = interp1(pt_dnum, pt_index, centers, 'previous');
+        i_after = interp1(pt_dnum, pt_index, centers, 'next');
+        ok = ~isnan(i_before) & ~isnan(i_after);
+        ok(ok) = pt_dnum(i_after(ok)) - pt_dnum(i_before(ok)) <= max_gap;
+        dPdt(ok) = interp1(pt_dnum, PressureTimeseries.dPdt_smoothed(:), centers(ok), 'nearest');
+    end
+    is_down = dPdt > speed_lim;
+    is_up = dPdt < -speed_lim;
+    switch profile_dir
+        case 'down'
+            direction_ok = is_down;
+        case 'up'
+            direction_ok = is_up;
+        otherwise
+            direction_ok = is_down | is_up;
+    end
+end
+
 for iScan = 1:nbscan_candidate
     idx0 = scan_starts(iScan);
     idx1 = idx0 + N_epsi - 1;
@@ -174,33 +217,8 @@ for iScan = 1:nbscan_candidate
     center_idx = idx0 + floor(N_epsi / 2) - 1;
     center_dnum = epsi.dnum(center_idx);
 
-    if have_direction_gate
-        % Deliberately no 'extrap': a scan center time outside
-        % [min(PressureTimeseries.dnum), max(PressureTimeseries.dnum)] has
-        % no real pressure information at all (e.g. epsi logging that
-        % started hours before DeepSolo's pressure record begins) -
-        % interp1 returns NaN for it here, which the > 0 comparison below
-        % correctly treats as "not down" rather than nearest-matching it
-        % to a potentially far-distant, meaningless sample.
-        is_down = interp1(PressureTimeseries.dnum, double(PressureTimeseries.is_down), ...
-            center_dnum, 'nearest') > 0;
-        is_up = false;
-        if ~strcmp(profile_dir, 'down')
-            % NaN dPdt (gap or too-short segment) is neither
-            is_up = ~is_down && interp1(PressureTimeseries.dnum, PressureTimeseries.dPdt_smoothed, ...
-                center_dnum, 'nearest') < 0;
-        end
-        switch profile_dir
-            case 'down'
-                keep_scan = is_down;
-            case 'up'
-                keep_scan = is_up;
-            otherwise
-                keep_scan = is_down || is_up;
-        end
-        if ~keep_scan
-            continue
-        end
+    if have_direction_gate && ~direction_ok(iScan)
+        continue
     end
 
     idx0_all(iScan) = idx0;

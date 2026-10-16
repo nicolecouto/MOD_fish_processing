@@ -140,6 +140,38 @@ app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup
     From a script, `app.exportScans('this' | 'all', outfile)` skips the dialog.
 - Also opens older L0 files (raw `channel1..N` counts) and L1 files.
 
+### MODvis_realtime_monitor.m
+
+The live monitor for the realtime worker on DEV3, laid out after the 2018 FastCTD GUI. It only
+reads the worker's files and refreshes every 10 s; it writes only `realtime/control.json` (Pause,
+Stop) and saved PNGs, and **Start** launches the worker as its own `matlab -batch` process, so
+closing the monitor never stops processing.
+
+```matlab
+app = MODvis_realtime_monitor();                                  % processed_root from acquisition/config.yml
+app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folder
+```
+
+- **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
+  missing parameters, last update (red when there are problems or missing parameters).
+- **Left:** a colour section of the survey's grid (`processed/realtime/grid/grid.mat`), one
+  column per cast, depth vs time, with sigma0 contours. Any field in `grid.variables`;
+  epsilon and chi as log10. Click to pick a time: the L1/L2 file holding it is shown.
+- **Middle:** pressure vs time; T-S of the last 5 casts, coloured by age; the survey's twist
+  count (the cruise-wide count isn't built yet).
+- **Bottom:** the survey's `processing.log` (or `cruise_log.txt`), problem lines in red; click a
+  line to see all of it.
+- **Right:** Start / Pause / Stop; Preflight (the worker's last preflight for the survey, from
+  `status.json`); section variable, casts (both/down/up), colormap, colour and depth limits
+  (empty = auto), last hours (0 = all), log; open the run in `MODvis_timeseries` or
+  `MODvis_spectra`; Save PNG (`realtime/figures/`). Each setting is written on the plot it changes.
+
+![MODvis_realtime_monitor.m panels: T section (both directions), log10 chi_obs_t1 section (down casts), pressure, T-S of the last 5 casts - canyonhead sandbox replay, 2026-10-16](../concepts/images/MODvis_realtime_monitor_panels.png)
+
+The panels above were exported one by one from a sandbox replay of 4 canyonhead files. The
+whole window couldn't be captured from the Matlab used for testing (`exportapp` failed there;
+Save PNG reports it if it fails).
+
 ### MODvis_twist_timeseries.m
 
 Plots cable twist count (gyro method) vs. time for a deployment, highlighting upcast samples

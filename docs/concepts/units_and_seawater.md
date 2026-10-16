@@ -119,8 +119,8 @@ calibrated against Practical Salinity and there's no TEOS-10 formula to replace 
 
 ## Per-level units registries
 
-`setup/MODunits_L0.m`, `MODunits_L1.m`, `MODunits_L2.m` (and a stub `MODunits_L3.m`, reserved until
-`modProcess_L3_grid_profiles.m` exists) are static reference functions, each returning a struct
+`setup/MODunits_L0.m`, `MODunits_L1.m`, `MODunits_L2.m` and `MODunits_L3.m` (the grid,
+`MODprocess_grid.m`) are static reference functions, each returning a struct
 keyed by field name -> `struct('unit', ..., 'description', ...)` - one source of truth per
 processing level for what every field means and what units it's in, callable any time without
 needing real data in hand. Mirrors `setup/MODsetup_metadata_field_registry.m`'s existing pattern

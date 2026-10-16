@@ -66,9 +66,9 @@ spectral:
 
 # Profiling direction and cast detection from the pressure time series (every vehicle)
 profile_detection:
-  # Profiling-direction detection: lowpass cutoff period = lowpass_factor*median(dt)
+  # Lowpass cutoff period [s] for the pressure record before dPdt
   # (mod_L1_detect_profiling_direction.m)
-  lowpass_factor: 3
+  lowpass_sec: 1
   # Profiling-direction/profile-picking: gaps in the ctd/pressure record >
   # ctd_gap_factor*median(dt) split the record, not interpolated across
   # (mod_L1_detect_profiling_direction.m, modProcess_detect_profiles.m). Named
@@ -91,6 +91,9 @@ profile_detection:
   # Profile-picking: -dPdt threshold [dbar/s] to END an upcast run
   # (modProcess_detect_profiles.m)
   speedLim_up_end_m_s: 0.05
+  # Scan direction: a scan is down if dPdt > this [dbar/s] at its center, up if dPdt < -this
+  # (mod_L2_tile_scans.m)
+  speedLim_scan_m_s: 0.05
   # Profile-picking: minimum pressure range [dbar] for a detected run to count as a real
   # profile (modProcess_detect_profiles.m)
   minLength_m: 10
@@ -221,7 +224,7 @@ epsilon:
 
 # Gridding (every vehicle)
 grid:
-  # Vertical grid spacing [m] for L2->L3 profile gridding. 1 m is the legacy default; Jen's
-  # 2026 ASTRAL fork used 0.5 m, enabled by that deployment's smaller fft_length. See
-  # SESSION_LOG.md, 2026-09-02.
-  dz_m: 1
+  # Depth bin size [m] for the grid (MODprocess_grid.m). 1 m is the legacy Epsi default
+  # (FastCTD_GridData.m used 0.5 m; Jen's 2026 ASTRAL fork used 0.5 m, enabled by that
+  # deployment's smaller fft_length - SESSION_LOG.md, 2026-09-02).
+  z_bin_m: 1

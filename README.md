@@ -14,11 +14,12 @@ setup
 
 templates
     MODtemplate_postprocess.m - postprocessing one survey: edit the settings block (survey, run name, cruise yml, L1_from, by, last stage), run it; same code as the realtime worker
-    MODtemplate_postprocess_by_stage.m - the same, one section per stage (L0, L1, casts, L2) to look at each stage's output before the next
+    MODtemplate_postprocess_by_stage.m - the same, one section per stage (L0, L1, casts, L2, grid) to look at each stage's output before the next
     MODtemplate_postprocess_steps.m - postprocessing one line per level (metadata = ..., L0_files = ..., L1_files = ..., ...): the processing functions called directly, no driver
 
 processing
     MODprocess_deployment.m - the one driver: realtime worker (MODprocess_deployment(processed_root, 'watch', true), or double-click "Start Realtime Processing.command") and one-pass/postprocessing runs (MODprocess_deployment(survey_folder, 'run', name, ...)): one yml per run (survey/meta/meta_data_<run>.yml) and one output folder (survey/processed/<run>/); see docs/workflow/processing_data.md
+    MODprocess_grid.m - the grid: one column per cast (down and up) in depth bins of grid.z_bin_m - CTD = mean of the L1 samples in each bin, epsilon/chi = mean of the scans whose center is in it (processed/<run>/grid/grid.mat)
     MODprocess_find_spool_swaps.m - winch spool changes for the cruise twist count, from the dev1_setup.yml files and spool_swap_log.csv together
 
 util
@@ -28,6 +29,7 @@ util
     MODutil_provenance.m - the provenance field in every L0/L1/L2/profiles file: the file(s) and run yml it was made from (relative to the survey), the yml's SHA-256, run, time and code commit
 
 visualization
+    MODvis_realtime_monitor.m - the live monitor for the realtime worker: status, grid sections (depth vs time, any gridded variable), pressure, T-S of the last casts, twist, the processing log, Start/Pause/Stop
     MODvis_timeseries.m - plots time series from a directory of L0, L1, L2, or Profile .mat files, or a processing run's folder (opens its L1) (formerly L0ExplorerApp.m)
     MODvis_spectra.m - browses a folder of .mat files carrying per-scan spectra (this repo's own L2/profile output, or legacy MOD_fish_lib/EPSILOMETER Profile*.mat), with wavenumber/frequency spectrum plots, theoretical overlays, FPO7 noise floors, and ADC bit-noise (24/20/16-bit) and accelerometer noise reference lines
     MODvis_spectra_L0.m - quick-look EFE spectra straight from L0 files vs ADC bit noise, no setup.yml needed: timeseries rows on top, click to pick the spectrum window; nfft/window/overlap/taper/detrend editable in the viewer; export one scan or the whole file's scans (spectra, f, noise floors, indices, settings) to .mat
