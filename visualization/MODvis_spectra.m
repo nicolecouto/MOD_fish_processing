@@ -6,7 +6,9 @@ classdef MODvis_spectra < handle
     %     MODprocess_single/all_L1_to_L2_profiles.m): dnum, pressure,
     %     spectra.f, spectra.(channel)_f [nbscan x nfreq], nfft, dof,
     %     Fs_epsi, N_epsi. Raw per-channel context (rows 2-3) is pulled
-    %     from the matching file in a sibling L1 folder.
+    %     from the L1 file with the same name (MODutil_level_folders.m:
+    %     the run's L1/, the run.L1_from run's L1/, or profiles_L1/ for
+    %     profiles_L2/). Pick an L2 folder or a processed/<run>/ folder.
     %   - Legacy MOD_fish_lib/EPSILOMETER Profile*.mat (e.g.
     %     data_for_reorg/epsi_mako/astral/profiles/*.mat): Profile.dnum/.pr/
     %     .f, Profile.Pt_volt_f/.Ps_volt_f/.Pa_g_f (each a struct keyed by
@@ -787,17 +789,17 @@ classdef MODvis_spectra < handle
                 return;
             end
 
+            % A processing run's folder opens its L2/. The L1 file with the
+            % same name holds each L2 file's time series - its own L1/, the
+            % L1 of the run named in run.L1_from, or profiles_L1/ for
+            % profiles_L2/ (MODutil_level_folders.m).
+            [L1_dir, L2_dir] = MODutil_level_folders(folder);
+            if L2_dir ~= ""
+                folder = string(L2_dir);
+            end
+            app.L1Dir = string(L1_dir);
             app.Folder = folder;
             app.FolderLbl.Text = folder;
-
-            % L1 files live in the sibling 'L1' folder next to this L2
-            % folder (MODprocess_all_L1_to_L2.m's default L2_dir layout).
-            candidate_L1 = fullfile(fileparts(char(folder)), 'L1');
-            if isfolder(candidate_L1)
-                app.L1Dir = string(candidate_L1);
-            else
-                app.L1Dir = "";
-            end
 
             d = dir(fullfile(folder,"*.mat"));
             names = sort(string({d.name})');
@@ -889,7 +891,7 @@ classdef MODvis_spectra < handle
             if ~isfield(app.CurrentData,'dnum') || isempty(app.CurrentData.dnum)
                 app.GlobalDnum = [];
                 app.clearAll();
-                app.SpecTitle.Text = 'No scans in this file (no descending data, or file too short)';
+                app.SpecTitle.Text = 'No scans in this file (no data in the profile_dir direction, or file too short)';
                 return;
             end
 

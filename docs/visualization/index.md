@@ -21,7 +21,11 @@ Supports nested fields (`epsi.t1_volt`, `ctd.P_raw`, `gps.latitude`, ...). Forme
 ```matlab
 app = MODvis_timeseries();                 % opens a folder chooser
 app = MODvis_timeseries('/path/to/L0');    % or point it at a folder directly
+app = MODvis_timeseries('<survey>/processed/realtime');  % a processing run: opens its L1
 ```
+
+Given a processing run's folder ([Processing data](../workflow/processing_data.md#processing-runs)),
+it opens that run's L1 - its own, or the L1 of the run named in `L1_from`.
 
 *No example screenshot committed yet.*
 
@@ -35,7 +39,12 @@ Every curve has a checkbox to show or hide it.
 ```matlab
 app = MODvis_spectra();
 app = MODvis_spectra('/path/to/profiles');
+app = MODvis_spectra('<survey>/processed/nfft512');  % a processing run: its L2, with the matching L1
 ```
+
+An L2 file holds scans only; the raw channels come from the L1 file with the same name. Given an
+`L2/` folder or a processing run's folder, it finds that L1 with `MODutil_level_folders.m`: the
+run's own `L1/`, the `L1_from` run's `L1/`, or `profiles_L1/` for `profiles_L2/`.
 
 ![Example MODvis_spectra.m window, ASTRAL Profile100 scan 159](../concepts/images/MODvis_spectra_example.png)
 

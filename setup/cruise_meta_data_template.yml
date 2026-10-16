@@ -6,8 +6,9 @@
 #
 # Put the reviewed copy at <processed_root>/cruise_meta_data.yml.
 # MODsetup_build_yaml.m merges it with each survey's meta/dev1_setup.yml
-# (from Start New Deployment) into meta/depl_meta_data.yml, which
-# processing reads. Values in dev1_setup.yml win over this file.
+# (from Start New Deployment) into each processing run's yml,
+# meta/meta_data_<run>.yml, which processing reads. Values in
+# dev1_setup.yml win over this file.
 # A section may be left out if no vehicle on the cruise needs it.
 # Keep the 2-space indentation and plain "key: value" lines when editing.
 

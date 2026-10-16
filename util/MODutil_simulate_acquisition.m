@@ -28,7 +28,7 @@ function MODutil_simulate_acquisition(source_raw_dir, incoming_dir, varargin)
 %   (none - writes files into incoming_dir and prints a line per file)
 %
 % CALLED BY
-%   (by hand, for testing; see docs/workflow/realtime_processing.md "Testing")
+%   (by hand, for testing; see docs/workflow/processing_data.md "Testing: the simulator")
 %
 % CALLS
 %   (none)

@@ -9,7 +9,8 @@ modes (see `PLAN.md` Section 4, "Two processing modes"):
 - **Postprocess** - `modraw → L1 → profiles → grid`. Run once a deployment (or a leg of one) is
   done, against a complete L1 dataset - produces the final science-quality output.
 
-L0 and L1 are shared, unmodified, by both modes - the fork happens entirely at the L2 step. Both
+L0 is shared by every processing run; L1 belongs to a run, and another run can reuse it
+(`L1_from`) when its L1 settings match - the fork happens at the L2 step. Both
 L2 paths share the same windowing core (`mod_L2_tile_scans.m`) but compute spectra independently;
 that's a deliberate simplicity-over-storage-optimization call, not an oversight.
 
@@ -24,12 +25,13 @@ Click any diagram to expand it.
     about spectra or casts. To postprocess, start from the L1 files; every spectral-processing
     and profile-picking choice happens after L1.
 
-!!! note "Planned: one driver for realtime and postprocessing"
-    [Realtime and postprocessing driver](realtime_processing.md) is the agreed design (2026-10-14)
-    for a single manifest-driven driver, an L2 that carries the L1 timeseries plus scans,
-    gridding from one cast table, and a live monitor app. Built so far: the driver
-    (`MODprocess_deployment.m`, realtime worker and one-pass runs), raw-file routing, the cast
-    table, metadata build/preflight. This page describes the per-step functions as they are today.
+!!! note "One driver for realtime and postprocessing"
+    [Processing data](processing_data.md) describes the single manifest-driven driver
+    (`MODprocess_deployment.m`): processing runs (one yml in the survey's `meta/` and one
+    `processed/<run>/` folder each; raw/ and L0/ shared), the realtime worker, the
+    postprocessing templates (`templates/`), an L2 that holds scans only, gridding from one cast
+    table (not built yet) and a live monitor app (not built yet). This page describes the
+    per-step functions.
 
 ## Shared foundation: modraw → L0 → L1
 
@@ -129,11 +131,11 @@ flowchart LR
 |---|---|---|
 | `MODprocess_all_L1_to_L2.m` | L1_dir, metadata, L2_dir → L2_files | Batch orchestrator; no-ops if `!has_epsi` |
 | `MODprocess_single_L1_to_L2.m` | data, metadata, PressureTimeseries → L2data | Thin wrapper around `mod_L2_tile_scans.m` |
-| `mod_L2_tile_scans.m` | epsi, ctd, metadata, PressureTimeseries → L2data | 50%-overlap scan tiling, direction-gated (`is_down`), shared with postprocess |
+| `mod_L2_tile_scans.m` | epsi, ctd, metadata, PressureTimeseries → L2data | 50%-overlap scan tiling, direction-gated by `profile_dir` (down/up/both), shared with postprocess |
 | `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Raw Welch spectrum per AFE channel (`mod_scan_welch_psd.m`, per-segment detrend) - `acc`→`_g`, everything else→`_volt`, uncorrected |
 | `mod_scan_welch_psd.m` | x, fft_length, seg_starts, Fs, (taper, detrend) → Pxx, f | Welch average with each segment detrended on its own - shared by `mod_scan_get_spectra.m` and `MODvis_spectra_L0.m` |
 | `MODvis_timeseries.m` | browses L0/L1/L2/Profile folder | Any dnum-carrying struct, up to 6 rows, dual y-axis |
-| `MODvis_spectra.m` | browses L2 folder + sibling L1 | Click a point → that scan's raw spectrum, all channels |
+| `MODvis_spectra.m` | browses an L2 folder or a run folder, with the matching L1 (`MODutil_level_folders.m`: the run's own, the `L1_from` run's, or `profiles_L1/`) | Click a point → that scan's raw spectrum, all channels |
 | `MODvis_twist_timeseries.m` | TwistTimeseries → live axes | Cable-twist count for fin adjustment during the cast |
 
 ## Postprocess: L1 → profiles → grid
@@ -165,7 +167,7 @@ flowchart LR
   PROFALL -->|per profile, loads raw file| PROFONE["MODprocess_single_<br/>L1_to_L2.m"]
   PROFONE --> TILE2["mod_L2_tile_<br/>scans.m"]
   TILE2 -->|"if has_epsi & direction matches profile_dir"| SPEC2["mod_scan_get_<br/>spectra.m"]
-  SPEC2 --> PROFOUT[("profiles_L2/Profile####.mat<br/>ctd always, spectra gated")]
+  SPEC2 --> PROFOUT[("profiles_L2/Profile####.mat<br/>scans only, spectra gated")]
   TILE2 -.->|"direction doesn't match"| PROFOUT
 
   PROFOUT -.-> GRID["modProcess_L3_<br/>grid_profiles.m<br/>(not started)"]

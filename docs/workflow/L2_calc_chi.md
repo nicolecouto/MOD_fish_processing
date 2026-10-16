@@ -1,6 +1,6 @@
 # FP07 calibration and chi: the time-constant deconvolution
 
-**Status:** working, tested against real `epsi_mako/blt2021_0715` and `epsi_mako/astral` data in a sandbox. Built on branch `chi_processing`, off `l1_to_l2_conversion`, following [L1 → L2: downcast-gated spectra](L1_to_L2_conversion.md). Two chi estimators now exist - `chi_obs` (direct wavenumber integration) and `chi_mle` (Batchelor-spectrum MLE fit) - see Modules 5-8 below. The AFE electronics/ADC transfer function (`MODsetup_define_filters.m`, Module 2b) is now also implemented, closing a second gap from `MOD_fish_lib`'s chi calculation - see "Why this branch exists" and Module 2b.
+**Status:** working, tested against real `epsi_mako/blt2021_0715` and `epsi_mako/astral` data in a sandbox. Built on branch `chi_processing`, off `l1_to_l2_conversion`, following [L1 → L2: direction-gated spectra](L1_to_L2_conversion.md). Two chi estimators now exist - `chi_obs` (direct wavenumber integration) and `chi_mle` (Batchelor-spectrum MLE fit) - see Modules 5-8 below. The AFE electronics/ADC transfer function (`MODsetup_define_filters.m`, Module 2b) is now also implemented, closing a second gap from `MOD_fish_lib`'s chi calculation - see "Why this branch exists" and Module 2b.
 
 ## Why this branch exists
 

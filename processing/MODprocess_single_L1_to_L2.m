@@ -37,15 +37,19 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   span both directions, so per-scan direction gating (below) is what
 %   actually filters it, not this deployment-level check. When epsi isn't
 %   tiled, mod_L2_tile_scans.m's empty-input path still runs (0 scans),
-%   and this function still returns real ctd/profile-bookkeeping fields -
+%   and this function still returns the profile-bookkeeping fields -
 %   every call gets the same field set, whether or not it has spectra.
 %
-%   Only scans classified as descending (PressureTimeseries.is_down at the
-%   scan's center time) get processed, when PressureTimeseries is given -
-%   realtime mode always passes it; post-processing mode omits it, since a
-%   profile from modProcess_detect_profiles.m is already direction-pure by
-%   construction (per-scan gating would be redundant) - see
-%   mod_L2_tile_scans.m's DESCRIPTION.
+%   L2 holds scans only: the time series stay in the L1 file (or
+%   profiles_L1 Profile####.mat) this came from, which has the same file
+%   name, so nothing is stored twice. Load both to see a scan in context.
+%
+%   Only scans in the direction(s) profile_detection.profile_dir trusts
+%   (down, up or both, from PressureTimeseries at the scan's center time)
+%   get processed, when PressureTimeseries is given -
+%   MODprocess_all_L1_to_L2.m passes it in both modes. For a profile from
+%   modProcess_detect_profiles.m (already one direction) it mostly confirms
+%   the profile's direction - see mod_L2_tile_scans.m's DESCRIPTION.
 %
 %   Also computes chi_obs (direct-integration thermal variance dissipation
 %   rate) per scan for every fpo7 channel that has a resolved
@@ -101,18 +105,15 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %               mod_scan_get_spectra.m, mod_scan_calc_chi_obs.m,
 %               mod_scan_calc_epsilon.m, mod_scan_calc_chi_mle.m - see each
 %               one's own header for the specific fields it reads.
-%   PressureTimeseries - (optional) struct with dnum, is_down (from
+%   PressureTimeseries - (optional) struct with dnum, is_down, dPdt_smoothed (from
 %               mod_L1_detect_profiling_direction.m via
-%               meta/pressure_time_series.mat) - the whole-deployment
+%               pressure_time_series.mat) - the whole-deployment
 %               record, not sliced to this file/profile. Passed straight
 %               through to mod_L2_tile_scans.m - see that function's
 %               INPUTS for exact gating semantics.
 %
 % OUTPUTS
 %   L2data - struct with:
-%     ctd                  - data.ctd, unchanged: the raw, uninterpolated
-%                             ctd record this call was given - present
-%                             regardless of whether epsi was tiled.
 %     profile_gap_fraction - fraction of data.epsi's sample count that
 %                             falls in a segment_id run other than the
 %                             largest one (see gap_fraction subfunction
@@ -244,8 +245,8 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %     fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, scan_step -
 %                   provenance, passed through from mod_L2_tile_scans.m.
 %   nbscan is 0 (all per-scan fields empty) if epsi wasn't tiled at all
-%   (see DESCRIPTION), is too short for even one scan, or (realtime mode
-%   only) no scan lands on a descending part of the record. ctd/
+%   (see DESCRIPTION), is too short for even one scan, or no scan lands on
+%   a part of the record moving in the profile_dir direction(s).
 %   profile_gap_fraction/profile_number/etc. are still populated in that
 %   case.
 %
@@ -277,8 +278,8 @@ ctd = data.ctd;
 epsi_for_tiling = epsi;
 if isfield(data, 'direction')
     metadata = MODsetup_validate_metadata(metadata, yaml_file, {'profile_dir'});
-    trust_this_direction = strcmp(metadata.PROFILES.profile_dir, 'both') ...
-        || strcmp(data.direction, metadata.PROFILES.profile_dir);
+    trust_this_direction = strcmpi(metadata.PROFILES.profile_dir, 'both') ...
+        || strcmpi(data.direction, metadata.PROFILES.profile_dir);
 else
     trust_this_direction = true; % realtime mode: no direction label to distrust here - see DESCRIPTION
 end
@@ -289,7 +290,6 @@ end
 tiled_scans = mod_L2_tile_scans(epsi_for_tiling, metadata, PressureTimeseries);
 
 L2data = empty_L2data(tiled_scans);
-L2data.ctd = ctd;
 L2data.profile_gap_fraction = gap_fraction(epsi);
 passthrough_fields = {'profile_number', 'direction', 'filenames', 'dnum_start', 'dnum_end'};
 for iF = 1:numel(passthrough_fields)

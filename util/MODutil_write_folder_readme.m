@@ -8,7 +8,8 @@ function written = MODutil_write_folder_readme(folder, level, metadata)
 %   files hold and what has been done to them: the level, what each file
 %   contains, the processing steps, the parameters that level used (values
 %   from metadata, via MODsetup_metadata_field_registry.m), the deployment,
-%   and the git commit of the MOD_fish_processing code. Rewritten only when
+%   the processing run and its yml (and, for L2, profiles_L1 and
+%   profiles_L2, which run's L1 they were made from), and the git commit of the MOD_fish_processing code. Rewritten only when
 %   that content changes (the "updated" line alone doesn't count), so it's
 %   cheap to call on every realtime pass.
 %
@@ -41,19 +42,19 @@ switch level
     case 'L1'
         what = {'One .mat per raw file: physical-unit timeseries - epsi (t1/t2/s1/s2/a1-a3 volts/g with this deployment''s channel names), ctd (P, T, C, SP, CT, SR, sigma0, z, dzdt), alt (hab), vnav, gps, twist, ...'
                 'This is the raw data turned into real data: no spectral or cast choices yet - the starting point for postprocessing.'};
-        steps = {'MODprocess_all_L0_to_L1.m -> MODprocess_single_L0_to_L1.m: depl_meta_data.yml EFE settings, SBE CTD calibration, derived CTD fields (GSW/TEOS-10), altimeter height above bottom, per-file twist.'
-                 'Deployment-wide files built from L1 are in meta/: time_index.mat, pressure_time_series.mat (profiling direction), twist_time_series.mat, fpo7_calibration.mat, casts.mat.'};
+        steps = {'MODprocess_all_L0_to_L1.m -> MODprocess_single_L0_to_L1.m: the run yml''s EFE settings, SBE CTD calibration, derived CTD fields (GSW/TEOS-10), altimeter height above bottom, per-file twist.'
+                 'Files built from this L1 are in this run''s meta/ (next to L1/): time_index.mat, pressure_time_series.mat (profiling direction), twist_time_series.mat, fpo7_calibration.mat, l1_file_cache.mat.'};
         sections = {'afe', 'ctd', 'profile_detection'};
     case 'L2'
-        what = {'One .mat per L1 file: per-scan spectra and turbulence (chi from FP07, epsilon from shear) for the scans in the direction(s) set by profile_detection.profile_dir, with the CTD record.'};
+        what = {'One .mat per L1 file, with the same name: per-scan spectra and turbulence (chi from FP07, epsilon from shear) for the scans in the direction(s) set by profile_detection.profile_dir. Scans only - the time series are in the L1 file of the same name.'};
         steps = {'MODprocess_all_L1_to_L2.m -> MODprocess_single_L1_to_L2.m (whole L1 files tiled into scans - the realtime product).'};
         sections = {'spectral', 'ctd', 'profile_detection', 'chi', 'epsilon'};
     case 'profiles_L1'
-        what = {'One Profile####.mat per cast in meta/casts.mat: the L1 epsi/ctd record stitched across L1 files for that cast.'};
+        what = {'One Profile####.mat per cast in this run''s meta/casts.mat: the L1 epsi/ctd record stitched across L1 files for that cast.'};
         steps = {'MODprocess_all_extract_profiles.m -> modProcess_extract_profile.m (postprocessing).'};
         sections = {'profile_detection', 'spectral'};
     case 'profiles_L2'
-        what = {'One Profile####.mat per cast: the same per-scan spectra and turbulence as L2, computed on the whole cast.'};
+        what = {'One Profile####.mat per cast, with the same name as in profiles_L1/: the same per-scan spectra and turbulence as L2, computed on the whole cast. Scans only - the time series are in profiles_L1/.'};
         steps = {'MODprocess_all_L1_to_L2.m pointed at profiles_L1/ (postprocessing).'};
         sections = {'spectral', 'ctd', 'profile_detection', 'chi', 'epsilon'};
     otherwise
@@ -64,14 +65,34 @@ survey = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'data_root')
     [~, survey] = fileparts(metadata.paths.data_root);
 end
-L = {sprintf('%s/ - %s', level, survey)
-     ''
-     'What''s in these files:'};
+L = {sprintf('%s/ - %s', level, survey)};
+run_name = '';
+if isfield(metadata, 'run') && ~isempty(metadata.run.name)
+    run_name = metadata.run.name;
+end
+if ismember(level, {'raw', 'L0'}) && ~isempty(run_name)
+    L{end+1, 1} = 'Shared by every processing run of this survey (processed/<run>/).';
+elseif ~isempty(run_name)
+    L{end+1, 1} = sprintf('Processing run: %s (settings: meta/meta_data_%s.yml in the survey folder)', run_name, run_name);
+    if ismember(level, {'L2', 'profiles_L1', 'profiles_L2'})
+        if isempty(metadata.run.L1_from)
+            L{end+1, 1} = sprintf('From L1: this run''s own (processed/%s/L1)', run_name);
+        else
+            L{end+1, 1} = sprintf('From L1: run %s''s (processed/%s/L1)', metadata.run.L1_from, metadata.run.L1_from);
+        end
+    end
+end
+L = [L; {''; 'What''s in these files:'}];
 L = [L; strcat({'  '}, what)];
 L = [L; {''; 'What was done:'}; strcat({'  '}, steps)];
 param_lines = parameter_lines(metadata, sections);
 if ~isempty(param_lines)
-    L = [L; {''; 'Parameters (from meta/depl_meta_data.yml):'}; param_lines];
+    yml_name = 'the yml';
+    if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+        [~, n, e] = fileparts(metadata.paths.setup_yml);
+        yml_name = ['meta/' n e];
+    end
+    L = [L; {''; ['Parameters (from ' yml_name '):']}; param_lines];
 end
 L = [L; {''; ['Vehicle: ' field_or(metadata, 'vehicle_name') ', fish: ' field_or(metadata, 'fish_flag')]
          ['Code: MOD_fish_processing ' code_version()]

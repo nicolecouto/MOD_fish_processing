@@ -20,7 +20,7 @@ function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metad
 %   the most recently modified input file (always redone, in case it was
 %   still being written), with a reprocess_all override.
 %
-%   Loads meta/pressure_time_series.mat once (built by
+%   Loads pressure_time_series.mat (metadata.paths.L1_meta) once (built by
 %   MODprocess_all_L0_to_L1.m via MODprocess_L1_make_pressure_timeseries.m
 %   + mod_L1_detect_profiling_direction.m) and passes it into every
 %   MODprocess_single_L1_to_L2.m call, so the per-file work stays a pure
@@ -49,10 +49,13 @@ function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metad
 %                    MODprocess_all_extract_profiles.m) - see DESCRIPTION.
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
 %                    per session and passed through - see PLAN.md Section 2.
-%                    Uses metadata.paths.meta to find pressure_time_series.mat.
-%   L2_dir        - (optional) full path to save .mat files to. Default:
-%                    a sibling 'L2' folder next to L1_dir
-%                    (fullfile(fileparts(L1_dir),'L2')), created if missing.
+%                    Uses metadata.paths.L1_meta to find pressure_time_series.mat.
+%   L2_dir        - (optional) full path to save .mat files to, created if
+%                    missing. Default: metadata.paths.L2 when L1_dir is
+%                    metadata.paths.L1 (this run's L2 - also for a run
+%                    whose L1 is another run's), metadata.paths.profiles_L2
+%                    when L1_dir is .profiles_L1, otherwise a sibling 'L2'
+%                    folder next to L1_dir.
 %   reprocess_all - (optional) logical, default false. If true, ignores
 %                    the up-to-date check and reconverts every input file.
 %   Name-value options (same for MODprocess_all_modraw_to_L0.m,
@@ -86,15 +89,15 @@ function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metad
 %
 % NOTES
 %   Errors clearly (rather than silently producing empty L2 files) if
-%   meta/pressure_time_series.mat doesn't exist yet - it's built by
+%   pressure_time_series.mat doesn't exist yet - it's built by
 %   MODprocess_all_L0_to_L1.m, so that must have run (with CTD data
 %   present) before this function can do anything useful.
 %
 %   Does NOT skip a deployment with metadata.manifest.has_epsi false
-%   (no AFE/epsi board): MODprocess_single_L1_to_L2.m still returns real
-%   ctd/profile-bookkeeping output for a CTD-only deployment (empty
-%   spectra, since there's no epsi to tile), so this driver still writes
-%   one L2 file per input file rather than producing nothing.
+%   (no AFE/epsi board): MODprocess_single_L1_to_L2.m still returns the
+%   profile-bookkeeping fields and empty scans for a CTD-only deployment
+%   (no epsi to tile), so this driver still writes one L2 file per input
+%   file rather than producing nothing.
 %
 %   The derived values not in the yml - the AFE electronics filters and
 %   the FP07 volts_to_C fit from meta/fpo7_calibration.mat - are added here
@@ -113,7 +116,15 @@ problems = struct('file', {}, 'stage', {}, 'identifier', {}, 'message', {});
 processed = {};
 
 if nargin < 3 || isempty(L2_dir)
-    L2_dir = fullfile(fileparts(L1_dir), 'L2');
+    % this run's L2 (or profiles_L2) - not a folder next to L1_dir, which
+    % for a run with L1_from is the other run's
+    if isfield(metadata.paths, 'L1') && strcmp(L1_dir, metadata.paths.L1)
+        L2_dir = metadata.paths.L2;
+    elseif isfield(metadata.paths, 'profiles_L1') && strcmp(L1_dir, metadata.paths.profiles_L1)
+        L2_dir = metadata.paths.profiles_L2;
+    else
+        L2_dir = fullfile(fileparts(L1_dir), 'L2');
+    end
 end
 if nargin < 4 || isempty(reprocess_all)
     reprocess_all = false;
@@ -125,7 +136,7 @@ end
 
 metadata = MODsetup_add_derived_metadata(metadata);
 
-pressure_timeseries_file = fullfile(metadata.paths.meta, 'pressure_time_series.mat');
+pressure_timeseries_file = fullfile(metadata.paths.L1_meta, 'pressure_time_series.mat');
 if ~exist(pressure_timeseries_file, 'file')
     error('MODprocess_all_L1_to_L2:noPressureTimeseries', ...
         ['%s does not exist yet. It is built by MODprocess_all_L0_to_L1.m ' ...

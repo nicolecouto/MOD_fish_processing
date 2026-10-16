@@ -234,9 +234,9 @@ L1_files = fullfile({L1_listing.folder}, {L1_listing.name})';
 % files gets one, even before profile-cutting is wired up to consume it.
 % Per-L1-file summaries, reloading only new or changed L1 files - the
 % deployment-wide files below are rebuilt from these, not from every L1 file
-L1_cache = MODprocess_L1_update_file_cache(L1_dir, metadata.paths.meta);
+L1_cache = MODprocess_L1_update_file_cache(L1_dir, metadata.paths.L1_meta);
 TimeIndex = MODprocess_L1_make_time_index(L1_cache);
-save(fullfile(metadata.paths.meta, 'time_index.mat'), '-struct', 'TimeIndex');
+save(fullfile(metadata.paths.L1_meta, 'time_index.mat'), '-struct', 'TimeIndex');
 
 % Deployment-level twist count: re-chain every L1 file's per-file twist
 % field (added inside MODprocess_single_L0_to_L1) into meta/twist_time_series.mat.
@@ -244,7 +244,7 @@ save(fullfile(metadata.paths.meta, 'time_index.mat'), '-struct', 'TimeIndex');
 % otherwise rather than let it churn through every L1 file logging
 % "missing vnav" for nothing.
 if isfield(metadata, 'manifest') && isfield(metadata.manifest, 'has_vnav') && metadata.manifest.has_vnav
-    MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.meta);
+    MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta, metadata.paths.survey_meta);
 end
 
 % Deployment-level pressure record + profiling-direction classification:
@@ -271,7 +271,7 @@ if has_ctd
                 metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
             end
         end
-        save(fullfile(metadata.paths.meta, 'pressure_time_series.mat'), '-struct', 'PressureTimeseries');
+        save(fullfile(metadata.paths.L1_meta, 'pressure_time_series.mat'), '-struct', 'PressureTimeseries');
 
         % FP07 in-situ volts->degC calibration: needs real CTD temperature,
         % which only a real onboard CTD provides (metadata.CTD.cal) - an
@@ -279,7 +279,7 @@ if has_ctd
         % qualifies here even though it passed the has_ctd check above.
         % Gated on PressureTimeseries.dnum being non-empty too since the
         % fit needs is_down, just computed above.
-        if ~isempty(metadata.CTD.cal) && fpo7_refit_due(metadata.paths.meta, numel(L1_cache), opts.fpo7_refit_new_files)
+        if ~isempty(metadata.CTD.cal) && fpo7_refit_due(metadata.paths.L1_meta, numel(L1_cache), opts.fpo7_refit_new_files)
             % Refit from scratch: the fit loaded by MODsetup_add_derived_metadata
             % is set aside, so a channel that can't be refit isn't saved again
             % as if it were new (save_fpo7_calibration keeps it, with its old time)
@@ -332,7 +332,7 @@ end
 % warning). Written to a temp file and moved into place, so a reader never
 % sees half a file.
 function metadata = save_fpo7_calibration(metadata, previous, n_L1_files)
-cal_file = fullfile(metadata.paths.meta, 'fpo7_calibration.mat');
+cal_file = fullfile(metadata.paths.L1_meta, 'fpo7_calibration.mat');
 old_fitted = struct();
 if isfile(cal_file)
     old = load(cal_file);
@@ -370,7 +370,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
     end
 end
 if ~isempty(fieldnames(volts_to_C))
-    tmp_file = [tempname(metadata.paths.meta) '.mat'];
+    tmp_file = [tempname(metadata.paths.L1_meta) '.mat'];
     save(tmp_file, 'volts_to_C', 'sn', 'fitted', 'n_L1_files');
     movefile(tmp_file, cal_file, 'f');
 end

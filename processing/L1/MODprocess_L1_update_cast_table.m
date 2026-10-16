@@ -5,8 +5,10 @@ function [casts, metadata] = MODprocess_L1_update_cast_table(metadata)
 %
 % DESCRIPTION
 %   Picks the casts from the deployment's pressure record
-%   (meta/pressure_time_series.mat, modProcess_detect_profiles.m) and saves
-%   them as meta/casts.mat - the one cast table both realtime processing
+%   (pressure_time_series.mat in metadata.paths.L1_meta, next to the L1 it
+%   was built from; modProcess_detect_profiles.m) and saves them as this
+%   processing run's casts.mat (metadata.paths.meta) - the one cast table
+%   both realtime processing
 %   and postprocessing use: realtime grids by it, postprocessing cuts
 %   profiles_L1/Profile####.mat from it (MODprocess_all_extract_profiles.m).
 %   Tuning cast picking means changing the profile_detection parameters
@@ -24,7 +26,8 @@ function [casts, metadata] = MODprocess_L1_update_cast_table(metadata)
 %   results should key them by dnum_start, not by number.
 %
 % INPUTS
-%   metadata - from MODsetup_read_yaml.m. Uses metadata.paths.meta and the
+%   metadata - from MODsetup_read_yaml.m. Uses metadata.paths.L1_meta,
+%              metadata.paths.meta and the
 %              profile_detection parameters (metadata.PROFILES.*, validated
 %              by modProcess_detect_profiles.m).
 %
@@ -47,7 +50,7 @@ function [casts, metadata] = MODprocess_L1_update_cast_table(metadata)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-pressure_timeseries_file = fullfile(metadata.paths.meta, 'pressure_time_series.mat');
+pressure_timeseries_file = fullfile(metadata.paths.L1_meta, 'pressure_time_series.mat');
 if ~isfile(pressure_timeseries_file)
     error('MODprocess_L1_update_cast_table:noPressureTimeseries', ...
         ['%s does not exist yet. It is built by MODprocess_all_L0_to_L1.m once this ' ...

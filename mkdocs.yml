@@ -33,12 +33,12 @@ nav:
   - Workflow:
       - "Start New Deployment: Setup and dev1_setup.yml": workflow/start_new_deployment.md
       - "Pipeline overview: realtime vs. postprocess": workflow/pipeline_overview.md
-      - "Realtime and postprocessing driver (design)": workflow/realtime_processing.md
+      - "Processing data: realtime and postprocessing": workflow/processing_data.md
       - "modraw → L0: converting .modraw to .mat": workflow/modraw_to_L0_conversion.md
       - ".modraw tag reference": workflow/modraw_tag_format.md
       - "Zero-padding numbered raw filenames": workflow/pad_raw_filenames.md
       - "L0 → L1: converting raw counts to physical units": workflow/L0_to_L1_conversion.md
-      - "L1 → L2: downcast-gated spectra": workflow/L1_to_L2_conversion.md
+      - "L1 → L2: direction-gated spectra": workflow/L1_to_L2_conversion.md
       - "FP07 calibration and chi": workflow/L2_calc_chi.md
       - "Epsilon (shear turbulence)": workflow/L2_calc_eps.md
       - "Profile detection and extraction": workflow/profile_detection.md

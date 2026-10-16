@@ -27,7 +27,9 @@ function short_path = MODutil_short_path(full_path)
 %   (the deployment directory's parent) onward. If none of those names
 %   appear anywhere in full_path, it's returned unchanged - safer than
 %   guessing how many segments to keep for a path this function doesn't
-%   recognize.
+%   recognize. Inside a processing run (<survey>/processed/<run>/L1/...)
+%   it keeps from the survey's parent instead, e.g.
+%   epsi_deepsolo/26_0520_ljc/processed/realtime/L1.
 %
 % INPUTS
 %   full_path  - any path inside or at a deployment folder (data_root
@@ -58,6 +60,11 @@ if isempty(i)
 end
 
 start = max(1, i - 2);
+% a processing run's folder, <survey>/processed/<run>/<level>: keep from
+% the survey's parent, so the survey name stays in the message
+if start >= 2 && strcmp(parts{start}, 'processed')
+    start = max(1, start - 2);
+end
 short_path = strjoin(parts(start:end), filesep);
 
 end

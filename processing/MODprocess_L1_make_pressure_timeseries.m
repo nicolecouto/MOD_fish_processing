@@ -27,7 +27,10 @@ function PressureTimeseries = MODprocess_L1_make_pressure_timeseries(cache)
 %
 % OUTPUTS
 %   PressureTimeseries - struct with fields:
-%       dnum - concatenated, sorted time vector [datenum]
+%       dnum - concatenated time vector [datenum], sorted, each time once
+%              (a time that two L1 files both hold keeps the sample from
+%              the file that starts first; samples with no time are left
+%              out, with a printed count)
 %       P    - concatenated pressure [dbar]
 %     Empty (dnum = [], P = []) if no L1 file has usable ctd.P data.
 %
@@ -53,7 +56,21 @@ end
 cache = cache(valid);
 [~, sortIdx] = sort(cellfun(@min, {cache.ctd_dnum}));
 cache = cache(sortIdx);
-PressureTimeseries.dnum = vertcat(cache.ctd_dnum);
-PressureTimeseries.P    = vertcat(cache.ctd_P);
+dnum = vertcat(cache.ctd_dnum);
+P    = vertcat(cache.ctd_P);
+% Every sample in time order, each time once: two L1 files can cover the
+% same time (a raw file copied under another name, or a damaged file
+% holding a copy of another's start), and everything downstream
+% interpolates on dnum, which needs it sorted and unique
+[dnum, first] = unique(dnum, 'first'); % sorted; NaN times kept once each, dropped below
+P = P(first);
+keep = ~isnan(dnum);
+n_dropped = numel(vertcat(cache.ctd_dnum)) - nnz(keep);
+if n_dropped > 0
+    fprintf('MODprocess_L1_make_pressure_timeseries: %d sample(s) left out - a time already in another L1 file, or no time.\n', ...
+        n_dropped);
+end
+PressureTimeseries.dnum = dnum(keep);
+PressureTimeseries.P    = P(keep);
 
 end %end function

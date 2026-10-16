@@ -20,7 +20,8 @@ function cache = MODprocess_L1_update_file_cache(L1_dir, meta_dir)
 %
 % INPUTS
 %   L1_dir   - folder of L1 .mat files
-%   meta_dir - the deployment's meta/ folder (where the cache is saved)
+%   meta_dir - where the cache is saved: the meta/ of the processing run
+%              that made the L1 (metadata.paths.L1_meta)
 %
 % OUTPUTS
 %   cache - struct array, one element per L1 file, sorted by file name:

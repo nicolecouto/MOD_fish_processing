@@ -4,6 +4,44 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-15 - Processing runs, postprocessing templates, L2 scans only (branch `main-fork`)
+
+Nicole's design: a processing run is one yml plus one output folder, so trying other parameters never overwrites anything, and a copied survey folder works anywhere.
+
+**Layout:** `<survey>/meta/` holds `dev1_setup.yml` (never edited) and every run's yml, `meta_data_<run>.yml`; `raw/` and `L0/` stay in the survey folder, shared; each run writes `processed/<run>/{meta,L1,L2,profiles_L1,profiles_L2}`. The worker's run is `realtime`.
+
+**Changed**
+- `MODsetup_read_yaml.m`: a `meta_data_<run>.yml` takes every path from where it is (its `data_root` is not used); new `paths.run`, `.survey_meta`, `.L1_meta`, and `metadata.run.name/.L1_from`. Other ymls (hand-written `setup.yml`) work as before.
+- `MODsetup_build_yaml.m`: builds run ymls. `realtime` is rebuilt every pass (carry-over as before; a `calibrations_root` that works here is kept; an old `depl_meta_data.yml` is the first old file). Other runs are made once, from the sources or a `'base'` run, with `'L1_from'` and `'overrides'`, then left alone. A reachable `calibrations_root` is taken from another run of the same survey.
+- `MODsetup_write_yaml_value.m`: section `''` sets a top-level key.
+- `MODsetup_preflight.m`: prints the run's plan (yml, raw, L0, L1 source, output, stages, calibrations_root), checks only the parameters the chosen stages need (`grid` isn't asked for until the grid stage exists), asks for an unreachable `calibrations_root` in postprocessing, refuses `L1_from` when the L1 settings differ, notes an old-layout survey.
+- `MODprocess_deployment.m`: `'run'`, `'base'`, `'L1_from'`, `'overrides'`, `'calibrations_root'`, `'from'`/`'until'`, `'ask'`; a run yml as target; logs in `processed/<run>/meta/log/`; no `realtime/` worker files for a one-off pass on one survey.
+- Files built from L1 (`time_index`, `pressure_time_series`, `twist_time_series`, `l1_file_cache`, `fpo7_calibration`) go to `paths.L1_meta`, the meta/ of the run that made the L1.
+- L2 holds scans only (`MODprocess_single_L1_to_L2.m` no longer copies `ctd`); `mod_L2_tile_scans.m` keeps by-file scans in the `profile_dir` direction(s) instead of always descending.
+- `MODprocess_L1_make_pressure_timeseries.m`, `MODprocess_L1_apply_fpo7_calibration.m`: times sorted and kept once - two L1 files with the same times had stopped the FP07 refit and all L2 with "Sample points must be unique".
+- `MODutil_write_folder_readme.m`, `MODutil_short_path.m`, `MODvis_spectra.m`, `MODvis_timeseries.m`: run-aware.
+
+**New:** `setup/MODsetup_L1_settings.m`, `util/MODutil_level_folders.m`, `templates/MODtemplate_postprocess.m`, `templates/MODtemplate_postprocess_by_stage.m`. Docs: `realtime_processing.md` renamed `processing_data.md` (shared sections, then Realtime and Postprocessing); updated pipeline_overview, L0_to_L1, L1_to_L2, L2_calc_chi, start_new_deployment, visualization index, README, mkdocs nav, the cruise template header.
+
+**Tested** in scratchpad sandboxes (copies only):
+- Nicole's 2026-10-15 FCTD2 deck test (copies of `deck_test` and `rename_slots`): no `calibrations_root` -> a clear error; with a local one -> L1, and it was kept on the next pass; the two manifests' L1 differ only in slot 3's name (`f1_volt` vs `s1_volt`, same data) and `epsi_conversion`; the separate fluorometer is the same in both; her existing L0 was reused.
+- Runs: `nfft512` with `L1_from: realtime` wrote only `processed/nfft512/{meta,L2}` (fft_length 512 vs 1024, 257 vs 513 frequencies); `L1_from` with a different `lowpass_factor` was refused, naming it; different overrides on an existing run were reported as not applied; continuing by yml worked; L2 has no `ctd`.
+- Both templates on fresh copies (viewer lines removed for `-batch`): same L1 (apart from the recorded yml path) and identical L2.
+- Simulator scenario twice (second time after the repeated-times fix): routing, growing files, a damaged file, waiting for parameters, a second worker refused, Stop in 4 s. A one-off pass on a copy gave the same cast table and L2 as the worker except the FP07-dependent fields (the worker's fit came from 1 file, the one-off's from 5).
+- `checkcode` on every changed file; `mkdocs build --strict`.
+
+**Review** (a senior-review agent on the code, a second agent on code/headers/docs agreement), fixed and retested:
+- an `L1_from` problem never cleared from `problems.json`; now it does once the L1 is there;
+- `L1_from` reread the other run's yml, so on a copy whose realtime yml still had the ship's `calibrations_root` it failed; it now compares with that run's saved `metadata.mat` (only the yml-read AFE fields, not filters or the FP07 fit), writes nothing into the other run, and refuses a chained `L1_from`;
+- a run name like `../../x` made folders before being refused; names are checked first. `from` after `until` is an error. `MODsetup_write_yaml_value` takes `""` as top-level and refuses to overwrite a block header with a value;
+- a by-hand `MODprocess_all_L1_to_L2` without `L2_dir` would have written into the `L1_from` run's L2; it now defaults to this run's L2;
+- the viewers opened nothing for a run with L1 but no L2 yet;
+- the per-deployment `spool_swap_log.csv` is read from the survey's own `meta/` (it had moved to the run's meta/ with this change); and its parser assumed line 1 was a comment, so a log with the header on line 1 was never applied (older bug) - now the header is the first line that isn't a comment;
+- `profile_dir` is compared ignoring case in profile mode; `'base'` given again for an existing run is reported;
+- the "stationary stretches are dropped" claim was wrong: there's no speed threshold for scan direction, so the docs now say so (left as is - see processing_data.md);
+- many headers and docs: `paths.L1_meta` where files built from L1 are read, no `ctd` in L2, direction-gated (not downcast-gated) wording, the realtime exception in the templates.
+Retested: spool swap applied; `L1_from` with the realtime yml's `calibrations_root` unreachable; the problem clears; bad names and stage order refused; L1 reuse accepted (fft_length) and refused (lowpass_factor) against a saved `metadata.mat`; a by-profile run (`L1_from realtime`) gave 10 profiles, scans-only profiles_L2; a short watch run on the simulator folders caught up, stopped and removed its lock.
+
 ### 2026-10-15 - Ship setup check script (branch `main-fork`)
 
 Added `acquisition/check_software/check_ship_setup.sh`: a read-only check, run on DEV1 and DEV3, of the clone's branch, remotes and whether it is up to date with GitHub, the `acquisition/config.yml` folders (`setup_dir`, `processed_root`, `calibrations_root`), the MOD_fish_calibrations clone and its required files (`SBE/*.CAL`, `SHEAR_PROBES/`, `FPO7/`, `SHEAR/cap1nFres200Meg_5KohmInput.mat`, `FPO7/FPO7_benchnoise.mat`), the processed-data folder (`cruise_meta_data.yml`, `RAW_full_cruise`, `spool_swap_log.csv`, `realtime/worker.lock`), and python3/tkinter and matlab. Documented in `start_new_deployment.md` (setup step 6), `realtime_processing.md` and `README.md`. Tested on the laptop clone, from inside and outside the repo: git checks pass, and the ship paths come out as FIX because DEV1/DEV3 aren't mounted on the laptop.

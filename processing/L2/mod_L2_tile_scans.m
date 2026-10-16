@@ -23,11 +23,17 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %   MODprocess_single_L1_to_L2.m (a whole L1 file, or one already-
 %   extracted profile):
 %     - Direction gating (PressureTimeseries) is OPTIONAL (3rd arg).
-%       Realtime mode passes it - a scan's center time is nearest-matched
-%       against PressureTimeseries.is_down exactly as before. Profile-cut
-%       mode omits it entirely - a profile from modProcess_detect_profiles.m
-%       is already direction-pure by construction (it only ever returns
-%       single-direction casts), so no per-scan gating is needed.
+%       MODprocess_all_L1_to_L2.m passes it - a scan's center time is nearest-matched
+%       against it, and a scan is kept only when the fish was moving in a
+%       direction metadata.PROFILES.profile_dir trusts: 'down' (is_down),
+%       'up' (not is_down and dPdt_smoothed < 0) or 'both' (either).
+%       Gaps (NaN dPdt) and times outside the pressure record are dropped
+%       in every case. There is no speed threshold: a slow, nearly
+%       stationary stretch counts as whichever way it's drifting, and
+%       is_down is widened by buffer_bins while 'up' isn't. For a profile cut by
+%       modProcess_detect_profiles.m (already one direction) this mostly
+%       confirms the direction; called without it, every candidate scan
+%       is kept.
 %     - Gap-boundary safety: if epsi.segment_id is present (set only by
 %       modProcess_extract_profile.m - never by the realtime per-file
 %       path), any candidate scan window whose samples span more than one
@@ -44,13 +50,15 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %              metadata.PROCESS.fft_length, .fft_segments_per_scan
 %              (together derive N_epsi/scan_length, dof, and
-%              fft_seg_starts - see OUTPUTS), .scan_overlap, .Fs_epsi.
-%   PressureTimeseries - (optional) struct with dnum, is_down (from
+%              fft_seg_starts - see OUTPUTS), .scan_overlap, .Fs_epsi,
+%              and, with PressureTimeseries, PROFILES.profile_dir.
+%   PressureTimeseries - (optional) struct with dnum, is_down, dPdt_smoothed (from
 %              mod_L1_detect_profiling_direction.m via
 %              meta/pressure_time_series.mat) - the whole-deployment
 %              record, not sliced to this epsi record. When provided,
 %              each scan's center time is nearest-matched against it and
-%              only descending scans are kept (realtime mode). When
+%              only scans in the profile_dir direction(s) are kept
+%              (realtime mode). When
 %              omitted or empty, every candidate scan is direction-ungated
 %              (profile-cut mode - see DESCRIPTION).
 %
@@ -74,8 +82,8 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %                  (processing/scans/mod_scan_length_from_segments.m), and dof
 %                  from fft_segments_per_scan alone (processing/scans/mod_scan_dof.m).
 %   nbscan is 0 (idx0/idx1/dnum all empty) if epsi has no data, is too
-%   short for even one scan, or (realtime mode only) no scan lands on a
-%   descending part of the record.
+%   short for even one scan, or (with PressureTimeseries) no scan lands on
+%   a part of the record moving in the profile_dir direction(s).
 %
 % CALLED BY
 %   MODprocess_single_L1_to_L2.m
@@ -109,6 +117,19 @@ if nargin < 3
     PressureTimeseries = [];
 end
 have_direction_gate = ~isempty(PressureTimeseries);
+if have_direction_gate
+    metadata = MODsetup_validate_metadata(metadata, yaml_file, {'profile_dir'});
+    profile_dir = lower(char(string(metadata.PROFILES.profile_dir)));
+    if ~any(strcmp(profile_dir, {'down', 'up', 'both'}))
+        error('mod_L2_tile_scans:badProfileDir', ...
+            'profile_detection.profile_dir must be down, up or both (got ''%s'').', profile_dir);
+    end
+    has_dPdt = isfield(PressureTimeseries, 'dPdt_smoothed');
+    if ~has_dPdt && ~strcmp(profile_dir, 'down')
+        error('mod_L2_tile_scans:noDPdt', ['profile_dir ''%s'' needs PressureTimeseries.dPdt_smoothed ' ...
+            '(rebuild meta/pressure_time_series.mat with the current L0 -> L1).'], profile_dir);
+    end
+end
 have_segment_id = isfield(epsi, 'segment_id') && ~isempty(epsi.segment_id);
 
 fft_length = metadata.PROCESS.fft_length;
@@ -163,7 +184,21 @@ for iScan = 1:nbscan_candidate
         % to a potentially far-distant, meaningless sample.
         is_down = interp1(PressureTimeseries.dnum, double(PressureTimeseries.is_down), ...
             center_dnum, 'nearest') > 0;
-        if ~is_down
+        is_up = false;
+        if ~strcmp(profile_dir, 'down')
+            % NaN dPdt (gap or too-short segment) is neither
+            is_up = ~is_down && interp1(PressureTimeseries.dnum, PressureTimeseries.dPdt_smoothed, ...
+                center_dnum, 'nearest') < 0;
+        end
+        switch profile_dir
+            case 'down'
+                keep_scan = is_down;
+            case 'up'
+                keep_scan = is_up;
+            otherwise
+                keep_scan = is_down || is_up;
+        end
+        if ~keep_scan
             continue
         end
     end

@@ -4,8 +4,8 @@ function metadata = MODsetup_read_yaml(setup_yml)
 % metadata = MODsetup_read_yaml(setup_yml)
 %
 % DESCRIPTION
-%   Reads a deployment's setup.yml and returns a metadata struct with
-%   paths derived fresh from setup.yml's data_root (never saved), the AFE
+%   Reads a deployment's yml and returns a metadata struct with paths
+%   derived fresh on every call (never saved - see paths below), the AFE
 %   channel manifest, CTD calibration coefficients, and altimeter
 %   geometry. Resolves what the L0->L1 step actually uses for computation
 %   (metadata.PROCESS.*, metadata.AFE.*, metadata.CTD.cal,
@@ -23,10 +23,9 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   declares. An instrument entirely absent from instrument_manifest is
 %   treated as not on the deployment - nothing errors on a missing key.
 %
-%   Saves metadata.mat into meta/ alongside setup.yml, with metadata.paths
-%   stripped out first - metadata.mat is a portable deployment record;
-%   paths are machine-specific and always re-derived from setup.yml's
-%   data_root on the next call. The save goes through
+%   Saves metadata.mat into paths.meta, with metadata.paths stripped out
+%   first - metadata.mat is a portable deployment record; paths are
+%   machine-specific and always re-derived on the next call. The save goes through
 %   MODsetup_save_metadata.m, which no-ops if nothing has changed since
 %   the last call (the common case - a deployment script re-reads the
 %   same setup.yml many times an hour during a cruise), and otherwise
@@ -34,12 +33,37 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   PLAN.md Section 2, "Metadata provenance and archiving."
 %
 % INPUTS
-%   setup_yml - full path to a deployment's setup.yml
+%   setup_yml - full path to the yml. Two kinds:
+%     - a processing run's yml, <survey>/meta/meta_data_<run>.yml (built by
+%       MODsetup_build_yaml.m): every path comes from where the file is,
+%       so a copied survey folder works anywhere - its data_root line is
+%       not used. raw/ and L0/ are the survey's (shared by every run);
+%       the run's own output is in <survey>/processed/<run>/; L1 is the
+%       run's own, or another run's when the yml has run.L1_from.
+%     - any other yml (a hand-written setup.yml, dev1_setup.yml): paths
+%       from its data_root, with raw/L0/L1/L2/... under it and meta/ the
+%       yml's own folder.
 %
 % OUTPUTS
 %   metadata  - struct with fields:
+%     run.name, run.L1_from        - this run ('' for a non-run yml), and
+%                                     the run whose L1 it uses ('' = its own)
 %     paths.data_root, .raw, .L0, .L1, .L2, .profiles_L2, .profiles_L1, .meta,
-%     .calibrations_root, .ctd, .setup_yml
+%     .L1_meta, .run, .survey_meta, .calibrations_root, .ctd, .setup_yml
+%                                   - for a run yml: .data_root is the
+%                                     survey folder, .run is
+%                                     processed/<run>/, .meta its meta/
+%                                     (casts.mat, metadata.mat, logs),
+%                                     .L1/.L1_meta the L1 folder and meta/
+%                                     of the run that made the L1 (itself,
+%                                     or run.L1_from) - the files built
+%                                     from L1 (time_index, pressure and
+%                                     twist time series, l1_file_cache,
+%                                     fpo7_calibration) go with that L1;
+%                                     .survey_meta is <survey>/meta/. For
+%                                     any other yml, .run is data_root and
+%                                     .meta/.L1_meta/.survey_meta are all
+%                                     the yml's folder.
 %                                   - .ctd is only meaningful for vehicles
 %                                     with an independent CTD file (see
 %                                     vehicle_name below) - defined
@@ -350,22 +374,56 @@ toolbox_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', '
 addpath(toolbox_dir);
 yml = ReadYaml(setup_yml);
 
-%% Paths - derived fresh from data_root, never saved
-meta_dir = fileparts(setup_yml);
-metadata.paths.data_root         = yml.data_root;
-metadata.paths.raw               = fullfile(yml.data_root, 'raw');
-metadata.paths.L0                = fullfile(yml.data_root, 'L0');
-metadata.paths.L1                = fullfile(yml.data_root, 'L1');
-metadata.paths.L2                = fullfile(yml.data_root, 'L2');
-metadata.paths.profiles_L2       = fullfile(yml.data_root, 'profiles_L2');
-metadata.paths.profiles_L1       = fullfile(yml.data_root, 'profiles_L1');
+%% Paths - derived fresh every call, never saved
+% A run yml (<survey>/meta/meta_data_<run>.yml) takes every path from where
+% it is, so a copied survey folder works anywhere; its data_root (the
+% ship's path, from dev1_setup.yml) is not used. Any other yml (a
+% hand-written setup.yml, dev1_setup.yml) uses its data_root, with
+% L1/L2/meta directly under it.
+[yml_dir, yml_name] = fileparts(setup_yml);
+run_name = regexp(yml_name, '^meta_data_(.+)$', 'tokens', 'once');
+if ~isempty(run_name)
+    run_name = run_name{1};
+    survey_dir = fileparts(yml_dir);
+    L1_from = '';
+    if isfield(yml, 'run') && isstruct(yml.run) && isfield(yml.run, 'L1_from') && ~isempty(yml.run.L1_from)
+        L1_from = char(string(yml.run.L1_from));
+    end
+    L1_run = run_name;
+    if ~isempty(L1_from)
+        L1_run = L1_from;
+    end
+    run_dir = fullfile(survey_dir, 'processed', run_name);
+    meta_dir = fullfile(run_dir, 'meta');
+    metadata.run = struct('name', run_name, 'L1_from', L1_from);
+    metadata.paths.data_root     = survey_dir;
+    metadata.paths.run           = run_dir;
+    metadata.paths.survey_meta   = yml_dir;
+    metadata.paths.L1            = fullfile(survey_dir, 'processed', L1_run, 'L1');
+    metadata.paths.L1_meta       = fullfile(survey_dir, 'processed', L1_run, 'meta');
+else
+    survey_dir = yml.data_root;
+    run_dir = survey_dir;
+    meta_dir = yml_dir;
+    metadata.run = struct('name', '', 'L1_from', '');
+    metadata.paths.data_root     = survey_dir;
+    metadata.paths.run           = run_dir;
+    metadata.paths.survey_meta   = meta_dir;
+    metadata.paths.L1            = fullfile(survey_dir, 'L1');
+    metadata.paths.L1_meta       = meta_dir;
+end
+metadata.paths.raw               = fullfile(survey_dir, 'raw');
+metadata.paths.L0                = fullfile(survey_dir, 'L0');
+metadata.paths.L2                = fullfile(run_dir, 'L2');
+metadata.paths.profiles_L2       = fullfile(run_dir, 'profiles_L2');
+metadata.paths.profiles_L1       = fullfile(run_dir, 'profiles_L1');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file
 % rather than embedded $SB49/$SB41 blocks (DeepSolo, Wirewalker) - defined
 % unconditionally like the other path fields, whether or not it exists on
 % disk for this deployment.
-metadata.paths.ctd               = fullfile(yml.data_root, 'ctd');
+metadata.paths.ctd               = fullfile(survey_dir, 'ctd');
 % Full path to setup_yml itself - how MODsetup_validate_metadata.m (called
 % from deep inside mod_scan_*.m) finds its way back to the yaml file to
 % write a newly-prompted value into, without every function needing its
@@ -560,6 +618,9 @@ end
 %% Save metadata.mat (portable - no paths)
 metadata_to_save = rmfield(metadata, 'paths');
 metadata_to_save.header.yaml_hash = hash_file(setup_yml);
+if ~isfolder(meta_dir)
+    mkdir(meta_dir); % a run's processed/<run>/meta/, the first time it's read
+end
 metadata_to_save = MODsetup_save_metadata(metadata_to_save, meta_dir, ...
     'created_from_yaml', setup_yml);
 

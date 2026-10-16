@@ -17,10 +17,13 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %   reference (mirrors mod_epsi_linear_calibration_FP07.m in the old
 %   MOD_fish_lib, ALB/2019, most recently ALB/2024's linear-fit version).
 %
-%   Only descending (PressureTimeseries.is_down) data is used for the fit.
-%   Two independent reasons for this, not one: (1) it matches how the
-%   calibration will actually be used downstream - mod_scan_calc_chi_obs.m
-%   only computes chi on descending scans in the first place (shear/FPO7
+%   Only descending (PressureTimeseries.is_down) data is used for the fit,
+%   whatever profile_detection.profile_dir is - a known limitation for a
+%   vehicle profiling up with FP07s (e.g. an FCTD carrying them): chi on upward
+%   scans uses a fit made on downward data. Two reasons for fitting on
+%   descending data: (1) for the usual down-profiling vehicles it matches
+%   how the calibration is used downstream - chi is computed on the
+%   descending scans (shear/FPO7
 %   are only trustworthy on the way down for vehicles like DeepSolo/Mako -
 %   see PLAN.md Section 4), so fitting on the same subset the correction
 %   will be applied to is the more representative choice; (2) ascending
@@ -166,7 +169,7 @@ end %end function
 
 %% Concatenate, across every L1 file in L1_dir sorted by file start time,
 % the epsi voltage timeseries for the requested fpo7 channels plus the
-% CTD dnum/T timeseries - both needed together (interpolated onto the
+% CTD dnum/T timeseries (each sorted by time, each time once) - both needed together (interpolated onto the
 % same ctd.dnum grid) to fit each channel's volts_to_C. A file is only
 % included if it has BOTH epsi data for every requested channel AND
 % ctd.T - if either is missing, that file simply contributes nothing
@@ -248,5 +251,21 @@ epsi_volts = struct();
 for iCh = 1:numel(volt_fields)
     epsi_volts.(volt_fields{iCh}) = vertcat(volt_all.(volt_fields{iCh}){:});
 end
+
+% Each time once, in time order (interp1 needs it): two L1 files can hold
+% the same time - a raw file copied under another name, or a damaged file
+% holding a copy of another's start. The earlier file's sample is kept.
+[epsi_dnum, first] = unique(epsi_dnum, 'first');
+keep = ~isnan(epsi_dnum);
+epsi_dnum = epsi_dnum(keep);
+for iCh = 1:numel(volt_fields)
+    v = epsi_volts.(volt_fields{iCh})(first);
+    epsi_volts.(volt_fields{iCh}) = v(keep);
+end
+[ctd_dnum, first] = unique(ctd_dnum, 'first');
+ctd_T = ctd_T(first);
+keep = ~isnan(ctd_dnum);
+ctd_dnum = ctd_dnum(keep);
+ctd_T = ctd_T(keep);
 
 end %end function

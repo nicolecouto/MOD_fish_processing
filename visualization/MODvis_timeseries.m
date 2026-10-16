@@ -6,6 +6,8 @@ classdef MODvis_timeseries < handle
     % the left y-axis and an optional second signal (Struct = "(none)"
     % to skip it) on its own right y-axis (yyaxis), plotted vs dnum.
     % Supports nested fields like epsi.chan1, ctd.P_raw, gps.latitude, etc.
+    % Given a processing run's folder (processed/<run>/), it opens that
+    % run's L1 (its own, or the run.L1_from run's - MODutil_level_folders.m).
     %
     % Formerly named L0ExplorerApp.
 
@@ -402,6 +404,14 @@ classdef MODvis_timeseries < handle
                 return;
             end
 
+            % A processing run's folder (processed/<run>/) opens its L1 -
+            % its own, or the L1 of the run named in run.L1_from
+            if isfolder(fullfile(folder, "meta")) && (isfolder(fullfile(folder, "L2")) || isfolder(fullfile(folder, "L1")))
+                L1_dir = MODutil_level_folders(folder);
+                if L1_dir ~= ""
+                    folder = string(L1_dir);
+                end
+            end
             app.Folder = folder;
             app.FolderLbl.Text = folder;
 

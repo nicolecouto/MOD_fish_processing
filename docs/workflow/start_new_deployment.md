@@ -144,20 +144,26 @@ metadata, not all of it: it says what is on the vehicle (`data_root`, `calibrati
 survey/cruise/vehicle, `fish_flag`, `instrument_manifest` with CTD and AFE slot SNs, and
 `afe.channels` full range/ADC config). It has no processing parameters (`spectral:`, `chi:`,
 `epsilon:` ...): those come from `cruise_meta_data.yml`, and `MODsetup_build_yaml.m` merges the
-two into `depl_meta_data.yml`, the file processing reads (see
-[Realtime processing](realtime_processing.md)).
+two into a processing run's yml, `meta/meta_data_<run>.yml`, the file processing reads (see
+[Processing data](processing_data.md)). Its `data_root` is the ship's path, kept as a record:
+processing takes every path from where the run yml is, so a copied survey folder works anywhere.
 
-`MODsetup_read_yaml.m` reads it directly:
+Processing reads the run yml built from it:
 
 ```matlab
-metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/dev1_setup.yml');
+metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/meta_data_realtime.yml');
 ```
+
+(`MODsetup_read_yaml` can read `dev1_setup.yml` itself too, but then it takes its paths from
+`data_root`, the old layout.)
 
 `vehicle_name` is the unit (`MAKO1`, `FCTD3`, ...). The shared altimeter geometry table
 (`setup/platform_instrument_geometry.yml`) matches it ignoring case, falling back to the family
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-15 - dev1_setup.yml feeds processing runs** (branch `main-fork`). Processing now builds one yml per processing run from `dev1_setup.yml` (`meta/meta_data_<run>.yml`, see [Processing data](processing_data.md)) and takes every path from where that yml is, so `data_root` here is kept as a record of the ship's path. No change to the window or the files it writes.
 
 **2026-10-15 - Ship setup check** (branch `main-fork`). Added
 `acquisition/check_software/check_ship_setup.sh` (setup step 6). Tested on the laptop clone

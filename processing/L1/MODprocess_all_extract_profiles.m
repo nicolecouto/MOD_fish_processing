@@ -40,8 +40,10 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %
 % INPUTS
 %   metadata      - metadata struct (from MODsetup_read_yaml.m). Uses
-%                    metadata.paths.meta to find pressure_time_series.mat
-%                    and time_index.mat, metadata.paths.L1 to load
+%                    metadata.paths.L1_meta to find pressure_time_series.mat
+%                    and time_index.mat (the meta/ next to the L1 they
+%                    were built from), metadata.paths.meta for this run's
+%                    casts.mat, metadata.paths.L1 to load
 %                    contributing L1 files, metadata.paths.profiles_L1 as
 %                    the default output directory.
 %   profiles_dir  - (optional) full path to save Profile####.mat files to.
@@ -80,7 +82,7 @@ if ~exist(profiles_dir, 'dir')
     mkdir(profiles_dir);
 end
 
-pressure_timeseries_file = fullfile(metadata.paths.meta, 'pressure_time_series.mat');
+pressure_timeseries_file = fullfile(metadata.paths.L1_meta, 'pressure_time_series.mat');
 if ~exist(pressure_timeseries_file, 'file')
     error('MODprocess_all_extract_profiles:noPressureTimeseries', ...
         ['%s does not exist yet. It is built by MODprocess_all_L0_to_L1.m ' ...
@@ -89,7 +91,7 @@ if ~exist(pressure_timeseries_file, 'file')
          'CTD data in its L1 files - run that first.'], pressure_timeseries_file);
 end
 
-time_index_file = fullfile(metadata.paths.meta, 'time_index.mat');
+time_index_file = fullfile(metadata.paths.L1_meta, 'time_index.mat');
 if ~exist(time_index_file, 'file')
     error('MODprocess_all_extract_profiles:noTimeIndex', ...
         ['%s does not exist yet. It is built by MODprocess_all_L0_to_L1.m ' ...

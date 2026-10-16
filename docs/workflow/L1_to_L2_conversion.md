@@ -1,4 +1,4 @@
-# L1 → L2: downcast-gated spectra
+# L1 → L2: direction-gated spectra
 
 **Status:** working, tested against real DeepSolo deployment files. Built on branch `l1_to_l2_conversion`, following [L0 → L1: converting raw counts to physical units](L0_to_L1_conversion.md).
 
@@ -10,7 +10,7 @@ The old `mod_fish_lib` L1→L2 step first splits a deployment into discrete `Pro
 - Pressure-binned up/down CTD profiles (P/T/S) - not time-aligned with the epsi/shear timebase, alignment not solved yet.
 - A sparse, **time**-binned pressure-only series ("fallrise" data, `ctd/DeepSoloFallrise.mat`) - dense-ish on the way up (~60 s), sparser on the way down (~120 s), occasional multi-hour gaps. This is the only thing available to gate scans by direction, so it's what this step uses.
 
-**Spectra are computed only for scans classified as descending** (`dPdt > 0`, `P` increasing), with a buffer around the edges of each descending run so the sparse sampling doesn't clip real descent time.
+**Spectra are computed only for scans in the direction(s) `profile_detection.profile_dir` trusts** - `down` (descending: `dPdt > 0`, `P` increasing, with a buffer around the edges of each descending run so the sparse sampling doesn't clip real descent time), `up` (not descending and `dPdt_smoothed < 0`) or `both`. Start New Deployment's `profiling_direction` sets it. Gaps and times outside the pressure record are dropped in every case; there's no speed threshold yet, so a slow, nearly stationary stretch counts as whichever way it's drifting.
 
 This first cut computes **raw, uncorrected power spectra only** - no epsilon, no coherence. Epsilon is a natural next step (shear `Sv` calibration is already resolved in `metadata.AFE`), but is deliberately deferred to keep this step reviewable on its own. Chi was blocked for the same reason `MODprocess_L2_get_scan_spectra.m` below still returns uncorrected spectra: FPO7 `dTdV`/`volts_to_C` needs real, time-aligned CTD temperature to fit in-situ, which DeepSolo's fallrise file doesn't have. **Update (branch `chi_processing`):** for deployments that *do* have a real onboard CTD (e.g. `epsi_mako`), chi is now implemented - see [FP07 calibration and chi](L2_calc_chi.md). `MODprocess_L2_get_scan_spectra.m` itself is unchanged (still raw/uncorrected); the FP07 time-constant deconvolution happens downstream, in `MODprocess_L2_calc_chi.m`. DeepSolo specifically remains blocked, since it still has no CTD T.
 
@@ -73,17 +73,19 @@ L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 Pure transformation function - `PressureTimeseries` (from `meta/pressure_time_series.mat`) is a **required** argument, not self-loaded, matching `MODprocess_single_L0_to_L1.m`'s `external_ctd`-as-argument precedent. To process one L1 file by hand:
 
 ```matlab
-PressureTimeseries = load(fullfile(metadata.paths.meta, 'pressure_time_series.mat'));
+PressureTimeseries = load(fullfile(metadata.paths.L1_meta, 'pressure_time_series.mat'));
 data = load('L1/modsom_20.mat');
 L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries);
 ```
 
 1. Tiles `data.epsi` **within this file only**, `scan_length`-sample windows overlapping by `scan_overlap` (`scan_step = (1-scan_overlap)*scan_length`).
 2. For each scan's center time, nearest-matches against `PressureTimeseries.dnum`/`.is_down`. Deliberately **no extrapolation** here: a scan center time outside `[min(PressureTimeseries.dnum), max(PressureTimeseries.dnum)]` has no real pressure information at all - e.g. epsi logging that started hours before DeepSolo's pressure record begins (real case: `epsi_deepsolo/26_0520_ljc`'s first 14 L1 files, ~18.5 h of epsi data recorded before the first fallrise pressure sample) - and gets excluded rather than nearest-matched to a potentially far-distant, meaningless sample. This was caught during testing: an earlier version used `interp1(...,'nearest','extrap')`, which would have nearest-matched all of those early scans to whatever the first `PressureTimeseries` sample happened to be classified as, regardless of how many hours away it was.
-3. For kept (descending) scans, slices `data.epsi` and calls `mod_scan_get_spectra`.
+3. For kept scans (in the `profile_dir` direction), slices `data.epsi` and calls `mod_scan_get_spectra`.
 4. Assembles output arrays over the scan dimension: `dnum`, `pressure`/`w` (interpolated from this file's own `data.ctd.P`/`.dzdt` at scan center), `spectra.f` (shared, `1 × nfreq`), per-channel `spectra.(channel)_f` matrices (`nbscan × nfreq`), plus provenance (`fft_length`, `fft_segments_per_scan`, `Fs_epsi`, `N_epsi`, `scan_step`, and `dof` - `N_epsi` (`scan_length`) derived from `fft_length`/`fft_segments_per_scan` via `processing/scans/mod_scan_length_from_segments.m`, `dof` from `fft_segments_per_scan` alone via `processing/scans/mod_scan_dof.m`, neither a yaml-configurable input itself, see [Choosing fft_length, fft_segments_per_scan, and scan_overlap](../concepts/spectral_windowing.md)). **Update (branch `chi_processing`):** also `temperature`/`salinity` (from `data.ctd.T`/`.S` at scan center, only when this file's CTD has real T/S), `chi_obs.(channel)`/`chi_obs_kc.(channel)` for every fpo7 channel with a resolved `volts_to_C` calibration, and the deconvolved spectrum/cutoff those are computed from (`spectra.k`, `spectra.(channel)_Tg_k`, `spectra.(channel)_fc_index`) - see [FP07 calibration and chi](L2_calc_chi.md).
 
-Returns an all-empty `L2data` (consistent field shapes, `nbscan = 0`) if this file has no epsi data, is too short for even one scan, or no scan lands on a descending part of the record - not an error, since that's expected for files recorded entirely during an upcast or before pressure logging started.
+Returns an all-empty `L2data` (consistent field shapes, `nbscan = 0`) if this file has no epsi data, is too short for even one scan, or no scan lands on a part of the record moving in the `profile_dir` direction - not an error, since that's expected for files recorded entirely during the other direction or before pressure logging started.
+
+An L2 file holds **scans only** - no copy of the L1 time series (the old `L2data.ctd` copy of the file's CTD record is gone). It has the same name as the L1 file it came from, in the same processing run's folder (or the `L1_from` run's L1 - see [Processing data](processing_data.md#processing-runs)), so load both to see a scan in context; `MODvis_spectra` does this.
 
 ### `MODprocess_all_L1_to_L2.m`
 
@@ -140,6 +142,8 @@ L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L
 Metadata straight from `MODsetup_read_yaml` is enough: `MODprocess_all_L1_to_L2` adds the derived values (electronics filters, FP07 `volts_to_C` from `meta/fpo7_calibration.mat`) itself with `MODsetup_add_derived_metadata.m`, at the start and after any reread of the yml - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-15 - Scans follow profile_dir; L2 holds scans only** (branch `main-fork`). `mod_L2_tile_scans.m` keeps scans in the `profile_detection.profile_dir` direction(s) (down, up or both) instead of always descending; `MODprocess_single_L1_to_L2.m` no longer copies the L1 file's `ctd` record into L2. L1 and L2 now live in `processed/<run>/` - see [Processing data](processing_data.md). Tested in a scratchpad sandbox on copies of the 2026-10-15 FCTD2 deck test and the simulator scenario (`SESSION_LOG.md`, 2026-10-15).
 
 **2026-10-14 (branch `main-fork`)**: calls `MODsetup_add_derived_metadata.m` at the start and on its `yamlUpdated` retry, so a run in a new session (or after a prompted value is saved) still gets FP07 chi and the electronics correction - before, both were silently missing unless the caller's metadata came straight from `MODprocess_all_L0_to_L1` in the same session.
 

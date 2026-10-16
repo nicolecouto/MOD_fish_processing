@@ -11,7 +11,8 @@ function metadata = MODsetup_add_derived_metadata(metadata)
 %       transfer functions, recomputed (MODsetup_define_filters.m; cheap,
 %       needs only the yml).
 %     - metadata.AFE.(ch).volts_to_C - the FP07 in-situ fit, loaded from
-%       meta/fpo7_calibration.mat if it exists. That file is written by
+%       fpo7_calibration.mat in metadata.paths.L1_meta (the meta/ next to
+%       the L1 the fit was made on) if it exists. That file is written by
 %       MODprocess_all_L0_to_L1.m each time it fits
 %       (MODprocess_L1_apply_fpo7_calibration.m). Only channels that are
 %       still fpo7 with the same probe SN in this yml are filled, so a
@@ -30,7 +31,7 @@ function metadata = MODsetup_add_derived_metadata(metadata)
 %   MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml)).
 %
 % INPUTS
-%   metadata - from MODsetup_read_yaml.m (needs .paths.meta, .AFE,
+%   metadata - from MODsetup_read_yaml.m (needs .paths.L1_meta, .AFE,
 %              .PROCESS.channels)
 %
 % OUTPUTS
@@ -56,7 +57,7 @@ while true
     end
 end
 
-cal_file = fullfile(metadata.paths.meta, 'fpo7_calibration.mat');
+cal_file = fullfile(metadata.paths.L1_meta, 'fpo7_calibration.mat');
 if ~isfile(cal_file)
     return
 end

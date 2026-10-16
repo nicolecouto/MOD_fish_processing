@@ -51,8 +51,9 @@ function PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseri
 %                     forced excluded (see STEP 1).
 %     is_down       - logical, one value per input sample. true where this
 %                     sample is classified as (or buffered next to)
-%                     descending. This is what MODprocess_single_L1_to_L2.m
-%                     nearest-matches each scan's center time against.
+%                     descending. mod_L2_tile_scans.m nearest-matches each
+%                     scan's center time against this (and against
+%                     dPdt_smoothed for upward scans).
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
