@@ -62,7 +62,7 @@ function profile_files = MODprocess_all_extract_profiles(metadata, profiles_dir,
 %
 % CALLS
 %   MODprocess_L1_update_cast_table.m, modProcess_extract_profile.m,
-%   MODsetup_read_yaml.m (only on the retry path)
+%   MODsetup_read_yaml.m (only on the retry path), MODutil_provenance.m
 %
 % NOTES
 %   Errors clearly (rather than silently producing nothing) if
@@ -158,6 +158,7 @@ for i = 1:numel(profiles)
         end
     end
 
+    profile_data.provenance = MODutil_provenance(fullfile(metadata.paths.L1, profile_data.filenames), metadata);
     save(profile_file, '-struct', 'profile_data')
     fprintf(1, '%d epsi samples, %d ctd samples\n', ...
         numel(profile_data.epsi.dnum), numel(profile_data.ctd.dnum));

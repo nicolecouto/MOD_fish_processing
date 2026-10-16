@@ -101,7 +101,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
 %   MODsetup_read_yaml.m (only to reread the yml after a prompted value is
 %   saved to it - MODsetup_validate_metadata.m's yamlUpdated)
-%   MODutil_needs_redo.m, MODutil_save_atomic.m, MODprocess_L1_update_file_cache.m
+%   MODutil_needs_redo.m, MODutil_save_atomic.m, MODprocess_L1_update_file_cache.m,
+%   MODutil_provenance.m
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -208,6 +209,7 @@ for i = 1:nfiles
         L0_data = load(fullfile(list_L0file(i).folder, filename));
         ctd_chunk = slice_external_ctd(external_ctd_full, L0_data);
         data = MODprocess_single_L0_to_L1(L0_data, metadata, ctd_chunk);
+        data.provenance = MODutil_provenance(fullfile(list_L0file(i).folder, filename), metadata);
 
         MODutil_save_atomic(L1_file, data)
         processed{end+1} = filename; %#ok<AGROW>

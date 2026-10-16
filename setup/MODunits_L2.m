@@ -71,4 +71,5 @@ u.Fs_epsi = struct('unit', 'Hz', 'description', 'Epsi sample rate this L2data wa
 u.N_epsi = struct('unit', 'samples', 'description', 'Scan length in samples, derived from fft_length/fft_segments_per_scan.');
 u.scan_step = struct('unit', 'samples', 'description', 'Step between consecutive scan starts (accounts for scan_overlap).');
 
+u.provenance = struct('unit', 'n/a (record)', 'description', 'What this file was made from (MODutil_provenance.m): the L1 file (.files - processed/<run>/L1/<name>.mat, or the L1_from run''s; for profiles_L2 the profiles_L1 Profile####.mat), the yml (.yml) and its SHA-256 when read (.yml_sha256), .run, .survey, .made_utc and the code commit (.code). Paths are relative to the survey folder.');
 end %end function

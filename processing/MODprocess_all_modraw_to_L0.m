@@ -63,7 +63,7 @@ function [L0_files, problems, processed] = MODprocess_all_modraw_to_L0(raw_dir, 
 %   MODprocess_single_modraw_to_L0.m
 %   MODsetup_detect_raw_suffix.m
 %   MODsetup_pad_raw_filenames.m
-%   MODutil_needs_redo.m, MODutil_save_atomic.m
+%   MODutil_needs_redo.m, MODutil_save_atomic.m, MODutil_provenance.m
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -164,6 +164,10 @@ for i = 1:nfiles
 
         L0_data.raw_file_info.bytes    = list_rawfile(i).bytes;
         L0_data.raw_file_info.filename = base;
+        % the raw file and yml this came from (MODutil_provenance.m); the
+        % survey is the folder holding raw/
+        L0_data.provenance = MODutil_provenance(fullfile(raw_dir, filename), metadata, ...
+            fileparts(regexprep(char(raw_dir), '[\\/]+$', '')));
 
         % Save data in .mat file
         MODutil_save_atomic(fullfile(L0_dir, [base '.mat']), L0_data)

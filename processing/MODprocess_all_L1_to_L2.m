@@ -84,7 +84,7 @@ function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metad
 %   MODprocess_single_L1_to_L2.m
 %   MODsetup_add_derived_metadata.m (at the start, and on the retry path)
 %   MODsetup_read_yaml.m (only on the retry path - see NOTES/DESCRIPTION)
-%   MODutil_needs_redo.m, MODutil_save_atomic.m
+%   MODutil_needs_redo.m, MODutil_save_atomic.m, MODutil_provenance.m
 %   MODutil_short_path.m (console messages only)
 %
 % NOTES
@@ -191,6 +191,7 @@ for i = 1:nfiles
             end
         end
 
+        L2data.provenance = MODutil_provenance(fullfile(list_L1file(i).folder, filename), metadata);
         MODutil_save_atomic(L2_file, L2data)
         processed{end+1} = filename; %#ok<AGROW>
         fprintf(1, '%d scans\n', numel(L2data.dnum));

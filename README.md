@@ -24,6 +24,7 @@ util
     MODutil_simulate_acquisition.m - replays a real deployment's raw files into a test folder, growing each file the way fctd_epsi does, to test realtime processing
     MODutil_read_som3.m - prints (or returns) what's in a .modraw file's $SOM3 block: mission, vehicle, firmware, and each SOM module (EFE channels with probe SNs, SBE, SD card, ...)
     MODutil_level_folders.m - for the viewers: the L1 and L2 folders that go together for a processing run (its own L1, or the L1_from run's)
+    MODutil_provenance.m - the provenance field in every L0/L1/L2/profiles file: the file(s) and run yml it was made from (relative to the survey), the yml's SHA-256, run, time and code commit
 
 visualization
     MODvis_timeseries.m - plots time series from a directory of L0, L1, L2, or Profile .mat files, or a processing run's folder (opens its L1) (formerly L0ExplorerApp.m)

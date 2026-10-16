@@ -25,7 +25,7 @@ function written = MODutil_write_folder_readme(folder, level, metadata)
 %   MODprocess_deployment.m
 %
 % CALLS
-%   MODsetup_metadata_field_registry.m
+%   MODsetup_metadata_field_registry.m, MODutil_code_version.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -95,7 +95,7 @@ if ~isempty(param_lines)
     L = [L; {''; ['Parameters (from ' yml_name '):']}; param_lines];
 end
 L = [L; {''; ['Vehicle: ' field_or(metadata, 'vehicle_name') ', fish: ' field_or(metadata, 'fish_flag')]
-         ['Code: MOD_fish_processing ' code_version()]
+         ['Code: MOD_fish_processing ' MODutil_code_version()]
          'Units of every field: setup/MODunits_L0.m ... MODunits_L3.m in MOD_fish_processing.'}];
 
 readme = fullfile(folder, '_README.txt');
@@ -148,25 +148,4 @@ s = '';
 if isfield(m, f)
     s = char(string(m.(f)));
 end
-end
-
-%% Short git commit of this repo, with "+ local changes" if the tree is dirty
-function v = code_version()
-persistent cached % the code doesn't change during a run
-if ~isempty(cached)
-    v = cached;
-    return
-end
-repo = fileparts(fileparts(mfilename('fullpath')));
-[status, sha] = system(sprintf('git -C "%s" rev-parse --short HEAD', repo));
-if status ~= 0
-    v = '(not a git checkout)';
-    return
-end
-v = ['commit ' strtrim(sha)];
-[~, dirty] = system(sprintf('git -C "%s" status --porcelain --untracked-files=no', repo));
-if ~isempty(strtrim(dirty))
-    v = [v ' + local changes'];
-end
-cached = v;
 end

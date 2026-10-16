@@ -59,4 +59,5 @@ u.isap_dst = struct('unit', 'm (raw, pre-hab)', 'description', 'ISA500 raw range
 u.twist_count_gyro = struct('unit', 'full rotations', 'description', 'Cumulative cable-twist rotation count, integrated z-axis gyro / (2*pi) - mod_L1_add_twist.m.');
 u.twist_pressure = struct('unit', 'dbar', 'description', 'CTD pressure interpolated onto the vnav timebase - marks upcast/downcast for the twist-count plot (NaN if no CTD or interpolation fails).');
 
+u.provenance = struct('unit', 'n/a (record)', 'description', 'What this file was made from (MODutil_provenance.m): the L0 file (.files, L0/<name>.mat; for a profiles_L1 Profile####.mat, the L1 files it was cut from), the yml (.yml) and its SHA-256 when read (.yml_sha256), .run, .survey, .made_utc and the code commit (.code). Paths are relative to the survey folder.');
 end %end function

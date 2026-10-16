@@ -4,6 +4,12 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-15 - Provenance in every data file (branch `main-fork`)
+
+Nicole: each level of data file should point to the data file and yml it came from. Every L0, L1, L2, profiles_L1 and profiles_L2 file now has a `provenance` field (new `util/MODutil_provenance.m`): `files` (the source file(s): raw -> L0 -> L1 -> L2, the contributing L1 files for a profiles_L1 profile, the profiles_L1 profile for profiles_L2), `yml`, `yml_sha256`, `run`, `survey`, `made_utc`, `code`. Paths are relative to the survey folder (Nicole's choice), so they stay right in a copy. Record only - a changed yml doesn't trigger a redo (Nicole's choice, for now). The README writer's git lookup moved to `util/MODutil_code_version.m`. Documented in `MODunits_L0/L1/L2.m`, `processing_data.md` and README.
+
+Tested in a scratchpad sandbox with 4 raw files of `epsi_mako_w_fluor/25_0408_d03_mako1_canyonhead` (its setup.yml standing in for dev1_setup.yml): realtime run (4 L2, 10 casts) and a by-profile run with `L1_from: realtime` (10 profiles) - each level's provenance names the right source file and yml, and the recorded SHA-256 values match `shasum -a 256` of the two run ymls. `checkcode` clean apart from older `datestr`/`now` notes.
+
 ### 2026-10-15 - Processing runs, postprocessing templates, L2 scans only (branch `main-fork`)
 
 Nicole's design: a processing run is one yml plus one output folder, so trying other parameters never overwrites anything, and a copied survey folder works anywhere.

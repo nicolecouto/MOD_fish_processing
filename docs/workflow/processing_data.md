@@ -115,6 +115,19 @@ Run nfft512 - .../26_1015_fctd2_deck_test/meta/meta_data_nfft512.yml
 
 L1 is never rewritten after it's made.
 
+**Every data file says what it was made from.** Each L0, L1, L2, `profiles_L1` and `profiles_L2`
+file has a `provenance` field (`MODutil_provenance.m`):
+
+| Field | What it holds |
+|---|---|
+| `files` | The file(s) it was made from: L0 ← `raw/<name>.modraw`, L1 ← `L0/<name>.mat`, L2 ← `processed/<run>/L1/<name>.mat` (the `L1_from` run's for such a run), profiles_L1 ← the L1 files the cast was cut from, profiles_L2 ← `processed/<run>/profiles_L1/Profile####.mat` |
+| `yml` | The run yml it was made with, e.g. `meta/meta_data_realtime.yml` (for L0, whichever run made it - L0 is shared, and doesn't depend on the yml) |
+| `yml_sha256` | The yml's SHA-256 when it was read - compare it with the yml now to see whether the yml has changed since |
+| `run`, `survey`, `made_utc`, `code` | The run, the survey folder's name, when it was made, and the code's git commit |
+
+Paths are relative to the survey folder, so they still point to the right files in a copy of the
+survey. This is a record only: a changed yml doesn't make anything be redone (reprocess for that).
+
 Every folder gets an auto-written `_README.txt` listing:
 - what's in the files;
 - the run and its yml, and for L2, profiles_L1 and profiles_L2 which run's L1 they came from (an
@@ -503,3 +516,10 @@ rest, and writes no worker files for a one-off pass. L2 holds scans only; by-fil
 `profile_dir`; repeated times across L1 files are handled. Templates in `templates/`; the viewers
 take a run folder (`MODutil_level_folders.m`). Tested on copies of the 2026-10-15 FCTD2 deck test
 and on the simulator - see `SESSION_LOG.md` (2026-10-15).
+
+**2026-10-15 (later) - Provenance in every data file** (branch `main-fork`). Each L0, L1, L2,
+profiles_L1 and profiles_L2 file records the file(s) and run yml it was made from (relative to the
+survey), the yml's SHA-256, the run, the time and the code commit (`MODutil_provenance.m`; the git
+lookup moved to `MODutil_code_version.m`). A record only - nothing is redone when the yml changes.
+Tested on a sandbox copy of 4 canyonhead files: a realtime run and a by-profile run with `L1_from`
+recorded the right source at every level, and the recorded hashes match the yml files.

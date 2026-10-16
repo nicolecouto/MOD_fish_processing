@@ -62,4 +62,5 @@ u.apf = struct('unit', 'raw', 'description', 'APEX float (APF0/1/2) telemetry da
 u.fluor = struct('unit', 'raw', 'description', 'ECOP fluorometer raw data - passes through L1 unchanged.');
 u.ttv = struct('unit', 'raw', 'description', 'TTV1 data - passes through L1 unchanged.');
 
+u.provenance = struct('unit', 'n/a (record)', 'description', 'What this file was made from (MODutil_provenance.m): the raw file (.files, raw/<name>.modraw), the yml (.yml) and its SHA-256 when read (.yml_sha256), .run, .survey, .made_utc and the code commit (.code). Paths are relative to the survey folder.');
 end %end function
