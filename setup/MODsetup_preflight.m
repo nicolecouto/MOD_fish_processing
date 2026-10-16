@@ -122,7 +122,7 @@ if ~isfolder(cal_root) && ip.Results.ask_paths
 end
 if ~isfolder(cal_root)
     report.problems{end+1} = sprintf(['calibrations_root is not a folder on this computer: ''%s'' ' ...
-        '(in %s). Set it there, or give calibrations_root to MODprocess_deployment.'], cal_root, run_yml);
+        '(in %s). Set it there (a folder that works here is kept when the yml is rebuilt).'], cal_root, run_yml);
     report = done(report, nargout);
     return
 end

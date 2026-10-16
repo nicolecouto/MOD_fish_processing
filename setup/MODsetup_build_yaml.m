@@ -1,95 +1,79 @@
-function [run_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_data_yml, varargin)
+function [run_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_data_yml, run, varargin)
 % MODsetup_build_yaml        Part of MOD_fish_processing
 %
 % run_yml = MODsetup_build_yaml(survey_meta_dir)
-% [run_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_data_yml, 'run', name, ...)
+% [run_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_data_yml, run, 'L1_from', other_run)
 %
 % DESCRIPTION
 %   Builds a processing run's yml, <survey>/meta/meta_data_<run>.yml - the
-%   file processing reads (MODsetup_read_yaml.m). A run is one yml plus
-%   one output folder, <survey>/processed/<run>/; the realtime worker's
-%   run is 'realtime'. See docs/workflow/processing_data.md.
-%
-%   From two sources:
+%   file processing reads (MODsetup_read_yaml.m) - by combining two files:
 %     - meta/dev1_setup.yml, written on DEV1 by Start New Deployment
 %       (acquisition/start_new_deployment.py): what's on the vehicle.
-%     - cruise_meta_data.yml: the cruise's processing parameters per
-%       sensor type (template: setup/cruise_meta_data_template.yml).
+%     - a cruise yml: processing parameters per sensor type (template:
+%       setup/cruise_meta_data_template.yml). To try other settings, copy
+%       it, change the copy, and build another run from that.
+%   A run is one yml plus one output folder, <survey>/processed/<run>/; the
+%   realtime worker's run is 'realtime'. See docs/workflow/processing_data.md.
+%
 %   The merge is done on the text, so both files' comments are kept:
 %     1. dev1_setup.yml, unchanged.
-%     2. Each section of cruise_meta_data.yml that dev1_setup.yml doesn't
-%        have, copied with its comments. For a section both have (afe:),
-%        only the keys dev1_setup.yml lacks are added
+%     2. Each section of the cruise yml that dev1_setup.yml doesn't have,
+%        copied with its comments. For a section both have (afe:), only
+%        the keys dev1_setup.yml lacks are added
 %        (MODsetup_write_yaml_value.m). dev1_setup.yml wins on any key
 %        both set.
 %     3. dev1_setup.yml's top-level profiling_direction (what Start New
 %        Deployment writes) is copied to profile_detection.profile_dir,
 %        which is what processing reads.
-%     4. A run: block - name, L1_from, created_utc, sources.
+%     4. A run: block - name, L1_from, cruise_yml, created_utc.
 %
-%   The 'realtime' run is rebuilt from the sources on every call, so a
-%   change to dev1_setup.yml or cruise_meta_data.yml reaches it:
-%     - a registry parameter the old file had and the sources don't (a
-%       value saved from a prompt) is carried over; one the sources set
-%       differently is reported in info.changed - the sources win;
-%     - calibrations_root: the old file's is kept when it exists on this
-%       computer and dev1_setup.yml's doesn't (e.g. a copy of the survey
-%       on a laptop, after preflight asked for it);
-%     - an old-layout meta/depl_meta_data.yml is used as the old file the
+%   Every run is rebuilt this way on every call, so an edit to
+%   dev1_setup.yml or to the run's cruise yml reaches it - edit those, not
+%   the run yml. From the run yml there already:
+%     - a registry parameter it had and the sources don't (a value saved
+%       from a prompt) is carried over; one the sources set differently is
+%       reported in info.changed - the sources win;
+%     - its calibrations_root is kept when it's a folder on this computer
+%       and dev1_setup.yml's isn't (e.g. a copy of the survey on a laptop,
+%       after preflight asked for it). Otherwise a reachable one is taken
+%       from another run yml of the same survey (realtime first), so it
+%       only has to be asked for once per copy of a survey;
+%     - for 'realtime', an old-layout meta/depl_meta_data.yml stands in the
 %       first time.
 %   The old file is kept as .replaced_<UTC stamp> when its content
 %   changes; nothing is written when nothing would change, so this is safe
 %   to call on every pass of the realtime worker.
 %
-%   Any other run's yml is made once - from the sources, or from another
-%   run's yml ('base') - with 'L1_from' and 'overrides' applied. After that
-%   it's that run's own file: it is not rebuilt, so edits by hand stay.
-%   Called again with different overrides, it says so and changes nothing
-%   (edit the yml, or use a new run name). 'calibrations_root' is applied
-%   to any run.
-%
-%   Whenever a yml is built and its calibrations_root isn't a folder on
-%   this computer (and none was given), it takes a reachable one from
-%   another run yml of the same survey (realtime first), so the folder
-%   only has to be asked for once per copy of a survey.
-%
 % INPUTS
 %   survey_meta_dir      - the survey's meta/ folder (holds dev1_setup.yml)
-%   cruise_meta_data_yml - (optional, [] for the default)
-%                          <processed_root>/cruise_meta_data.yml, i.e. two
-%                          levels above survey_meta_dir. If it doesn't
+%   cruise_meta_data_yml - (optional) the cruise yml. [] = the one this run
+%                          was built with (run.cruise_yml in its yml), or,
+%                          for a new run, <processed_root>/cruise_meta_data.yml
+%                          (two levels above survey_meta_dir). If it doesn't
 %                          exist, the yml gets only dev1_setup.yml (+ step
 %                          3), with a warning; MODsetup_preflight.m then
 %                          lists what's missing.
-%   Name-value options:
-%     'run'               - run name, default 'realtime'. Letters, digits,
-%                           _ and - only (it names the folder).
-%     'base'              - another run whose yml this one starts from
-%                           (instead of the sources). Not for 'realtime'.
-%     'L1_from'           - run whose L1 this run uses instead of making
-%                           its own ('' = its own). Not for 'realtime'.
-%     'overrides'         - {'section.key', value, ...} (or a registry
-%                           name instead of 'section.key', e.g.
-%                           'fft_length'), written into a new run's yml.
-%                           Not for 'realtime'.
-%     'calibrations_root' - folder to use as calibrations_root (written
-%                           into the yml); '' = from the sources
+%   run                  - (optional) run name, default 'realtime'. Letters,
+%                          digits, _ and - only (it names the folder).
+%   Name-value option:
+%     'L1_from' - run whose L1 this run uses instead of making its own.
+%                 [] (default) = as this run already had it (none for a new
+%                 run); '' = its own L1. Not for 'realtime'.
 %
 % OUTPUTS
 %   run_yml - full path to meta/meta_data_<run>.yml
 %   info    - struct:
-%               .run       - the run name
-%               .created   - true if the yml didn't exist before
-%               .written   - true if the yml was (re)written
-%               .backup    - path of the .replaced_* copy, or ''
-%               .added     - cellstr 'section.key' added from the cruise file
-%               .carried   - cellstr 'section.key' carried over from the old file
-%               .changed   - cellstr 'section.key: old -> new'
-%               .ignored   - cellstr overrides not applied (existing run yml)
-%               .cruise_yml - the cruise file used ('' if none)
+%               .run        - the run name
+%               .created    - true if the yml didn't exist before
+%               .written    - true if the yml was (re)written
+%               .backup     - path of the .replaced_* copy, or ''
+%               .added      - cellstr 'section.key' added from the cruise yml
+%               .carried    - cellstr 'section.key' carried over from the old file
+%               .changed    - cellstr 'section.key: old -> new'
+%               .cruise_yml - the cruise yml used ('' if none was found)
 %
 % CALLED BY
-%   MODprocess_deployment.m (each survey pass); by hand
+%   MODprocess_deployment.m (each survey pass); templates/; by hand
 %
 % CALLS
 %   MODsetup_write_yaml_value.m, MODsetup_format_yaml_value.m,
@@ -97,37 +81,15 @@ function [run_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_data
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
+if nargin < 3 || isempty(run)
+    run = 'realtime';
+end
 ip = inputParser;
-addParameter(ip, 'run', 'realtime');
-addParameter(ip, 'base', '');
-addParameter(ip, 'L1_from', '');
-addParameter(ip, 'overrides', {});
-addParameter(ip, 'calibrations_root', '');
+addParameter(ip, 'L1_from', []);
 parse(ip, varargin{:});
-opts = ip.Results;
-run = char(opts.run);
-if isempty(regexp(run, '^[A-Za-z0-9_-]+$', 'once'))
-    error('MODsetup_build_yaml:badRunName', ['Run name "%s" can only have letters, digits, _ and - ' ...
-        '(it becomes the folder processed/%s/).'], run, run);
-end
-is_realtime = strcmp(run, 'realtime');
-if is_realtime && (~isempty(opts.base) || ~isempty(opts.L1_from) || ~isempty(opts.overrides))
-    error('MODsetup_build_yaml:realtimeFromSources', ['The realtime run is built from dev1_setup.yml and ' ...
-        'cruise_meta_data.yml only - put parameters there, or use another run name for base/L1_from/overrides.']);
-end
-for name = {opts.L1_from, opts.base}
-    if ~isempty(name{1}) && isempty(regexp(char(name{1}), '^[A-Za-z0-9_-]+$', 'once'))
-        error('MODsetup_build_yaml:badRunName', 'Run name "%s" can only have letters, digits, _ and -.', char(name{1}));
-    end
-end
-if strcmp(char(opts.L1_from), run)
-    error('MODsetup_build_yaml:L1FromSelf', 'L1_from can''t be the run itself (%s).', run);
-end
-overrides = parse_overrides(opts.overrides);
-
-if nargin < 2 || isempty(cruise_meta_data_yml)
-    cruise_meta_data_yml = fullfile(fileparts(fileparts(survey_meta_dir)), 'cruise_meta_data.yml');
-end
+L1_from = ip.Results.L1_from;
+run = char(run);
+check_name(run);
 toolbox_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', 'YAMLMatlab_0.4.3');
 addpath(toolbox_dir);
 
@@ -137,117 +99,97 @@ if ~isfile(dev1_yml)
     error('MODsetup_build_yaml:noDev1Setup', 'No dev1_setup.yml in %s - run Start New Deployment first.', survey_meta_dir);
 end
 info = struct('run', run, 'created', ~isfile(run_yml), 'written', false, 'backup', '', ...
-    'added', {{}}, 'carried', {{}}, 'changed', {{}}, 'ignored', {{}}, 'cruise_yml', '');
+    'added', {{}}, 'carried', {{}}, 'changed', {{}}, 'cruise_yml', '');
 
-%% An existing run other than realtime is its own file - not rebuilt
-if ~is_realtime && isfile(run_yml)
-    existing = read_source(run_yml);
-    for iO = 1:numel(overrides)
-        [has, val] = get_value(existing, overrides(iO).section, overrides(iO).key);
-        if ~has || ~isequal(val, overrides(iO).value)
-            info.ignored{end+1} = overrides(iO).name;
-        end
-    end
-    [~, old_L1_from] = get_value(existing, 'run', 'L1_from');
-    if ~isempty(opts.L1_from) && ~strcmp(char(string(old_L1_from)), char(opts.L1_from)) % '' = not given
-        info.ignored{end+1} = 'run.L1_from';
-    end
-    [~, old_sources] = get_value(existing, 'run', 'sources');
-    if ~isempty(opts.base) && ~contains(char(string(old_sources)), ['meta_data_' char(opts.base) '.yml'])
-        info.ignored{end+1} = 'base';
-    end
-    if ~isempty(info.ignored)
-        fprintf(['MODsetup_build_yaml: %s already exists, so these were not applied: %s.\n' ...
-            '  Edit that file, or give a new run name to start a new run.\n'], run_yml, strjoin(info.ignored, ', '));
-    end
-    [~, old_cal] = get_value(existing, '', 'calibrations_root');
-    new_cal = char(opts.calibrations_root);
-    if isempty(new_cal) && ~isfolder(char(string(old_cal)))
-        [new_cal, from_yml] = reachable_calibrations_root(survey_meta_dir, run_yml);
-        if ~isempty(new_cal)
-            info.carried{end+1} = ['calibrations_root (from ' from_yml ')'];
-        end
-    end
-    if ~isempty(new_cal) && ~strcmp(char(string(old_cal)), new_cal)
-        MODsetup_write_yaml_value(run_yml, '', 'calibrations_root', new_cal);
-        info.written = true;
-    end
-    return
+% The old file: this run's yml, or (realtime, the first time) the old layout's
+old_yml = run_yml;
+if strcmp(run, 'realtime') && ~isfile(old_yml)
+    old_yml = fullfile(survey_meta_dir, 'depl_meta_data.yml');
+end
+old = struct();
+if isfile(old_yml)
+    old = read_source(old_yml);
 end
 
-%% Start the new text: the sources, or the base run's yml
+% Which cruise yml, and which L1
+default_cruise_yml = fullfile(fileparts(fileparts(survey_meta_dir)), 'cruise_meta_data.yml');
+if nargin < 2 || isempty(cruise_meta_data_yml)
+    cruise_meta_data_yml = default_cruise_yml;
+    [has, recorded] = get_value(old, 'run', 'cruise_yml');
+    if has && ~isempty(recorded)
+        recorded = char(string(recorded));
+        if isfile(recorded)
+            cruise_meta_data_yml = recorded;
+        elseif isfile(fullfile(fileparts(default_cruise_yml), file_name(recorded)))
+            % a copy of the survey: the same file name next to the survey folder
+            cruise_meta_data_yml = fullfile(fileparts(default_cruise_yml), file_name(recorded));
+        end
+    end
+end
+cruise_meta_data_yml = char(cruise_meta_data_yml);
+if isnumeric(L1_from) % not given: keep the run's
+    [~, L1_from] = get_value(old, 'run', 'L1_from');
+end
+if isempty(L1_from)
+    L1_from = '';
+end
+L1_from = char(L1_from);
+if ~isempty(L1_from)
+    check_name(L1_from);
+    if strcmp(run, 'realtime') || strcmp(L1_from, run)
+        error('MODsetup_build_yaml:badL1From', ['L1_from ''%s'' isn''t allowed for run ''%s'' (realtime ' ...
+            'makes its own L1, and a run can''t take its L1 from itself).'], L1_from, run);
+    end
+end
+
+%% 1-3. dev1_setup.yml, then the cruise yml's processing parameters
 tmp_yml = [run_yml '.building'];
 % (rewritten from scratch each time; left behind if a build fails, to look at)
-if ~isempty(opts.base)
-    base_yml = fullfile(survey_meta_dir, ['meta_data_' char(opts.base) '.yml']);
-    if ~isfile(base_yml)
-        error('MODsetup_build_yaml:noBase', 'No %s to start run %s from.', base_yml, run);
-    end
-    sources = sprintf('a copy of meta_data_%s.yml', char(opts.base));
-    body = drop_header(read_lines(base_yml));
+if isfile(cruise_meta_data_yml)
+    sources = sprintf('dev1_setup.yml (below) and %s (after it)', cruise_meta_data_yml);
 else
-    if isfile(cruise_meta_data_yml)
-        sources = sprintf('dev1_setup.yml (below) and %s (after it)', cruise_meta_data_yml);
-    else
-        sources = sprintf('dev1_setup.yml (below) only - no %s', cruise_meta_data_yml);
-    end
-    body = read_lines(dev1_yml);
+    sources = sprintf('dev1_setup.yml (below) only - no %s', cruise_meta_data_yml);
 end
 header = {sprintf('## meta_data_%s.yml - processing run "%s", made by MODsetup_build_yaml.m from %s.', run, run, sources)
-    sprintf('## Output goes to ../processed/%s/. Every path comes from where this file is; data_root is the ship''s, kept as a record.', run)};
-if is_realtime
-    header{end+1} = '## Rebuilt from its sources on every realtime pass: edit those. Values saved here by a prompt are kept.';
-else
-    header{end+1} = '## Made once; this is now this run''s own file - edit it here (it is not rebuilt).';
-end
-writelines([header; {''}; body], tmp_yml);
-
-if isempty(opts.base)
-    dev1 = read_source(dev1_yml);
-    %% 2. Cruise processing parameters
-    if isfile(cruise_meta_data_yml)
-        info.cruise_yml = cruise_meta_data_yml;
-        cruise = read_source(cruise_meta_data_yml);
-        blocks = split_top_level_blocks(read_lines(cruise_meta_data_yml));
-        for iB = 1:numel(blocks)
-            sec = blocks(iB).key;
-            if ~isfield(cruise, sec)
-                continue
-            end
-            if ~isfield(dev1, sec)
-                append_lines(tmp_yml, [{''}; blocks(iB).lines]);
-                info.added = [info.added, strcat(sec, '.', keys_of(cruise.(sec)))];
-            elseif isstruct(dev1.(sec)) && isstruct(cruise.(sec))
-                for key = keys_of(cruise.(sec))
-                    val = cruise.(sec).(key{1});
-                    if ~isfield(dev1.(sec), key{1}) && is_scalar_value(val)
-                        MODsetup_write_yaml_value(tmp_yml, sec, key{1}, val);
-                        info.added{end+1} = [sec '.' key{1}];
-                    end
+    sprintf('## Output goes to ../processed/%s/. Every path comes from where this file is; data_root is the ship''s, kept as a record.', run)
+    '## Rebuilt from those two files every time: edit them, not this file. Values saved here by a prompt are kept.'};
+writelines([header; {''}; read_lines(dev1_yml)], tmp_yml);
+dev1 = read_source(dev1_yml);
+if isfile(cruise_meta_data_yml)
+    info.cruise_yml = cruise_meta_data_yml;
+    cruise = read_source(cruise_meta_data_yml);
+    blocks = split_top_level_blocks(read_lines(cruise_meta_data_yml));
+    for iB = 1:numel(blocks)
+        sec = blocks(iB).key;
+        if ~isfield(cruise, sec)
+            continue
+        end
+        if ~isfield(dev1, sec)
+            append_lines(tmp_yml, [{''}; blocks(iB).lines]);
+            info.added = [info.added, strcat(sec, '.', keys_of(cruise.(sec)))];
+        elseif isstruct(dev1.(sec)) && isstruct(cruise.(sec))
+            for key = keys_of(cruise.(sec))
+                val = cruise.(sec).(key{1});
+                if ~isfield(dev1.(sec), key{1}) && is_scalar_value(val)
+                    MODsetup_write_yaml_value(tmp_yml, sec, key{1}, val);
+                    info.added{end+1} = [sec '.' key{1}];
                 end
             end
         end
-    else
-        warning('MODsetup_build_yaml:noCruiseMetaData', ...
-            'No %s - %s has only dev1_setup.yml; run MODsetup_preflight to see what''s missing.', ...
-            cruise_meta_data_yml, run_yml);
     end
-
-    %% 3. Start New Deployment's profiling_direction -> profile_detection.profile_dir
-    if isfield(dev1, 'profiling_direction')
-        MODsetup_write_yaml_value(tmp_yml, 'profile_detection', 'profile_dir', char(string(dev1.profiling_direction)));
-    end
+else
+    warning('MODsetup_build_yaml:noCruiseMetaData', ...
+        'No %s - %s has only dev1_setup.yml; run MODsetup_preflight to see what''s missing.', ...
+        cruise_meta_data_yml, run_yml);
+end
+if isfield(dev1, 'profiling_direction')
+    MODsetup_write_yaml_value(tmp_yml, 'profile_detection', 'profile_dir', char(string(dev1.profiling_direction)));
 end
 
-%% realtime: carry over from the old file (or the old-layout depl_meta_data.yml)
-old_yml = run_yml;
-if is_realtime && ~isfile(old_yml)
-    old_yml = fullfile(survey_meta_dir, 'depl_meta_data.yml');
-end
+%% Carry over from the old file
 created_utc = char(datetime('now', 'TimeZone', 'UTC', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-if is_realtime && isfile(old_yml)
-    old = read_source(old_yml);
-    merged = read_merged(tmp_yml, dev1_yml, cruise_meta_data_yml);
+merged = read_merged(tmp_yml, dev1_yml, cruise_meta_data_yml);
+if ~isempty(fieldnames(old))
     for spec = MODsetup_metadata_field_registry()
         [has_old, old_val] = get_value(old, spec.yaml_section, spec.yaml_key);
         if ~has_old
@@ -263,34 +205,19 @@ if is_realtime && isfile(old_yml)
                 MODsetup_format_yaml_value(old_val), MODsetup_format_yaml_value(new_val));
         end
     end
-    % calibrations_root that works on this computer wins over one that doesn't
-    [has_old_cal, old_cal] = get_value(old, '', 'calibrations_root');
-    [~, new_cal] = get_value(merged, '', 'calibrations_root');
-    if has_old_cal && isfolder(char(string(old_cal))) && ~isfolder(char(string(new_cal)))
-        MODsetup_write_yaml_value(tmp_yml, '', 'calibrations_root', char(string(old_cal)));
-        info.carried{end+1} = 'calibrations_root';
-    end
     [has_created, old_created] = get_value(old, 'run', 'created_utc');
     if has_created
         created_utc = char(string(old_created)); % so an unchanged rebuild is byte-identical
     end
 end
-
-%% 4. run: block, overrides, calibrations_root
-MODsetup_write_yaml_value(tmp_yml, 'run', 'sources', sources);
-MODsetup_write_yaml_value(tmp_yml, 'run', 'created_utc', created_utc);
-MODsetup_write_yaml_value(tmp_yml, 'run', 'L1_from', char(opts.L1_from));
-MODsetup_write_yaml_value(tmp_yml, 'run', 'name', run);
-for iO = 1:numel(overrides)
-    MODsetup_write_yaml_value(tmp_yml, overrides(iO).section, overrides(iO).key, overrides(iO).value);
-end
-if ~isempty(opts.calibrations_root)
-    MODsetup_write_yaml_value(tmp_yml, '', 'calibrations_root', char(opts.calibrations_root));
-else
-    % one that isn't a folder here: another run of this survey may already
-    % have one that is (asked for once per copy of the survey, not per run)
-    [~, cal] = get_value(read_merged(tmp_yml, dev1_yml, cruise_meta_data_yml), '', 'calibrations_root');
-    if ~isfolder(char(string(cal)))
+% calibrations_root that works on this computer wins over one that doesn't
+[~, cal] = get_value(merged, '', 'calibrations_root');
+if ~isfolder(char(string(cal)))
+    [has_old_cal, old_cal] = get_value(old, '', 'calibrations_root');
+    if has_old_cal && isfolder(char(string(old_cal)))
+        MODsetup_write_yaml_value(tmp_yml, '', 'calibrations_root', char(string(old_cal)));
+        info.carried{end+1} = 'calibrations_root';
+    else
         [other_cal, from_yml] = reachable_calibrations_root(survey_meta_dir, run_yml);
         if ~isempty(other_cal)
             MODsetup_write_yaml_value(tmp_yml, '', 'calibrations_root', other_cal);
@@ -299,9 +226,15 @@ else
     end
 end
 
+%% 4. run: block
+MODsetup_write_yaml_value(tmp_yml, 'run', 'created_utc', created_utc);
+MODsetup_write_yaml_value(tmp_yml, 'run', 'cruise_yml', info.cruise_yml);
+MODsetup_write_yaml_value(tmp_yml, 'run', 'L1_from', L1_from);
+MODsetup_write_yaml_value(tmp_yml, 'run', 'name', run);
+
 if ~isempty(info.changed)
     fprintf(['MODsetup_build_yaml: %s differed from its sources and now follows them:\n  %s\n' ...
-        '  (edit dev1_setup.yml or cruise_meta_data.yml to change these for good)\n'], ...
+        '  (edit dev1_setup.yml or the cruise yml to change these for good)\n'], ...
         run_yml, strjoin(info.changed, sprintf('\n  ')));
 end
 
@@ -320,31 +253,16 @@ movefile(tmp_yml, run_yml, 'f');
 info.written = true;
 end %end function
 
-%% {'section.key', value, ...} (or registry names) -> struct array
-function out = parse_overrides(c)
-out = struct('name', {}, 'section', {}, 'key', {}, 'value', {});
-if isempty(c)
-    return
+function check_name(name)
+if isempty(regexp(name, '^[A-Za-z0-9_-]+$', 'once'))
+    error('MODsetup_build_yaml:badRunName', ['Run name "%s" can only have letters, digits, _ and - ' ...
+        '(it becomes a folder in processed/).'], name);
 end
-if ~iscell(c) || mod(numel(c), 2) ~= 0
-    error('MODsetup_build_yaml:badOverrides', 'overrides must be {''section.key'', value, ...}.');
 end
-registry = MODsetup_metadata_field_registry();
-for k = 1:2:numel(c)
-    name = char(c{k});
-    parts = strsplit(name, '.');
-    if numel(parts) == 2
-        sec = parts{1}; key = parts{2};
-    else
-        r = registry(strcmp({registry.name}, name));
-        if isempty(r)
-            error('MODsetup_build_yaml:badOverrides', ['Override "%s" is neither ''section.key'' nor a ' ...
-                'registry name (MODsetup_metadata_field_registry.m).'], name);
-        end
-        sec = r(1).yaml_section; key = r(1).yaml_key;
-    end
-    out(end+1) = struct('name', name, 'section', sec, 'key', key, 'value', c{k + 1}); %#ok<AGROW>
-end
+
+function n = file_name(f)
+[~, n, e] = fileparts(f);
+n = [n e];
 end
 
 %% A calibrations_root that is a folder here, from another run yml of this
@@ -371,18 +289,6 @@ for k = order
         return
     end
 end
-end
-
-%% A run yml's lines without its "## " header (and the blank line after it)
-function lines = drop_header(lines)
-k = 1;
-while k <= numel(lines) && startsWith(lines{k}, '##')
-    k = k + 1;
-end
-if k <= numel(lines) && isempty(strtrim(lines{k}))
-    k = k + 1;
-end
-lines = lines(k:end);
 end
 
 %% Read one of the source files, or stop with a message naming it

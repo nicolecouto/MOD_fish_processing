@@ -30,8 +30,8 @@ function MODsetup_write_yaml_value(yaml_file, section, key, value)
 %   blocks, simple scalar "key: value" children, 2-space indentation) -
 %   not a general YAML editor. Called by MODsetup_validate_metadata.m when
 %   an operator accepts saving a prompted value, and by
-%   MODsetup_build_yaml.m (merging, the run: block, overrides and
-%   calibrations_root), and by MODsetup_preflight.m (calibrations_root).
+%   MODsetup_build_yaml.m (merging, the run: block and calibrations_root),
+%   and by MODsetup_preflight.m (calibrations_root).
 %
 % INPUTS
 %   yaml_file - full path to a run yml (meta_data_<run>.yml) or setup.yml

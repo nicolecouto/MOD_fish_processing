@@ -7,14 +7,15 @@ acquisition
     check_software/check_ship_setup.sh - read-only check of a ship computer (DEV1/DEV3): branch and remotes, up to date with GitHub, config.yml folders, MOD_fish_calibrations files, cruise_meta_data.yml, python3/tkinter and matlab
 
 setup
-    MODsetup_build_yaml.m - merges a survey's meta/dev1_setup.yml (Start New Deployment) with the cruise's cruise_meta_data.yml into a processing run's yml, meta/meta_data_<run>.yml (realtime: rebuilt every pass; other runs: made once, from the sources or a base run, with overrides), the yml processing reads
+    MODsetup_build_yaml.m - merges a survey's meta/dev1_setup.yml (Start New Deployment) with the cruise's cruise_meta_data.yml into a processing run's yml, meta/meta_data_<run>.yml (rebuilt every time; another set of values = another cruise yml), the yml processing reads
     MODsetup_preflight.m - prints a run's plan (which yml, inputs, outputs) and checks its yml has every processing parameter the stages about to run need (asks for missing ones with prompt = true), before an unattended run
     MODsetup_L1_settings.m - the part of metadata L0 -> L1 reads, so preflight can check that a run reusing another run's L1 (L1_from) has the same L1 settings
     cruise_meta_data_template.yml - every processing parameter with its description and suggested starting value (made by MODsetup_write_cruise_meta_data_template.m); copy to <processed_root>/cruise_meta_data.yml and review
 
 templates
-    MODtemplate_postprocess.m - postprocessing one survey: edit the settings block (survey, run name, base run, L1_from, overrides, by, last stage), run it; same code as the realtime worker
+    MODtemplate_postprocess.m - postprocessing one survey: edit the settings block (survey, run name, cruise yml, L1_from, by, last stage), run it; same code as the realtime worker
     MODtemplate_postprocess_by_stage.m - the same, one section per stage (L0, L1, casts, L2) to look at each stage's output before the next
+    MODtemplate_postprocess_steps.m - postprocessing one line per level (metadata = ..., L0_files = ..., L1_files = ..., ...): the processing functions called directly, no driver
 
 processing
     MODprocess_deployment.m - the one driver: realtime worker (MODprocess_deployment(processed_root, 'watch', true), or double-click "Start Realtime Processing.command") and one-pass/postprocessing runs (MODprocess_deployment(survey_folder, 'run', name, ...)): one yml per run (survey/meta/meta_data_<run>.yml) and one output folder (survey/processed/<run>/); see docs/workflow/processing_data.md

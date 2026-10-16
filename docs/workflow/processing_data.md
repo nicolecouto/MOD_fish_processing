@@ -69,8 +69,8 @@ so trying something new never overwrites what's there:
   works with no edits. `data_root` in `dev1_setup.yml` (and copied into the run yml) is the ship's
   path, kept as a record; processing doesn't use it.
 - **`calibrations_root`** is the one absolute path. If it isn't a folder on this computer,
-  postprocessing asks for it with a folder picker (or takes it from `'calibrations_root'`) and
-  writes it into the run yml. When any run yml is built, a reachable `calibrations_root` from
+  postprocessing asks for it with a folder picker and writes it into the run yml (and a working
+  one there is kept when the yml is rebuilt). When any run yml is built, a reachable `calibrations_root` from
   another run of the same survey is used, so it's asked for once per copy of a survey. The
   realtime worker never asks: the survey shows an error in `status.json` until it's fixed.
 - **Reusing another run's L1** (`L1_from`): L1 doesn't depend on spectral settings, so a run that
@@ -79,9 +79,11 @@ so trying something new never overwrites what's there:
   manifest, AFE channels and probe calibrations, CTD calibration, latitude, altimeter geometry,
   gap factors and the profiling-direction smoothing); otherwise preflight refuses and lists what
   differs. Such a run skips L0 and L1.
-- **Continuing a run** means giving it the same yml (or the same run name). `meta_data_realtime.yml`
-  is rebuilt from its sources on every pass (see [Metadata](#metadata)); any other run's yml is made
-  once and is then that run's own file: edit it there.
+- **A run's yml is `dev1_setup.yml` + one cruise yml,** rebuilt every time (see
+  [Metadata](#metadata)) - edit those two, not the run yml. To try other values (e.g. another
+  `fft_length`), copy `cruise_meta_data.yml`, change the copy, and run it under a new run name with
+  that file as `'cruise_yml'`. **Continuing a run** means giving the same run name (or its yml):
+  it remembers its cruise yml and `L1_from`.
 - **Old layout:** a survey processed before this (L1/, L2/, profiles_L1/, profiles_L2/ and
   `meta/depl_meta_data.yml` directly in the survey folder) gets a note from preflight; those folders aren't used or changed. Its L0/ is in
   the right place already and is reused. The first `meta_data_realtime.yml` carries over values
@@ -193,27 +195,28 @@ How the merge works (done on the text, so both files' comments are kept):
   the missing keys are added. On a key both set, dev1 wins.
 - dev1's `profiling_direction` is written to `profile_detection.profile_dir`, which is what
   processing reads.
-- A `run:` block records the run's `name`, `L1_from`, `created_utc` and `sources`.
+- A `run:` block records the run's `name`, `L1_from`, `cruise_yml` and `created_utc`.
 
-**The realtime run** (`meta_data_realtime.yml`) is rebuilt this way on every pass:
+**Every run's yml** (`meta_data_<run>.yml`) is rebuilt this way every time it's used (each pass of
+the worker for `realtime`). The cruise yml is the one given, or the one the run was built with
+(`run.cruise_yml`; in a copy of the survey, the same file name next to the survey folder), or
+`cruise_meta_data.yml` for a new run. `L1_from` is given, or kept from the run's yml.
+From the old run yml:
 - A parameter that only the old file had (e.g. one saved from a prompt) is carried over. If the
   sources now give a registry parameter a different value than the old file had, it's reported,
   and the sources win.
 - Its `calibrations_root` is kept when it's a folder on this computer and dev1's isn't (a copy
-  on a laptop, once it has been asked for).
-- The first time, an old-layout `meta/depl_meta_data.yml` stands in as the old file.
+  on a laptop, once it has been asked for); failing that, a reachable one from another run of the
+  survey is used.
+- For `realtime`, the first time, an old-layout `meta/depl_meta_data.yml` stands in as the old file.
 - The old file is kept as `.replaced_<UTC stamp>`.
 - If nothing would change, the file isn't rewritten, so the worker can call it every loop.
-
-**Any other run's yml** is made once - from the two sources as above, or from another run's yml
-(`'base'`) - with `'L1_from'` and `'overrides'` applied. After that it's that run's own file and
-isn't rebuilt, so edits made in it stay.
 
 ```matlab
 M = '/Volumes/DEV3_HD/.../Processed/<survey>/meta';
 [yml, info] = MODsetup_build_yaml(M);                       % meta_data_realtime.yml
-yml = MODsetup_build_yaml(M, [], 'run', 'nfft512', 'L1_from', 'realtime', ...
-    'overrides', {'spectral.fft_length', 512});             % a new run's yml
+yml = MODsetup_build_yaml(M, 'cruise_meta_data_nfft512.yml', 'nfft512', ...
+    'L1_from', 'realtime');                                 % another run, its own cruise yml
 MODsetup_preflight(yml)                % prints the plan and what's missing, or OK
 MODsetup_preflight(yml, true)          % asks for each missing value and saves it
 ```
@@ -420,33 +423,45 @@ settings block, run it):
   L1, casts, L2), so each stage's output can be looked at before the next. Each section calls the
   driver with `'from'` and `'until'` set to that stage, so the stages and their order are the
   driver's.
+- **`MODtemplate_postprocess_steps.m`** - postprocessing only, one line per level, calling the
+  processing functions themselves instead of the driver:
+
+  ```matlab
+  run_yml  = MODsetup_build_yaml(fullfile(survey_folder, 'meta'), cruise_yml, run_name, 'L1_from', L1_from);
+  [report, metadata] = MODsetup_preflight(run_yml, true);
+  L0_files = MODprocess_all_modraw_to_L0(metadata.paths.raw, metadata.paths.L0, [], metadata);
+  L1_files = MODprocess_all_L0_to_L1(metadata.paths.L0, metadata, metadata.paths.L1);
+  casts    = MODprocess_L1_update_cast_table(metadata);
+  profiles_L1_files = MODprocess_all_extract_profiles(metadata);
+  profiles_L2_files = MODprocess_all_L1_to_L2(metadata.paths.profiles_L1, metadata, metadata.paths.profiles_L2);
+  ```
+
+  then the folder READMEs and the viewers. An error stops it at that line. With `L1_from`, skip
+  the L0 and L1 lines. Tested to give the same cast table and `profiles_L2` files as the driver
+  with the same settings.
 
 Their settings block:
 
 | Setting | Meaning |
 |---|---|
 | `survey_folder` | The survey (holds `meta/dev1_setup.yml`, `raw/`, `L0/`) - the ship's, or a copy |
-| `run_name` | `realtime`, or a new name for a new run (letters, digits, `_`, `-`) |
-| `base_run` | New run only: start its yml from this run's yml instead of from `dev1_setup.yml` + `cruise_meta_data.yml` |
-| `L1_from` | New run only: use this run's L1 (L1 settings must match) |
-| `overrides` | New run only: `{'section.key', value, ...}` (or a registry name, e.g. `'fft_length'`) |
+| `run_name` | The run (letters, digits, `_`, `-`): a new name makes a new run, the same name continues it |
+| `cruise_yml` | The cruise yml with this run's processing values; `''` = the one the run was built with, or `cruise_meta_data.yml` next to the survey folder for a new run |
+| `L1_from` | Use this run's L1 instead of making one (L1 settings must match); `''` = its own L1 |
 | `by` | `'file'` (whole L1 files tiled into scans, as realtime) or `'profile'` (per cast: `profiles_L1/` from the cast table, then `profiles_L2/`) |
 | `until_stage` | Last stage: `'yml'` (check only), `'L0'`, `'L1'`, `'casts'` or `'L2'` |
-| `calibrations_root` | `''` = the yml's (asked for if it isn't a folder here) |
 
 The same thing without a template:
 
 ```matlab
 S = '/path/to/Processed/26_1015_fctd2_deck_test';
-MODprocess_deployment(S, 'until', 'L1', 'calibrations_root', '~/GitHub/modscripps/MOD_fish_calibrations')
-MODprocess_deployment(S, 'run', 'nfft512', 'L1_from', 'realtime', 'overrides', {'spectral.fft_length', 512})
+MODprocess_deployment(S, 'until', 'L1')                               % run 'realtime'
+MODprocess_deployment(S, 'run', 'nfft512', 'L1_from', 'realtime', ...
+    'cruise_yml', '/path/to/cruise_meta_data_nfft512.yml')           % another run
 MODprocess_deployment(fullfile(S, 'meta', 'meta_data_nfft512.yml'))   % continue that run
 MODvis_spectra(fullfile(S, 'processed', 'nfft512'))                   % its L2, with realtime's L1
 ```
 
-- `base_run`, `L1_from` and `overrides` only apply when the run is new; given again with different
-  values for an existing run, they're reported as not applied and nothing changes - edit the run's
-  yml, or use a new run name.
 - With a display (not `-batch`), missing parameters are asked for with the usual dialogs and saved
   into the run yml; `'ask', false` turns that off.
 - A one-off pass on one survey (a survey folder or a run yml as target) writes nothing outside the
@@ -523,3 +538,13 @@ survey), the yml's SHA-256, the run, the time and the code commit (`MODutil_prov
 lookup moved to `MODutil_code_version.m`). A record only - nothing is redone when the yml changes.
 Tested on a sandbox copy of 4 canyonhead files: a realtime run and a by-profile run with `L1_from`
 recorded the right source at every level, and the recorded hashes match the yml files.
+
+**2026-10-16 - Simpler run ymls** (branch `main-fork`). Nicole: "Why doesn't the function just
+combine dev1 yml with cruise yml? Why do you need an override field if you probably made a
+different yml with different values?" Every run's yml is now `dev1_setup.yml` + one cruise yml,
+rebuilt the same way every time (no "made once" runs); other values come from another cruise yml
+(`'cruise_yml'`). `MODsetup_build_yaml(survey_meta_dir, cruise_yml, run, 'L1_from', x)`; the
+`'base'`, `'overrides'` and `'calibrations_root'` arguments are gone (preflight still asks for an
+unreachable calibrations folder, and a working one in the run yml is kept). A run remembers its
+cruise yml and `L1_from`. New template `MODtemplate_postprocess_steps.m` (one line per level, no
+driver).

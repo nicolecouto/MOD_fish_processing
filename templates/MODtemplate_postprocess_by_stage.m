@@ -9,27 +9,32 @@
 % "Postprocessing", and MODtemplate_postprocess.m for the whole run in one
 % call (the settings block is the same).
 %
+% A processing run is one yml, <survey>/meta/meta_data_<run>.yml, plus one
+% output folder, <survey>/processed/<run>/; raw/ and L0/ in the survey
+% folder are shared by every run. The run's yml is dev1_setup.yml + one
+% cruise yml with the processing values, rebuilt every time - edit those
+% two, not the run yml. To try other values: copy cruise_meta_data.yml,
+% change the copy, and give it as cruise_yml with a new run_name. The same
+% run_name again continues that run (it remembers its cruise yml and
+% L1_from).
+%
 % A run that takes its L1 from another run (L1_from) skips the L0 and L1
-% sections - they're that run's. Run 'realtime' is rebuilt from
-% dev1_setup.yml + cruise_meta_data.yml every time and takes no base_run,
-% L1_from or overrides; use another run name to try other settings.
+% sections - they're that run's.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 %% Settings - edit these
 survey_folder     = '/path/to/Processed/<survey>'; % holds meta/dev1_setup.yml, raw/, L0/
-run_name          = 'realtime';  % letters, digits, _ and -: e.g. 'realtime', 'nfft512'
-base_run          = '';          % new run only: start from this run's yml ('' = from the sources)
-L1_from           = '';          % new run only: use this run's L1 instead of making one ('' = own L1)
-overrides         = {};          % new run only, e.g. {'spectral.fft_length', 512}
+run_name          = 'post1';     % letters, digits, _ and -: e.g. 'post1', 'nfft512'
+cruise_yml        = '';          % this run's processing values: '' = the one it was built with,
+                                 % or cruise_meta_data.yml next to the survey folder for a new run
+L1_from           = '';          % use this run's L1 instead of making one ('' = own L1)
 by                = 'file';      % 'file': whole L1 files tiled into scans; 'profile': per cast
-calibrations_root = '';          % '' = the yml's (asked for if it isn't a folder here)
 
 % MOD_fish_processing must be on the path, e.g.
 % addpath(genpath('/path/to/MOD_fish_processing'))
 assert(exist('MODprocess_deployment', 'file') == 2, 'Add MOD_fish_processing to the Matlab path first.');
-opts = {'run', run_name, 'base', base_run, 'L1_from', L1_from, 'overrides', overrides, ...
-    'by', by, 'calibrations_root', calibrations_root};
+opts = {'run', run_name, 'cruise_yml', cruise_yml, 'L1_from', L1_from, 'by', by};
 run_folder = fullfile(survey_folder, 'processed', run_name);
 
 %% 1. Build and check the run yml - prints what it will use

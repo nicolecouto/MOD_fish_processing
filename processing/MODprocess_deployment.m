@@ -15,8 +15,11 @@ function summary = MODprocess_deployment(target, varargin)
 %   one output folder, <survey>/processed/<run>/ (meta/, L1/, L2/,
 %   profiles_L1/, profiles_L2/). raw/ and L0/ stay in the survey folder,
 %   shared by every run. The realtime worker's run is 'realtime'; any other
-%   name is a postprocessing run, made once (from the sources or a 'base'
-%   run, with 'overrides') and then continued by giving its yml.
+%   name is a postprocessing run. Every run's yml is dev1_setup.yml + one
+%   cruise yml ('cruise_yml'; default cruise_meta_data.yml), rebuilt each
+%   pass (MODsetup_build_yaml.m) - to try other settings, give another
+%   cruise yml and a new run name. A run is continued by giving its name
+%   or its yml; it remembers its cruise yml and L1_from.
 %
 %   Each pass, for each survey it's looking after:
 %     0. route new raw files from the cruise-wide raw folder into
@@ -86,13 +89,13 @@ function summary = MODprocess_deployment(target, varargin)
 %   Name-value options:
 %     'run'                  - run name, default 'realtime' (or from a run
 %                              yml target)
-%     'base'                 - new run only: start its yml from this run's
-%                              yml instead of the sources
-%     'L1_from'              - new run only: use this run's L1 instead of
-%                              making one (L1 settings must match)
-%     'overrides'            - new run only: {'section.key', value, ...}
-%     'calibrations_root'    - folder to write into the run yml as
-%                              calibrations_root (e.g. a laptop's clone)
+%     'cruise_yml'           - the cruise yml this run's settings come from.
+%                              [] (default) = the one the run was built
+%                              with, or cruise_meta_data.yml next to the
+%                              survey folder for a new run
+%     'L1_from'              - use this run's L1 instead of making one (L1
+%                              settings must match). [] (default) = as the
+%                              run already has it; '' = its own L1
 %     'from', 'until'        - first and last stage: 'L0', 'L1', 'casts',
 %                              'L2' (default 'L0' to 'L2'); 'until' 'yml'
 %                              only builds and checks the yml
@@ -141,10 +144,8 @@ addParameter(ip, 'fpo7_refit_new_files', []);
 addParameter(ip, 'raw_dir', []);
 addParameter(ip, 'force', false);
 addParameter(ip, 'run', '');
-addParameter(ip, 'base', '');
-addParameter(ip, 'L1_from', '');
-addParameter(ip, 'overrides', {});
-addParameter(ip, 'calibrations_root', '');
+addParameter(ip, 'cruise_yml', []);
+addParameter(ip, 'L1_from', []);
 addParameter(ip, 'from', 'L0');
 addParameter(ip, 'until', 'L2');
 addParameter(ip, 'ask', []);
@@ -189,7 +190,7 @@ if isempty(opts.run)
 end
 % checked here as well as in MODsetup_build_yaml.m: the run's log folder is
 % made before the yml is built
-for name = {opts.run, opts.L1_from, opts.base}
+for name = {opts.run, char(string(opts.L1_from))}
     if ~isempty(name{1}) && isempty(regexp(char(name{1}), '^[A-Za-z0-9_-]+$', 'once'))
         error('MODprocess_deployment:badRunName', ['Run name "%s" can only have letters, digits, _ and - ' ...
             '(it names a folder in processed/).'], char(name{1}));
@@ -374,8 +375,7 @@ done = struct('stage', {}, 'files', {});
 
 % 1. the run yml + preflight
 try
-    [run_yml, build_info] = MODsetup_build_yaml(meta_dir, [], 'run', opts.run, 'base', opts.base, ...
-        'L1_from', opts.L1_from, 'overrides', opts.overrides, 'calibrations_root', opts.calibrations_root);
+    [run_yml, build_info] = MODsetup_build_yaml(meta_dir, opts.cruise_yml, opts.run, 'L1_from', opts.L1_from);
     [report, metadata] = MODsetup_preflight(run_yml, opts.ask, 'stages', opts.check_stages, 'ask_paths', opts.ask);
 catch ME
     current(end+1) = stage_problem('build_yaml', ME);

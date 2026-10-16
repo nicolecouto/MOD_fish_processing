@@ -4,6 +4,22 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-16 - Simpler run ymls: dev1_setup.yml + one cruise yml, always (branch `main-fork`)
+
+Nicole: "Why doesn't the function just combine dev3 yml with cruise yml? Why do you need an override field if you probably made a different yml with different values if you wanted to change something?" Agreed, with `L1_from` kept as an argument (her choice).
+- `MODsetup_build_yaml(survey_meta_dir, cruise_yml, run, 'L1_from', x)`: every run's yml is dev1_setup.yml + one cruise yml, rebuilt the same way every time (prompted values carried over, a reachable calibrations_root kept or borrowed from another run, unchanged = not rewritten). No "made once" runs. `'base'`, `'overrides'` and `'calibrations_root'` removed. The run remembers its cruise yml (`run.cruise_yml`; a copy of the survey finds the same file name next to its own survey folder) and `L1_from` (`[]` = keep, `''` = own L1).
+- `MODprocess_deployment`: `'cruise_yml'` replaces `'base'`/`'overrides'`/`'calibrations_root'`.
+- Templates: settings are `survey_folder`, `run_name` (default `post1`), `cruise_yml`, `L1_from` (+ `by`, `until_stage`).
+- Docs: processing_data.md (Processing runs, Metadata, Postprocessing, History), README, preflight/write_yaml_value wording.
+
+Tested in a scratchpad sandbox on 2 canyonhead raw files (dev1_setup.yml with an unreachable ship calibrations_root): preflight's folder question (injected answer) wrote the local calibrations_root, and rebuilds kept it; an unchanged rebuild didn't rewrite; an edit to cruise_meta_data.yml (scan_overlap) reached the run yml; a run `nfft512` from `cruise_meta_data_nfft512.yml` with `L1_from: realtime` made L2 with fft_length 512, and continuing it from its yml alone kept both; `L1_from ''` set it back to its own L1; a copy of the survey with the original moved away found `cruise_meta_data_nfft512.yml` next to itself; all three templates ran on the copy; a short watch run on the copy caught up and stopped. `checkcode` clean (apart from unused `summary` in the by-stage template, as before).
+
+### 2026-10-16 - Postprocessing template with every step written out (branch `main-fork`)
+
+Nicole wanted to see each step, without the driver, for postprocessing only: "meta_data = <function to get meta data>, L0 = <function to get L0>, etc". New `templates/MODtemplate_postprocess_steps.m`: the settings block (defaults: new run `post1`), then one line per level - `MODsetup_build_yaml` + `MODsetup_preflight` (prints the plan) -> `metadata`; `MODprocess_all_modraw_to_L0` -> `L0_files`; `MODprocess_all_L0_to_L1` -> `L1_files`; `MODprocess_L1_update_cast_table` -> `casts`; `MODprocess_all_extract_profiles` -> `profiles_L1_files`; `MODprocess_all_L1_to_L2` -> `profiles_L2_files` (L2 by file as a commented alternative); folder READMEs; viewers. Each function with its defaults, so an error stops at that line. It repeats the driver's stage order, so it has to follow `MODprocess_deployment.m` by hand.
+
+Tested in a scratchpad sandbox on 4 canyonhead raw files (setup.yml standing in for dev1_setup.yml): 4 L0, 4 L1, 10 casts, 10 profiles; all 10 `profiles_L2` files identical (apart from provenance) to a driver run with the same settings; with `L1_from: post1`, fft_length 512 and the L0/L1 lines removed, 10 profiles_L2 made from post1's L1. `checkcode` clean.
+
 ### 2026-10-15 - Provenance in every data file (branch `main-fork`)
 
 Nicole: each level of data file should point to the data file and yml it came from. Every L0, L1, L2, profiles_L1 and profiles_L2 file now has a `provenance` field (new `util/MODutil_provenance.m`): `files` (the source file(s): raw -> L0 -> L1 -> L2, the contributing L1 files for a profiles_L1 profile, the profiles_L1 profile for profiles_L2), `yml`, `yml_sha256`, `run`, `survey`, `made_utc`, `code`. Paths are relative to the survey folder (Nicole's choice), so they stay right in a copy. Record only - a changed yml doesn't trigger a redo (Nicole's choice, for now). The README writer's git lookup moved to `util/MODutil_code_version.m`. Documented in `MODunits_L0/L1/L2.m`, `processing_data.md` and README.
