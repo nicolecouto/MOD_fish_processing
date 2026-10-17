@@ -4,6 +4,27 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-17 - Cruise twist count (branch `main-fork`)
+
+Stage 5 of docs/workflow/processing_data.md. Nicole's choices: 1 s resolution (the 40 Hz VNAV count is 120 MB for the 44 h 2026-07-20 DeepSolo ocean test, over 1 GB for a cruise); one spool log per cruise ("Each survey does not need its own spool swap log"); the monitor shows it over the sections' time span.
+- New `MODprocess_cruise_twist(processed_root)`: every survey's realtime `meta/twist_time_series.mat` averaged into 1 s bins, joined in time order (each survey carries on from where the one before ended), restarting from 0 at each spool change from `MODprocess_find_spool_swaps`. Saved to `Processed/twist/twist_time_series.mat` with the survey and spool of each part; a 1 s copy per survey in `twist_by_survey.mat`, so a survey file is reread only when it changes, and the output is rewritten only when something did.
+- `MODprocess_deployment`: runs it after every pass over processed_root (realtime run); spool-source disagreements go to `cruise_log.txt` (once) and `status.json` warnings.
+- `MODprocess_L1_accumulate_twist_timeseries(L1_cache, meta_dir)`: no third argument, no per-survey `spool_swap_log.csv` / `SpoolSwapLog.csv`, atomic save.
+- `MODvis_twist_timeseries`: spool changes (dashed, named) and survey starts (dotted, named), the line broken at gaps, the "neutral is negative" note in the title instead of an annotation (which failed in the monitor's uiaxes).
+- Monitor: the twist panel never drew before - it looked for `dnum` in the loaded file instead of in `TwistTimeseries`. It now shows the cruise count in the sections' time window, reloaded only when the file changes; title: count now, spool, when it went on, latest time.
+- `MODsetup_build_yaml`: a `dev1_setup.yml` with no `calibrations_root` gave "Input path must be text"; now preflight's clear "calibrations_root is not a folder" message.
+Reviewed by an agent, which found 8 bugs, all fixed:
+- a NaN bin at a spool change turned the rest of the series NaN; resets now use the first finite value;
+- a survey whose times were all NaN broke the whole count;
+- the file was rewritten every pass when survey set-up order differed from data order;
+- a pass with nothing new returned the old warnings;
+- an unreadable survey file dropped that survey (its last good copy is kept now);
+- the monitor cut off twist newer than the last grid redraw;
+- warnings appeared twice in status.json;
+- the plotter failed on row vectors.
+Also fixed: a NaN at the end of one L1 file no longer turns every later file's survey count NaN.
+Tested in a scratchpad sandbox (deleted): three fake 2 h, 40 Hz surveys (spool_A, spool_A, spool_B) plus a hand-logged change to spool_C during the third. Counts 0 -> 3, carried to 3 -> 5 across the gap, 0 at the spool_B survey, 0 again at 17:00; 21600 samples at 1 s. A second call took 0.13 s and didn't rewrite the file; growing one survey's file rebuilt it with the later surveys right. A one-off `MODprocess_deployment(processed_root)` pass built the file. The monitor's panel was checked in a batch MATLAB, exported to PNG (count, spool and the time window; a window with no twist; a changed file reloaded). checkcode clean on the new code.
+
 ### 2026-10-17 - Launcher windows coloured and titled (branch `main-fork`)
 
 Nicole: a clear visual of which Terminal windows are doing what, different from normal windows, so nobody closes them by accident. `launch_style` in `util/launch_common.sh` sets the window title (escape sequence) and, in macOS Terminal, the tab's background (white text) through osascript, matching the tab by its tty so a window in front isn't changed: the worker's window dark red, "REALTIME PROCESSING - DO NOT CLOSE (closing stops the worker)"; the monitor launcher's dark blue, "Realtime monitor (safe to close once MATLAB is open)". Tested on this laptop: a test window opened with `open -a Terminal` read back its own background (28270, 5140, 5140 = 110, 20, 20 x 257) and title. macOS may ask once to allow osascript to control Terminal; refusing only skips the colour.

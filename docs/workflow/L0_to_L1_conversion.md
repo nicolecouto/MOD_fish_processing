@@ -235,7 +235,7 @@ TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_cache, meta_dir)
 
 Called automatically at the end of `MODprocess_all_L0_to_L1.m`, gated on `metadata.manifest.has_vnav` - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/twist_time_series.mat`.
 
-Also applies spool-swap resets from an operator-edited `meta/spool_swap_log.csv` (per deployment, in the survey's own `meta/` (`metadata.paths.survey_meta`), not a processing run's; the cruise-wide twist count planned in [Processing data](processing_data.md#stages) stage 5 will use `MODprocess_find_spool_swaps.m` and the cruise `Processed/spool_swap_log.csv` instead) (`#`-comment lines supported, columns `datetime_utc, spool_id, spool_length_m, notes`), if that file exists: at each swap timestamp, the cumulative count is reset to 0 from that point forward. Falls back to the legacy `meta/SpoolSwapLog.csv` name (with a warning) if the new name isn't found - this file is hand-edited during a cruise, not pipeline-regenerated, so an in-progress deployment's file must not be silently ignored after this rename. `TwistTimeseries.spool_swap_dnum` records the swap times actually applied, for the plot to mark. Cruise-level tracking of spool swaps and fin-angle adjustments *across* deployments/instruments (same winch cable, different vehicles) is not built yet - `spool_swap_log.csv` today only resets within a single deployment's `twist_time_series.mat`.
+No spool-swap resets here (since 2026-10-17): the count starts from 0 at the survey start and just keeps going. There is one winch spool for every vehicle and one spool log per cruise, `Processed/spool_swap_log.csv`, so resets are applied only in the cruise twist count, `MODprocess_cruise_twist.m` ([Processing data](processing_data.md#stages) stage 5), which joins every survey's file into `Processed/twist/twist_time_series.mat`. A survey's own `meta/spool_swap_log.csv` (or legacy `SpoolSwapLog.csv`) is no longer read.
 
 The per-file `twist` fields come from the L1 file cache (see the next section), not from loading every L1 file.
 
@@ -245,7 +245,7 @@ The per-file `twist` fields come from the L1 file cache (see the next section), 
 ax = MODvis_twist_timeseries(TwistTimeseries, ax)
 ```
 
-Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`) and marking any spool swap events as vertical lines. "Neutral is Negative" - setting the fin to neutral makes the count go down. Not called automatically - run manually against `meta/twist_time_series.mat` when you want to look at the deployment picture (e.g. during a cruise, to decide when to adjust the fin).
+Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`). Given the cruise twist count (`Processed/twist/twist_time_series.mat`), it also marks each spool change (dashed, with the spool's name) and each survey start (dotted, with its name); the line is broken at gaps. "Neutral is Negative" - setting the fin to neutral makes the count go down. The realtime monitor's twist panel uses it; run it by hand on either file (`load(f).TwistTimeseries`).
 
 ### `MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`
 
@@ -316,6 +316,14 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-10-17 - Survey twist no longer resets at spool changes** (branch `main-fork`).
+`MODprocess_L1_accumulate_twist_timeseries(L1_cache, meta_dir)` drops its third argument and
+its `meta/spool_swap_log.csv` reading: there is one spool log per cruise, and resets are applied
+in the new cruise twist count, `MODprocess_cruise_twist.m`. `twist_time_series.mat` is now saved
+atomically (the cruise count and the monitor read it while the worker writes it).
+`MODvis_twist_timeseries.m` marks spool changes and survey starts and works in the monitor's
+axes.
 
 **2026-10-15 - Runs layout; repeated times across L1 files** (branch `main-fork`). L1 is written to `processed/<run>/L1/` and the files built from it to that run's `meta/` (`metadata.paths.L1`/`.L1_meta`, from where the run yml is - see [Processing data](processing_data.md)). Found while testing the simulator: when two L1 files hold the same times (a raw file copied under another name, or a damaged file whose readable part is a copy of another file's start), the deployment pressure record and the FP07 fit's concatenated epsi/CTD records had repeated, out-of-order times, and `interp1` stopped the FP07 refit and every L2 file ("Sample points must be unique"). `MODprocess_L1_make_pressure_timeseries.m` and `MODprocess_L1_apply_fpo7_calibration.m` now sort by time and keep each time once (the earlier file's sample), and the first prints how many samples it left out. Tested on the canyonhead simulator files with a damaged copy: 60 repeated samples left out, the one-off pass gives 5 L2 files, 10 casts and no problems, and the cast table equals the one from the worker's folder.
 

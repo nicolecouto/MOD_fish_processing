@@ -212,7 +212,7 @@ if ~isempty(fieldnames(old))
 end
 % calibrations_root that works on this computer wins over one that doesn't
 [~, cal] = get_value(merged, '', 'calibrations_root');
-if ~isfolder(char(string(cal)))
+if isempty(cal) || ~isfolder(char(string(cal))) % missing: preflight says so
     [has_old_cal, old_cal] = get_value(old, '', 'calibrations_root');
     if has_old_cal && isfolder(char(string(old_cal)))
         MODsetup_write_yaml_value(tmp_yml, '', 'calibrations_root', char(string(old_cal)));

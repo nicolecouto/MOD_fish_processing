@@ -1,7 +1,7 @@
-function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta_dir, spool_log_dir)
+function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta_dir)
 % MODprocess_L1_accumulate_twist_timeseries        Part of MOD_fish_processing
 %
-% TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta_dir, spool_log_dir)
+% TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta_dir)
 %
 % DESCRIPTION
 %   Chains every L1 file's twist field (added by mod_L1_add_twist.m)
@@ -9,21 +9,16 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta
 %   deployment. Each L1 file's count_gyro/count_compass restarts from 0
 %   (it comes from a per-file cumsum) - this function offsets each file's
 %   counts by the running cumulative total from all prior files, sorted by
-%   file start time. Also applies spool-swap resets from the deployment's
-%   spool_swap_log.csv in spool_log_dir (falling back to the legacy meta/SpoolSwapLog.csv
-%   name if the new one isn't found - this file is operator-edited by hand
-%   during a cruise, not pipeline-regenerated, so an in-progress deployment's
-%   hand-created file must not be silently ignored after this rename).
+%   file start time. The count starts from 0 at the survey start and is
+%   never reset here: spool changes apply to the whole cruise, so they are
+%   applied in the cruise twist count (MODprocess_cruise_twist.m), which
+%   joins every survey's file.
 %
 % INPUTS
 %   cache    - from MODprocess_L1_update_file_cache.m: each L1 file's twist
 %              field and first vnav.dnum (so no L1 file is loaded here)
 %   meta_dir - directory to save twist_time_series.mat into (the meta/ of
 %              the processing run that made the L1, metadata.paths.L1_meta)
-%   spool_log_dir - (optional) directory to read spool_swap_log.csv from:
-%              the survey's own meta/ (metadata.paths.survey_meta), since
-%              the log is about the deployment, not one processing run.
-%              Default: meta_dir.
 %
 % OUTPUTS
 %   TwistTimeseries - struct with fields:
@@ -32,13 +27,12 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta
 %       pressure          - concatenated CTD pressure [dbar]
 %       count_gyro        - continuous cumulative rotation [full rotations], gyro method
 %       count_compass     - continuous cumulative rotation [radians], compass method
-%       spool_swap_dnum   - datenum of each spool swap event applied, if any
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
 %
 % CALLS
-%   (none - the cache comes from MODprocess_L1_update_file_cache.m)
+%   MODutil_save_atomic.m (the cache comes from MODprocess_L1_update_file_cache.m)
 %
 % NOTES
 %   Also saves twist_time_series.mat into meta_dir. The twist field in each
@@ -95,8 +89,8 @@ for i = 1:nValid
 
     % Update offsets using the already-offset running totals, so the
     % next file continues from here rather than resetting to 0.
-    offset_gyro    = this_gyro(end);
-    offset_compass = this_compass(end);
+    offset_gyro    = last_finite(this_gyro, offset_gyro);
+    offset_compass = last_finite(this_compass, offset_compass);
 end
 
 TwistTimeseries.time_s        = vertcat(time_s_all{:});
@@ -106,80 +100,14 @@ TwistTimeseries.count_gyro    = vertcat(count_gyro_all{:});
 TwistTimeseries.count_compass = vertcat(count_compass_all{:});
 
 
-% checking for spoolswap. spool_swap_log.csv is operator-edited by hand
-% during a cruise, not pipeline-regenerated, so an in-progress deployment
-% may still only have the legacy SpoolSwapLog.csv name on disk - fall back
-% to it (with a warning) rather than silently ignore a real, hand-created
-% file just because this rename landed mid-cruise.
-if nargin < 3 || isempty(spool_log_dir)
-    spool_log_dir = meta_dir;
-end
-spoolLogPath = fullfile(spool_log_dir, 'spool_swap_log.csv');
-if ~isfile(spoolLogPath)
-    legacy_spoolLogPath = fullfile(spool_log_dir, 'SpoolSwapLog.csv');
-    if isfile(legacy_spoolLogPath)
-        warning('MODprocess_L1_accumulate_twist_timeseries:legacySpoolSwapLogName', ...
-            ['%s not found - falling back to the legacy name %s. Rename it to ' ...
-             'spool_swap_log.csv to clear this warning.'], spoolLogPath, legacy_spoolLogPath);
-        spoolLogPath = legacy_spoolLogPath;
-    end
-end
-swap_dnum = [];
+MODutil_save_atomic(fullfile(meta_dir, 'twist_time_series.mat'), struct('TwistTimeseries', TwistTimeseries));
 
-if isfile(spoolLogPath)
-    try
-        % the header is the first line that isn't blank or a # comment
-        % (a hand-made log may or may not start with a comment line)
-        log_lines = strtrim(readlines(spoolLogPath));
-        header_line = find(log_lines ~= "" & ~startsWith(log_lines, "#"), 1);
-        opts = detectImportOptions(spoolLogPath, 'CommentStyle', '#', 'Delimiter', ',');
-        opts.VariableNamesLine = header_line;
-        opts.DataLines = header_line + 1;
-        T = readtable(spoolLogPath, opts);
-
-    catch ME
-        warning('Could not parse %s (%s). Proceeding without spool swap resets.', ...
-        spoolLogPath, ME.message);
-        T = table();
-    end
-
-    if ~isempty(T) && ismember('datetime_utc', T.Properties.VariableNames)
-        raw = T.datetime_utc;
-
-        if isdatetime(raw)
-            dt = raw;
-        else
-            try
-                dt = datetime(raw, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss''Z''', 'TimeZone', 'UTC');
-            catch
-                dt = datetime(raw, 'TimeZone', 'UTC');
-            end
-        end
-        dt = dt(~isnat(dt));      % drop any rows that failed to parse
-        swap_dnum = sort(datenum(dt));
-    elseif ~isempty(T)
-        warning('%s has no datetime_utc column. Detected columns: %s', ...
-        spoolLogPath, strjoin(T.Properties.VariableNames, ', '));
-    end
 end
 
-for k = 1:numel(swap_dnum)
-    idx = find(TwistTimeseries.dnum >= swap_dnum(k), 1, 'first');
-
-    if isempty(idx)
-      continue   % swap happened after the last sample - nothing to reset
-    end
-
-    reset_gyro    = TwistTimeseries.count_gyro(idx);
-    reset_compass = TwistTimeseries.count_compass(idx);
-
-    TwistTimeseries.count_gyro(idx:end)    = TwistTimeseries.count_gyro(idx:end)    - reset_gyro;
-    TwistTimeseries.count_compass(idx:end) = TwistTimeseries.count_compass(idx:end) - reset_compass;
+%% last finite value (a NaN at the end of one file mustn't turn every later file NaN)
+function v = last_finite(x, previous)
+v = x(find(isfinite(x), 1, 'last'));
+if isempty(v)
+    v = previous;
 end
-
-
-TwistTimeseries.spool_swap_dnum = swap_dnum;
-
-save(fullfile(meta_dir, 'twist_time_series.mat'), 'TwistTimeseries');
-
 end

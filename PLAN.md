@@ -314,7 +314,8 @@ deployment_root/
     time_index.mat             ← created during L0→L1 processing (MODprocess_L1_make_time_index.m)
     pressure_time_series.mat   ← created during L1/profile processing
     twist_time_series.mat      ← created by MODprocess_L1_accumulate_twist_timeseries
-    spool_swap_log.csv         ← operator-edited any time during a cruise
+                                  (since 2026-10-17 the spool log is cruise-wide,
+                                  Processed/spool_swap_log.csv - see processing_data.md stage 5)
   L0/                          ← created by pipeline
   L1/                          ← created by pipeline
   L2/                          ← created by pipeline
@@ -540,7 +541,8 @@ For each L1 file:
     twist.time_s, twist.dnum, twist.pressure,
     twist.count_gyro, twist.count_compass
 
-When you want the full deployment picture:
+When you want the full deployment picture (as first scoped; since 2026-10-17 spool resets are
+cruise-wide, in MODprocess_cruise_twist.m - see processing_data.md stage 5):
   modProcess_L1_accumulate_twist_timeseries(L1_dir, metadata)
     reads twist field from all L1 files
     chains files with offset correction at boundaries
@@ -551,7 +553,8 @@ When you want the full deployment picture:
 The `twist` field in each L1 file is self-contained (count starts from ~0 for each file). Reprocessing one file never corrupts the accumulated timeseries.
 
 ### spool_swap_log.csv
-Human-readable, operator-edited, lives in `meta/`. Supports `#` comment lines — operators are encouraged to add notes.
+Human-readable, operator-edited. Now one per cruise, `Processed/spool_swap_log.csv` (it was
+first planned in each deployment's `meta/`). Supports `#` comment lines — operators are encouraged to add notes.
 
 ```csv
 # MODfish Spool Swap Log

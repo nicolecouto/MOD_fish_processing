@@ -40,10 +40,13 @@ function summary = MODprocess_deployment(target, varargin)
 %     5. the grid: one column per cast, in depth bins (MODprocess_grid.m),
 %        from L1/L2 by file or profiles_L1/profiles_L2 by profile
 %     6. _README.txt in each level folder (MODutil_write_folder_readme.m)
+%   Then, once per pass over processed_root (realtime run, with L1):
+%     7. the cruise twist count, <processed_root>/twist/twist_time_series.mat
+%        (MODprocess_cruise_twist.m): every survey joined, restarting at
+%        each winch spool change
 %   'from' and 'until' run only some of the stages (L0, L1, casts, L2,
 %   grid); 'until', 'yml' only builds and checks the yml (for every stage
-%   from 'from' on). (The cruise twist count is a later stage, not built
-%   yet.)
+%   from 'from' on).
 %
 %   A file that fails doesn't stop anything: it's logged, listed in the
 %   run's meta/log/problems.json, retried on later passes (it's only
@@ -133,7 +136,8 @@ function summary = MODprocess_deployment(target, varargin)
 %   MODsetup_build_yaml.m, MODsetup_preflight.m,
 %   MODprocess_all_modraw_to_L0.m, MODprocess_all_L0_to_L1.m,
 %   MODprocess_L1_update_cast_table.m, MODprocess_all_L1_to_L2.m,
-%   MODprocess_all_extract_profiles.m, MODutil_write_folder_readme.m
+%   MODprocess_all_extract_profiles.m, MODutil_write_folder_readme.m,
+%   MODprocess_cruise_twist.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -324,6 +328,22 @@ while true
             last_signature(key) = sig;
         elseif isKey(last_signature, key)
             remove(last_signature, key);
+        end
+    end
+
+    % 7. the cruise twist count, over every survey (one winch spool for all)
+    if isempty(only_survey_folder) && strcmp(opts.run, 'realtime') && ismember('L1', opts.stages) && ~stopped
+        try
+            tw = MODprocess_cruise_twist(processed_root);
+            if isfield(tw, 'warnings')
+                new = setdiff(tw.warnings, status.warnings, 'stable'); % survey-list warnings are there already
+                for iW = 1:numel(new)
+                    cruise_log_once(rt_dir, ['twist:' new{iW}], ['Twist: ' new{iW}]);
+                end
+                status.warnings = [status.warnings, new];
+            end
+        catch ME
+            cruise_log_once(rt_dir, 'twist', sprintf('Cruise twist count failed: %s', ME.message));
         end
     end
 

@@ -246,7 +246,7 @@ save(fullfile(metadata.paths.L1_meta, 'time_index.mat'), '-struct', 'TimeIndex')
 % otherwise rather than let it churn through every L1 file logging
 % "missing vnav" for nothing.
 if isfield(metadata, 'manifest') && isfield(metadata.manifest, 'has_vnav') && metadata.manifest.has_vnav
-    MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta, metadata.paths.survey_meta);
+    MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta);
 end
 
 % Deployment-level pressure record + profiling-direction classification:

@@ -98,7 +98,8 @@ flowchart LR
 | `MODprocess_L1_update_file_cache.m` | L1_dir, meta_dir → L1_cache | Per-L1-file time span, `ctd.dnum`/`P` and `twist` in `meta/l1_file_cache.mat`; rereads only new or changed L1 files, so the deployment-wide files below don't reload every L1 file each pass |
 | `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_cache → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
 | `MODprocess_L1_make_time_index.m` | L1_cache → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
-| `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous deployment count - only if `has_vnav` |
+| `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous survey count, from 0 at the survey start (no spool resets) - only if `has_vnav` |
+| `MODprocess_cruise_twist.m` | processed_root → TwistTimeseries | The cruise twist count: every survey's count joined at 1 s, restarting at each winch spool change (`MODprocess_find_spool_swaps.m`); `Processed/twist/twist_time_series.mat`, run by the worker after every pass |
 | `MODprocess_L1_apply_fpo7_calibration.m` | L1_dir, metadata, PressureTimeseries → metadata | In-situ volts→°C fit against real CTD T - only if real onboard CTD |
 
 ## Realtime: L1 → L2 (per file), live viz
@@ -124,7 +125,9 @@ flowchart LR
   L1OUT --> VIS1["MODvis_timeseries.m"]
   L2OUT --> VIS1
   L2OUT --> VIS2["MODvis_spectra.m"]
-  TWISTOUT --> VIS3["MODvis_twist_<br/>timeseries.m"]
+  TWISTOUT --> CRUISE["MODprocess_cruise_<br/>twist.m (every survey)"]
+  CRUISE --> CRUISEOUT[("Processed/twist/twist_<br/>time_series.mat")]
+  CRUISEOUT --> VIS3["MODvis_twist_<br/>timeseries.m"]
 ```
 
 | Function | In → out | Role |
@@ -136,7 +139,7 @@ flowchart LR
 | `mod_scan_welch_psd.m` | x, fft_length, seg_starts, Fs, (taper, detrend) → Pxx, f | Welch average with each segment detrended on its own - shared by `mod_scan_get_spectra.m` and `MODvis_spectra_L0.m` |
 | `MODvis_timeseries.m` | browses L0/L1/L2/Profile folder | Any dnum-carrying struct, up to 6 rows, dual y-axis |
 | `MODvis_spectra.m` | browses an L2 folder or a run folder, with the matching L1 (`MODutil_level_folders.m`: the run's own, the `L1_from` run's, or `profiles_L1/`) | Click a point → that scan's raw spectrum, all channels |
-| `MODvis_twist_timeseries.m` | TwistTimeseries → live axes | Cable-twist count for fin adjustment during the cast |
+| `MODvis_twist_timeseries.m` | TwistTimeseries → live axes | Cable-twist count for fin adjustment during the cast; spool changes and survey starts on the cruise count |
 
 ## Postprocess: L1 → profiles → grid
 

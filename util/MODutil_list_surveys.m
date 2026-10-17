@@ -25,7 +25,7 @@ function [surveys, warnings_out] = MODutil_list_surveys(processed_root)
 %                  no written-at line
 %
 % CALLED BY
-%   MODprocess_find_spool_swaps.m, MODprocess_deployment.m
+%   MODprocess_find_spool_swaps.m, MODprocess_deployment.m, MODprocess_cruise_twist.m
 %
 % CALLS
 %   ReadYaml (toolbox/YAMLMatlab_0.4.3)

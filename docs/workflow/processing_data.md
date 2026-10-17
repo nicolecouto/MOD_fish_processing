@@ -4,8 +4,8 @@
 [Metadata](#metadata), the worker ([Realtime](#realtime)), the [postprocessing
 templates](#postprocessing), stages 0-4 (through the grid), the folder READMEs, the simulator,
 the [monitor app](#monitor-app-built-modvis_realtime_monitor), and the [other
-pieces](#other-pieces-in-this-round) marked built. Not built yet: the cruise twist,
-microconductivity chi. Each section is updated as its code is built, with an entry
+pieces](#other-pieces-in-this-round) marked built, and the [cruise twist](#stages) (stage 5).
+Not built yet: microconductivity chi. Each section is updated as its code is built, with an entry
 in History below.
 
 The shared parts come first (runs, folders, stages, metadata), then [Realtime](#realtime) and
@@ -115,6 +115,7 @@ Run nfft512 - .../26_1015_fctd2_deck_test/meta/meta_data_nfft512.yml
 | `processed/<run>/profiles_L1/`, `profiles_L2/` | By-profile runs: `Profile####.mat` cut by cast (time series), and its scans under the same name |
 | `processed/<run>/grid/` | `grid.mat`: one column per cast (down and up), in depth bins of `grid.z_bin_m` - see [The grid](#the-grid) |
 | `processed/<run>/meta/` | Files built from this run's L1 (`time_index.mat`, `pressure_time_series.mat`, `twist_time_series.mat`, `fpo7_calibration.mat`, `l1_file_cache.mat` - with the L1 they came from), this run's `casts.mat`, `metadata.mat`, and `log/` (`processing.log`, `problems.json`) |
+| `Processed/twist/` (cruise-wide) | `twist_time_series.mat`: the cruise twist count, every survey at 1 s, restarting at each spool change (stage 5); `twist_by_survey.mat`: the 1 s copy of each survey's twist, so a survey file is reread only when it changes |
 
 L1 is never rewritten after it's made.
 
@@ -155,7 +156,7 @@ switch only changes what goes in and where the result goes. `'from'` and `'until
 | 2b | Casts (**built**) | `MODprocess_L1_update_cast_table` | **One cast table** per run (`processed/<run>/meta/casts.mat`) for both modes, from `modProcess_detect_profiles` on the L1's pressure record. A cast that runs into the end of the record is `complete = false` (still going); the grid keeps it as `cast_complete` false and rebins it until it ends. Key per-cast results by `dnum_start` - numbers can change as the record grows. Postprocessing cuts `profiles_L1/` from it (`MODprocess_all_extract_profiles`). |
 | 3 | → L2 (**built**) | `MODprocess_all_L1_to_L2` | Scans only, one file per L1 file (or per `profiles_L1/` profile) with the same name. The modules that run depend on the manifest: `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`, step 7); `fluor` → scan means (step 8); CTD scan values always. By file, scans are kept for down, up or both per `profile_detection.profile_dir` (from Start New Deployment's `profiling_direction`). |
 | 4 | Grid (**built**) | `MODprocess_grid(metadata, by)` | Columns come from the cast table, down and up casts both. By file, each cast's L1 and L2 files are found through `time_index`; by profile, they're its `profiles_L1/` and `profiles_L2/` files. Depth bins of `grid.z_bin_m`; only new or changed casts are rebinned. See [The grid](#the-grid). No despiking or salinity smoothing yet: that will be its own step, once the gridded data have been looked at. |
-| 5 | Cruise twist | `MODprocess_L1_accumulate_twist_timeseries` (generalized to a list of L1 folders) | One winch and one spool serve every vehicle, so this chains **every survey of the cruise** in time order into one series. The count restarts at each spool change, from `MODprocess_find_spool_swaps` (**built**), which checks two sources against each other so a deleted file doesn't lose a change: every survey's `dev1_setup.yml` (`winch_spool`, and when it was written) and the cruise `Processed/spool_swap_log.csv` (Start New Deployment adds a row when the spool changes; a mid-deployment change is added by hand). It uses the log's time when both agree, falls back to whichever one has the change, and warns when they disagree. Output: `Processed/twist/twist_time_series.mat`. Each L1 file's own count still starts at 0; only this chained file carries the running total. |
+| 5 | Cruise twist (**built**) | `MODprocess_cruise_twist(processed_root)` | One winch and one spool serve every vehicle, so this joins **every survey of the cruise** in time order into one series at 1 s (mean of the 40 Hz VNAV count in each second): each survey carries on from where the one before ended, and the count restarts from 0 at each spool change. Spool changes come from `MODprocess_find_spool_swaps`, which checks two sources against each other so a deleted file doesn't lose a change: every survey's `dev1_setup.yml` (`winch_spool`, and when it was written) and the one cruise log, `Processed/spool_swap_log.csv` (Start New Deployment adds a row when the spool changes; a mid-deployment change is added by hand). It uses the log's time when both agree, falls back to whichever one has the change, and warns when they disagree (in `cruise_log.txt` and `status.json`). Made from each survey's realtime-run `meta/twist_time_series.mat` (from 0 at the survey start, no spool resets: those are only applied here). The worker runs it after every pass; it rereads only the survey files that changed and rewrites `Processed/twist/twist_time_series.mat` only when something did. Run it by hand to rebuild a copied `Processed/`. |
 | - | Folder READMEs (**built**) | `MODutil_write_folder_readme` | `_README.txt` in `raw/`, `L0/`, `L1/`, `L2/`, `grid/` (and `profiles_L1/`, `profiles_L2/`): what the files hold, the run and its yml, the steps, the parameters used, the vehicle, and the code's git commit. Rewritten only when that changes. |
 
 ## One format for every vehicle
@@ -402,8 +403,9 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
 - **Middle:**
   - pressure vs time;
   - TS of the last ~5 casts, coloured by age, to catch conductivity problems;
-  - cruise twist count vs time (all vehicles - one winch spool), with spool changes marked (for
-    now the survey's own twist count, until the cruise twist is built);
+  - cruise twist count vs time (all vehicles - one winch spool) over the sections' time span,
+    with spool changes (dashed) and survey starts (dotted) marked; the title gives the count
+    now, the spool and when it went on;
   - space left for more panels.
 - **Bottom, streaming log**, with errors highlighted (click one for the full message).
 - **Right, control panel:** Start / Pause / Stop, Preflight, time span, depth range, colour
@@ -641,3 +643,13 @@ cruise yml and `L1_from`. New template `MODtemplate_postprocess_steps.m` (one li
 driver).
 
 **2026-10-16 - raw/ holds real files (hard links); where to postprocess** (branch `main-fork`). Nicole: the files in `<survey>/raw/` must be real files people can copy, one, a few or a whole survey, and readable from the hard drive after the cruise. `MODutil_route_raw_by_survey` now makes hard links instead of symlinks, and links a file again when rsync has replaced it (a growing file) or when it's an old symlink. New "Where to postprocess" section: copy from the share, don't process on DEV3 or on the share (`--delete`). Scan direction now uses `lowpass_sec` and `speedLim_scan_m_s` (see [L1 → L2](L1_to_L2_conversion.md)). Tested in a scratchpad sandbox (`SESSION_LOG.md`, 2026-10-16).
+
+**2026-10-17 - Cruise twist built** (branch `main-fork`). `MODprocess_cruise_twist(processed_root)`
+joins every survey's realtime twist into `Processed/twist/twist_time_series.mat` at 1 s
+(Nicole's choice: the 40 Hz count would pass 1 GB over a cruise), carrying the count from one
+survey to the next and restarting it at each spool change from `MODprocess_find_spool_swaps`.
+The worker runs it after every pass, and the monitor's twist panel shows it over the sections'
+time span. Each survey's own `twist_time_series.mat` no longer reads a `spool_swap_log.csv` in
+its `meta/`: there is one log per cruise (Nicole: "Each survey does not need its own spool swap
+log"). Tested on a sandbox `Processed/` with three fake surveys, a spool change between
+surveys and one logged by hand during a survey (`SESSION_LOG.md`, 2026-10-17).

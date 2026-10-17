@@ -170,8 +170,10 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 - **Middle,** one row per section. Beside the first 2 sections, a 2x2 of small plots half a
   section's width (like the FastCTD GUI's engineering plots): pressure vs time (same time
   window) and T-S of the last 5 casts; the last 5 T profiles offset like a waterfall, and a free
-  spot. Beside the 3rd, the survey's twist count, as wide as a section (the cruise-wide count
-  isn't built yet). Beside the 4th, the survey's `processing.log` (or `cruise_log.txt`), problem
+  spot. Beside the 3rd, the cruise twist count (`Processed/twist/twist_time_series.mat`, every
+  survey, restarting at each winch spool change) over the sections' time span, as wide as a
+  section: spool changes dashed, survey starts dotted, and the title gives the count now, the
+  spool and when it went on. Beside the 4th, the survey's `processing.log` (or `cruise_log.txt`), problem
   lines in red - click a line to see all of it.
 - **Right:** Start / Pause / Stop; Preflight (the worker's last preflight for the survey, from
   `status.json`); for all sections: casts (both/down/up), depth limits, and the time window -
@@ -190,15 +192,19 @@ Save PNG reports it if it fails).
 
 ### MODvis_twist_timeseries.m
 
-Plots cable twist count (gyro method) vs. time for a deployment, highlighting upcast samples
-(when the fin is normally adjusted) and marking spool-swap events.
+Plots cable twist count (gyro method) vs. time, highlighting upcast samples (when the fin is
+normally adjusted). Given the cruise twist count, it also marks each spool change (dashed, with
+the spool) and each survey start (dotted, with its name); the line is broken at gaps. The
+monitor's twist panel uses it.
 
 ```matlab
-ax = MODvis_twist_timeseries(TwistTimeseries);   % TwistTimeseries from
-                                                   % MODprocess_L1_accumulate_twist_timeseries.m
+T = load(fullfile(processed_root, 'twist', 'twist_time_series.mat')).TwistTimeseries;  % cruise
+% or one survey (from 0 at its start, no spool resets):
+% T = load(fullfile(survey, 'processed', 'realtime', 'meta', 'twist_time_series.mat')).TwistTimeseries;
+ax = MODvis_twist_timeseries(T);
 ```
 
-*No example image committed yet.*
+![MODvis_twist_timeseries.m on a cruise twist count: three fake surveys, a spool change between surveys (spool_B) and one logged by hand during a survey (spool_C)](../concepts/images/MODvis_twist_timeseries_example.png)
 
 ### SpectraExplorerApp.m
 

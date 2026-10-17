@@ -6,8 +6,9 @@ classdef MODvis_realtime_monitor < handle
     %
     % The live monitor for the realtime worker (MODprocess_deployment with
     % 'watch' true), laid out after the 2018 FastCTD GUI. It only reads
-    % the worker's files - <processed_root>/realtime/status.json, each
-    % survey's processed/realtime/grid/grid.mat, meta/ and meta/log/ - and
+    % the worker's files - <processed_root>/realtime/status.json and
+    % twist/twist_time_series.mat, each survey's
+    % processed/realtime/grid/grid.mat, meta/ and meta/log/ - and
     % refreshes every few seconds. It writes only realtime/control.json
     % (Pause, Stop) and saved PNGs, and Start launches the worker as its
     % own matlab -batch process, so closing or crashing the monitor never
@@ -23,8 +24,10 @@ classdef MODvis_realtime_monitor < handle
     %   Middle, one row per section: small plots half a section's width -
     %           pressure vs time and T-S of the last 5 casts beside the
     %           1st section, the last 5 T profiles offset like a waterfall
-    %           beside the 2nd (the 4th spot is free); the survey's twist
-    %           count, as wide as a section, beside the 3rd; the survey's
+    %           beside the 2nd (the 4th spot is free); the cruise twist
+    %           count (<processed_root>/twist/, every survey, restarting at
+    %           each winch spool change), as wide as a section, beside the
+    %           3rd; the survey's
     %           processing log (or the cruise log) beside the 4th, problem
     %           lines in red - click a line to see all of it.
     %   Right:  Start / Pause / Stop, the worker's last preflight for the
@@ -82,7 +85,9 @@ classdef MODvis_realtime_monitor < handle
         GridFile char = ''
         GridStamp double = NaN
         SelectedTime double = NaN
-        TimeLimits double = []       % the sections' time limits, shared with pressure
+        TimeLimits double = []       % the sections' time limits, shared with pressure and twist
+        Twist struct = struct()      % <processed_root>/twist/twist_time_series.mat
+        TwistStamp double = NaN
     end
 
     properties (Constant)
@@ -143,7 +148,7 @@ classdef MODvis_realtime_monitor < handle
             end
 
             % middle, one row per section: a 2x2 of small plots beside the
-            % first 2 sections (the 4th spot is free), the twist count as
+            % first 2 sections (the 4th spot is free), the cruise twist count as
             % wide as a section beside the 3rd, the log beside the 4th
             mid = uigridlayout(g, [app.NSections 2], 'Padding', [0 0 0 0], 'RowSpacing', 2);
             mid.Layout.Row = 2;
@@ -282,8 +287,11 @@ classdef MODvis_realtime_monitor < handle
             try
                 app.readStatus();
                 app.updateStatusLine();
+                twist_changed = app.loadTwist();
                 if app.loadGrid()
                     app.drawPlots();
+                elseif twist_changed
+                    app.drawTwist();
                 end
                 app.refreshLog();
             catch ME
@@ -698,19 +706,85 @@ classdef MODvis_realtime_monitor < handle
             title(ax, sprintf('T, last %d casts, offset', numel(idx)), 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
         end
 
+        function changed = loadTwist(app)
+            % the cruise twist count (MODprocess_cruise_twist.m), reloaded only when it changes
+            f = fullfile(app.Root, 'twist', 'twist_time_series.mat');
+            stamp = NaN;
+            if isfile(f)
+                d = dir(f);
+                stamp = d.datenum;
+            end
+            changed = ~isequaln(stamp, app.TwistStamp);
+            if ~changed
+                return
+            end
+            app.TwistStamp = stamp;
+            s = app.safeLoad(f);
+            if isfield(s, 'TwistTimeseries')
+                app.Twist = s.TwistTimeseries;
+            elseif isfile(f)
+                app.TwistStamp = NaN; % being written - keep the last one, try next refresh
+                changed = false;
+            else
+                app.Twist = struct();
+            end
+        end
+
         function drawTwist(app)
             ax = app.TwistAx;
             cla(ax);
-            f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'twist_time_series.mat');
-            tt = app.safeLoad(f);
+            legend(ax, 'off');
+            tt = app.Twist;
             if ~isfield(tt, 'dnum') || isempty(tt.dnum)
-                title(ax, 'twist: none yet', 'FontSize', app.FontSize + 1);
+                title(ax, 'cruise twist: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
-            MODvis_twist_timeseries(tt, ax);
+            % the sections' time window, as for pressure
+            tl = app.TimeLimits;
+            if isempty(tl)
+                tl = app.timeWindow();
+            end
+            if isempty(tl)
+                tl = [tt.dnum(1) tt.dnum(end)];
+            elseif strcmp(app.EndDrop.Value, app.EndDrop.Items{1})
+                tl(2) = max(tl(2), tt.dnum(end)); % ending now: newer twist than the last grid redraw
+            end
+            keep = tt.dnum >= tl(1) & tt.dnum <= tl(2);
+            w = tt;
+            for name = {'dnum', 'count_gyro', 'count_compass', 'pressure', 'survey_index'}
+                if isfield(w, name{1})
+                    w.(name{1}) = tt.(name{1})(keep);
+                end
+            end
+            inside = @(t) t >= tl(1) & t <= tl(2);
+            w.spool_swaps = tt.spool_swaps(inside([tt.spool_swaps.dnum]));
+            w.spool_swap_dnum = [w.spool_swaps.dnum]';
+            w.surveys = tt.surveys(inside(tt.survey_start_dnum));
+            w.survey_start_dnum = tt.survey_start_dnum(inside(tt.survey_start_dnum));
+            if isempty(w.dnum)
+                w.dnum = tl(:);
+                w.count_gyro = nan(2, 1);
+                w.pressure = nan(2, 1);
+            end
+            MODvis_twist_timeseries(w, ax);
             ax.FontSize = app.FontSize;
-            title(ax, 'twist count, this survey (cruise-wide count not built yet)', ...
-                'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+            xlim(ax, datetime(tl, 'ConvertFrom', 'datenum'));
+            legend(ax, 'off');
+            % now: the newest count, the spool and when it went on
+            now_count = tt.count_gyro(find(isfinite(tt.count_gyro), 1, 'last'));
+            if isempty(now_count)
+                now_count = NaN;
+            end
+            since = '';
+            if ~isempty(tt.spool_swaps)
+                since = sprintf(' (on since %s)', datestr(tt.spool_swaps(end).dnum, 'mm-dd HH:MM')); %#ok<DATST>
+            end
+            spool = app.orNone(tt.spool);
+            title(ax, sprintf('cruise twist %+.1f turns   |   spool %s%s   |   latest %s UTC', now_count, spool, ...
+                since, datestr(tt.dnum(end), 'mm-dd HH:MM')), 'FontSize', app.FontSize + 1, 'FontWeight', 'normal', ...
+                'Interpreter', 'none'); %#ok<DATST>
+            xlabel(ax, 'orange: upcasts   dashed: spool change (count restarts)   dotted: survey start   neutral is negative', ...
+                'FontSize', app.FontSize);
         end
 
         %% Log

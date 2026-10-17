@@ -54,8 +54,7 @@ function [swaps, warnings_out] = MODprocess_find_spool_swaps(processed_root, spo
 %   With no output argument, prints a table instead.
 %
 % CALLED BY
-%   (the cruise twist count - not built yet; see
-%   docs/workflow/processing_data.md stage 5)
+%   MODprocess_cruise_twist.m
 %
 % CALLS
 %   MODutil_list_surveys.m

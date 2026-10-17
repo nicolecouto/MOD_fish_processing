@@ -17,7 +17,7 @@ function v = MODutil_code_version()
 %   v - char, e.g. 'commit e286ebf' or 'commit e286ebf + local changes'
 %
 % CALLED BY
-%   MODutil_provenance.m, MODutil_write_folder_readme.m
+%   MODutil_provenance.m, MODutil_write_folder_readme.m, MODprocess_cruise_twist.m
 %
 % CALLS
 %   (none - runs git)

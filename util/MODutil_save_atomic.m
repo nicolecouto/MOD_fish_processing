@@ -20,7 +20,8 @@ function MODutil_save_atomic(mat_file, S)
 %
 % CALLED BY
 %   MODprocess_all_modraw_to_L0.m, MODprocess_all_L0_to_L1.m,
-%   MODprocess_all_L1_to_L2.m
+%   MODprocess_all_L1_to_L2.m, MODprocess_L1_accumulate_twist_timeseries.m,
+%   MODprocess_cruise_twist.m
 %
 % CALLS
 %   (none)
