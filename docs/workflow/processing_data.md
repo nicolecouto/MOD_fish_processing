@@ -388,7 +388,8 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
 
 - **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
   last update; problems count; missing parameters.
-- **Left, colour sections:** depth vs time, one column per cast, sigma0 contours. Variables
+- **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours; shared
+  depth and time limits, each with its own variable, colormap and colour range. Variables
   are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
 - **Middle:**
   - pressure vs time;

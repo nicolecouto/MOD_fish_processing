@@ -15,14 +15,18 @@ classdef MODvis_realtime_monitor < handle
     %
     %   Top:    status - worker state, survey, vehicle, winch spool, file
     %           counts, casts, lag, problems, last update.
-    %   Left:   colour section of the grid, one column per cast (depth vs
-    %           time), with sigma0 contours. Variables come from
-    %           grid.variables; epsilon and chi are shown as log10.
-    %   Middle: pressure vs time; T-S of the last 5 casts coloured by age;
-    %           the survey's twist count (the cruise-wide count isn't
-    %           built yet).
-    %   Bottom: the survey's processing log (or the cruise log), problem
-    %           lines in red; click a line to see all of it.
+    %   Left:   4 colour sections of the grid, one column per cast (depth
+    %           vs time), with sigma0 contours. All 4 share the depth and
+    %           time limits; each has its own variable (from
+    %           grid.variables; epsilon and chi as log10), colormap and
+    %           colour range.
+    %   Middle, one row per section: small plots half a section's width -
+    %           pressure vs time and T-S of the last 5 casts beside the
+    %           1st section, the last 5 T profiles offset like a waterfall
+    %           beside the 2nd (the 4th spot is free); the survey's twist
+    %           count, as wide as a section, beside the 3rd; the survey's
+    %           processing log (or the cruise log) beside the 4th, problem
+    %           lines in red - click a line to see all of it.
     %   Right:  Start / Pause / Stop, the worker's last preflight for the
     %           survey, and every plot setting (shown on the plots).
     %
@@ -39,11 +43,15 @@ classdef MODvis_realtime_monitor < handle
         Fig matlab.ui.Figure
         Timer
         RefreshS double = 10
+        FontSize double = 10.5       % axes text
+        NSections double = 4
+        NProfiles double = 5         % casts in the T-S and T profile plots
 
         StatusLbl
-        SectionAx
+        SectionAx                    % 1 x NSections uiaxes
         PressureAx
         TSAx
+        WaterfallAx
         TwistAx
         LogList
         DetailLbl
@@ -53,14 +61,17 @@ classdef MODvis_realtime_monitor < handle
         PauseBtn
         StopBtn
         PreflightBtn
-        VarDrop
-        DirDrop
+        VarDrop                      % 1 x NSections, one per section
         CmapDrop
         CMinField
         CMaxField
+        DirDrop
         ZMinField
         ZMaxField
         SpanField
+        EndDrop
+        EndField
+        OffsetField
         LogDrop
         OpenTSBtn
         OpenSpecBtn
@@ -71,6 +82,15 @@ classdef MODvis_realtime_monitor < handle
         GridFile char = ''
         GridStamp double = NaN
         SelectedTime double = NaN
+        TimeLimits double = []       % the sections' time limits, shared with pressure
+    end
+
+    properties (Constant)
+        DefaultVars = {'sigma0', 'T', 'SP', 'epsilon_final'}
+        DefaultCmaps = {'dense', 'thermal', 'haline', 'turbo'}
+        % parula and turbo are Matlab's; the rest are cmocean's (toolbox/cmocean)
+        Colormaps = {'parula', 'turbo', 'thermal', 'haline', 'dense', 'deep', 'algae', 'matter', ...
+            'amp', 'tempo', 'speed', 'turbid', 'solar', 'ice', 'oxy', 'gray', 'balance', 'delta', 'curl'}
     end
 
     methods
@@ -102,67 +122,137 @@ classdef MODvis_realtime_monitor < handle
 
         %% Layout
         function buildUI(app)
-            app.Fig = uifigure('Name', ['Realtime monitor - ' app.Root], 'Position', [60 60 1600 950], ...
+            app.Fig = uifigure('Name', ['Realtime monitor - ' app.Root], 'Position', [40 40 1700 1000], ...
                 'CloseRequestFcn', @(~, ~) delete(app));
-            g = uigridlayout(app.Fig, [3 3]);
-            g.RowHeight = {48, '1x', 170};
-            g.ColumnWidth = {'5x', '3x', 250};
+            g = uigridlayout(app.Fig, [2 3]);
+            g.RowHeight = {40, '1x'};
+            g.ColumnWidth = {'2x', '2x', 270};
 
-            app.StatusLbl = uilabel(g, 'Text', '', 'WordWrap', 'on', 'FontSize', 13, 'FontWeight', 'bold');
+            app.StatusLbl = uilabel(g, 'Text', '', 'WordWrap', 'on', 'FontSize', 12, 'FontWeight', 'bold');
             app.StatusLbl.Layout.Row = 1;
             app.StatusLbl.Layout.Column = [1 3];
 
-            app.SectionAx = uiaxes(g);
-            app.SectionAx.Layout.Row = 2;
-            app.SectionAx.Layout.Column = 1;
-            app.SectionAx.ButtonDownFcn = @(~, ev) app.pickTime(ev);
+            % left: the sections, stacked
+            left = uigridlayout(g, [app.NSections 1], 'Padding', [0 0 0 0], 'RowSpacing', 2);
+            left.Layout.Row = 2;
+            left.Layout.Column = 1;
+            app.SectionAx = gobjects(1, app.NSections);
+            for i = 1:app.NSections
+                app.SectionAx(i) = uiaxes(left, 'FontSize', app.FontSize);
+                app.SectionAx(i).ButtonDownFcn = @(~, ev) app.pickTime(ev);
+            end
 
-            mid = uigridlayout(g, [3 1], 'Padding', [0 0 0 0]);
+            % middle, one row per section: a 2x2 of small plots beside the
+            % first 2 sections (the 4th spot is free), the twist count as
+            % wide as a section beside the 3rd, the log beside the 4th
+            mid = uigridlayout(g, [app.NSections 2], 'Padding', [0 0 0 0], 'RowSpacing', 2);
             mid.Layout.Row = 2;
             mid.Layout.Column = 2;
-            app.PressureAx = uiaxes(mid);
-            app.TSAx = uiaxes(mid);
-            app.TwistAx = uiaxes(mid);
-
-            bottom = uigridlayout(g, [2 1], 'Padding', [0 0 0 0], 'RowHeight', {'1x', 36});
-            bottom.Layout.Row = 3;
-            bottom.Layout.Column = [1 2];
-            app.LogList = uilistbox(bottom, 'Items', {}, 'FontName', 'Menlo', 'FontSize', 11, ...
+            app.PressureAx = app.smallAxes(mid, 1, 1);
+            app.TSAx = app.smallAxes(mid, 1, 2);
+            app.WaterfallAx = app.smallAxes(mid, 2, 1);
+            app.TwistAx = app.smallAxes(mid, 3, [1 2]);
+            logs = uigridlayout(mid, [2 1], 'Padding', [0 0 0 0], 'RowHeight', {'1x', 44});
+            logs.Layout.Row = 4;
+            logs.Layout.Column = [1 2];
+            app.LogList = uilistbox(logs, 'Items', {}, 'FontName', 'Menlo', 'FontSize', 10, ...
                 'ValueChangedFcn', @(src, ~) app.showLine(src.Value));
-            app.DetailLbl = uilabel(bottom, 'Text', '', 'WordWrap', 'on', 'FontName', 'Menlo', 'FontSize', 11);
+            app.DetailLbl = uilabel(logs, 'Text', '', 'WordWrap', 'on', 'FontName', 'Menlo', 'FontSize', 10);
 
-            c = uigridlayout(g, [22 2], 'RowSpacing', 4);
-            c.Layout.Row = [2 3];
+            % right: control panel
+            n_rows = 16 + 3 * app.NSections + 8;
+            c = uigridlayout(g, [n_rows 2], 'RowSpacing', 3, 'Scrollable', 'on');
+            c.Layout.Row = 2;
             c.Layout.Column = 3;
-            c.RowHeight = repmat({24}, 1, 22);
-            app.SurveyDrop = app.labelled(c, 1, 'Survey', 'drop', {}, @(~, ~) app.surveyChanged());
-            app.StartBtn = uibutton(c, 'Text', 'Start', 'ButtonPushedFcn', @(~, ~) app.startWorker());
-            app.StartBtn.Layout.Row = 2; app.StartBtn.Layout.Column = 1;
-            app.PauseBtn = uibutton(c, 'Text', 'Pause', 'ButtonPushedFcn', @(~, ~) app.sendCommand('pause'));
-            app.PauseBtn.Layout.Row = 2; app.PauseBtn.Layout.Column = 2;
-            app.StopBtn = uibutton(c, 'Text', 'Stop', 'ButtonPushedFcn', @(~, ~) app.sendCommand('stop'));
-            app.StopBtn.Layout.Row = 3; app.StopBtn.Layout.Column = 1;
-            app.PreflightBtn = uibutton(c, 'Text', 'Preflight', 'ButtonPushedFcn', @(~, ~) app.showPreflight());
-            app.PreflightBtn.Layout.Row = 3; app.PreflightBtn.Layout.Column = 2;
-            app.VarDrop = app.labelled(c, 5, 'Section', 'drop', {'T'}, @(~, ~) app.drawPlots());
-            app.DirDrop = app.labelled(c, 6, 'Casts', 'drop', {'both', 'down', 'up'}, @(~, ~) app.drawPlots());
-            app.CmapDrop = app.labelled(c, 7, 'Colormap', 'drop', {'parula', 'turbo', 'jet', 'hot', 'gray'}, @(~, ~) app.drawPlots());
-            app.CMinField = app.labelled(c, 8, 'Colour min', 'num', NaN, @(~, ~) app.drawPlots());
-            app.CMaxField = app.labelled(c, 9, 'Colour max', 'num', NaN, @(~, ~) app.drawPlots());
-            app.ZMinField = app.labelled(c, 10, 'Depth min [m]', 'num', NaN, @(~, ~) app.drawPlots());
-            app.ZMaxField = app.labelled(c, 11, 'Depth max [m]', 'num', NaN, @(~, ~) app.drawPlots());
-            app.SpanField = app.labelled(c, 12, 'Last hours', 'num', 6, @(~, ~) app.drawPlots());
-            app.LogDrop = app.labelled(c, 13, 'Log', 'drop', {'survey processing.log', 'cruise_log.txt'}, @(~, ~) app.refreshLog());
-            note = uilabel(c, 'Text', 'Colour/depth: empty = auto. Last hours: 0 = all.', 'WordWrap', 'on', 'FontSize', 10);
-            note.Layout.Row = [14 15]; note.Layout.Column = [1 2];
-            app.OpenTSBtn = uibutton(c, 'Text', 'Open L1 (MODvis_timeseries)', 'ButtonPushedFcn', @(~, ~) app.openViewer('timeseries'));
-            app.OpenTSBtn.Layout.Row = 16; app.OpenTSBtn.Layout.Column = [1 2];
-            app.OpenSpecBtn = uibutton(c, 'Text', 'Open L2 (MODvis_spectra)', 'ButtonPushedFcn', @(~, ~) app.openViewer('spectra'));
-            app.OpenSpecBtn.Layout.Row = 17; app.OpenSpecBtn.Layout.Column = [1 2];
-            app.PngBtn = uibutton(c, 'Text', 'Save PNG', 'ButtonPushedFcn', @(~, ~) app.savePng());
-            app.PngBtn.Layout.Row = 18; app.PngBtn.Layout.Column = [1 2];
-            root_lbl = uilabel(c, 'Text', app.Root, 'WordWrap', 'on', 'FontSize', 10);
-            root_lbl.Layout.Row = [20 22]; root_lbl.Layout.Column = [1 2];
+            c.RowHeight = repmat({22}, 1, n_rows);
+            row = 1;
+            app.SurveyDrop = app.labelled(c, row, 'Survey', 'drop', {}, @(~, ~) app.surveyChanged());
+            row = row + 1;
+            app.StartBtn = app.button(c, row, 1, 'Start', @(~, ~) app.startWorker());
+            app.PauseBtn = app.button(c, row, 2, 'Pause', @(~, ~) app.sendCommand('pause'));
+            row = row + 1;
+            app.StopBtn = app.button(c, row, 1, 'Stop', @(~, ~) app.sendCommand('stop'));
+            app.PreflightBtn = app.button(c, row, 2, 'Preflight', @(~, ~) app.showPreflight());
+            row = row + 2;
+            app.heading(c, row, 'All sections');
+            row = row + 1;
+            app.DirDrop = app.labelled(c, row, 'Casts', 'drop', {'both', 'down', 'up'}, @(~, ~) app.drawPlots());
+            row = row + 1;
+            app.ZMinField = app.labelled(c, row, 'Depth min [m]', 'num', NaN, @(~, ~) app.drawPlots());
+            row = row + 1;
+            app.ZMaxField = app.labelled(c, row, 'Depth max [m]', 'num', NaN, @(~, ~) app.drawPlots());
+            row = row + 1;
+            app.SpanField = app.labelled(c, row, 'Span [hours]', 'num', 6, @(~, ~) app.drawPlots());
+            row = row + 1;
+            app.EndDrop = app.labelled(c, row, '  ending at', 'drop', {'current time (UTC)', 'this time (UTC):'}, ...
+                @(~, ~) app.drawPlots());
+            row = row + 1;
+            lbl = uilabel(c, 'Text', '  yyyy-mm-dd HH:MM');
+            lbl.Layout.Row = row; lbl.Layout.Column = 1;
+            app.EndField = uieditfield(c, 'text', 'Value', '', 'Placeholder', 'yyyy-mm-dd HH:MM', ...
+                'ValueChangedFcn', @(~, ~) app.endTimeTyped());
+            app.EndField.Layout.Row = row; app.EndField.Layout.Column = 2;
+            app.VarDrop = gobjects(1, app.NSections);
+            app.CmapDrop = gobjects(1, app.NSections);
+            app.CMinField = gobjects(1, app.NSections);
+            app.CMaxField = gobjects(1, app.NSections);
+            for i = 1:app.NSections
+                row = row + 1;
+                app.VarDrop(i) = app.labelled(c, row, sprintf('Section %d', i), 'drop', app.DefaultVars(i), ...
+                    @(~, ~) app.drawSections());
+                row = row + 1;
+                app.CmapDrop(i) = app.labelled(c, row, '  colormap', 'drop', app.Colormaps, @(~, ~) app.drawSections());
+                app.CmapDrop(i).Value = app.DefaultCmaps{i};
+                row = row + 1;
+                lims = uigridlayout(c, [1 2], 'Padding', [0 0 0 0], 'ColumnSpacing', 4);
+                lims.Layout.Row = row;
+                lims.Layout.Column = 2;
+                lbl = uilabel(c, 'Text', '  colour min, max');
+                lbl.Layout.Row = row;
+                lbl.Layout.Column = 1;
+                app.CMinField(i) = uieditfield(lims, 'numeric', 'AllowEmpty', 'on', 'Value', [], ...
+                    'ValueChangedFcn', @(~, ~) app.drawSections());
+                app.CMaxField(i) = uieditfield(lims, 'numeric', 'AllowEmpty', 'on', 'Value', [], ...
+                    'ValueChangedFcn', @(~, ~) app.drawSections());
+            end
+            row = row + 2;
+            app.heading(c, row, 'Small plots');
+            row = row + 1;
+            app.OffsetField = app.labelled(c, row, 'T profile offset [degC]', 'num', NaN, @(~, ~) app.drawWaterfall());
+            row = row + 1;
+            app.LogDrop = app.labelled(c, row, 'Log', 'drop', {'survey processing.log', 'cruise_log.txt'}, @(~, ~) app.refreshLog());
+            row = row + 1;
+            note = uilabel(c, 'Text', 'Empty = auto. Span 0 = all casts.', 'FontSize', 10);
+            note.Layout.Row = row;
+            note.Layout.Column = [1 2];
+            row = row + 1;
+            app.OpenTSBtn = app.button(c, row, [1 2], 'Open L1 (MODvis_timeseries)', @(~, ~) app.openViewer('timeseries'));
+            row = row + 1;
+            app.OpenSpecBtn = app.button(c, row, [1 2], 'Open L2 (MODvis_spectra)', @(~, ~) app.openViewer('spectra'));
+            row = row + 1;
+            app.PngBtn = app.button(c, row, [1 2], 'Save PNG', @(~, ~) app.savePng());
+            row = row + 1;
+            root_lbl = uilabel(c, 'Text', app.Root, 'WordWrap', 'on', 'FontSize', 9);
+            root_lbl.Layout.Row = [row min(row + 1, n_rows)];
+            root_lbl.Layout.Column = [1 2];
+        end
+
+        function ax = smallAxes(app, parent, row, col)
+            ax = uiaxes(parent, 'FontSize', app.FontSize);
+            ax.Layout.Row = row;
+            ax.Layout.Column = col;
+        end
+
+        function h = button(~, parent, row, col, text, callback)
+            h = uibutton(parent, 'Text', text, 'ButtonPushedFcn', callback);
+            h.Layout.Row = row;
+            h.Layout.Column = col;
+        end
+
+        function heading(~, parent, row, text)
+            h = uilabel(parent, 'Text', text, 'FontWeight', 'bold');
+            h.Layout.Row = row;
+            h.Layout.Column = [1 2];
         end
 
         function h = labelled(~, parent, row, text, kind, value, callback)
@@ -306,41 +396,63 @@ classdef MODvis_realtime_monitor < handle
             if isempty(names)
                 names = {'T'};
             end
-            current = app.VarDrop.Value;
-            app.VarDrop.Items = names;
-            if any(strcmp(names, current))
-                app.VarDrop.Value = current;
+            for i = 1:app.NSections
+                current = app.VarDrop(i).Value;
+                app.VarDrop(i).Items = names;
+                if any(strcmp(names, current))
+                    app.VarDrop(i).Value = current;
+                elseif any(strcmp(names, app.DefaultVars{i}))
+                    app.VarDrop(i).Value = app.DefaultVars{i};
+                else
+                    app.VarDrop(i).Value = names{min(i, numel(names))};
+                end
             end
             changed = true;
         end
 
         %% Plots
         function drawPlots(app)
-            app.drawSection();
+            app.drawSections();
             app.drawPressure();
             app.drawTS();
+            app.drawWaterfall();
             app.drawTwist();
         end
 
-        function drawSection(app)
-            ax = app.SectionAx;
+        function drawSections(app)
+            app.TimeLimits = [];
+            for i = 1:app.NSections
+                app.drawSection(i);
+            end
+            ok = isgraphics(app.SectionAx);
+            if ~isempty(app.TimeLimits)
+                linkaxes(app.SectionAx(ok), 'xy');
+            end
+        end
+
+        function drawSection(app, i)
+            ax = app.SectionAx(i);
             cla(ax);
+            colorbar(ax, 'off');
             g = app.Grid;
-            name = app.VarDrop.Value;
+            name = app.VarDrop(i).Value;
             if ~isfield(g, 'z') || ~isfield(g, name) || isempty(g.time)
-                title(ax, sprintf('%s: no grid yet (%s)', app.SurveyDrop.Value, app.shortPath(app.GridFile)), 'Interpreter', 'none');
+                if i == 1
+                    title(ax, sprintf('%s: no grid yet (%s)', app.SurveyDrop.Value, app.shortPath(app.GridFile)), ...
+                        'Interpreter', 'none', 'FontSize', app.FontSize + 1);
+                end
                 return
             end
             cols = app.pickColumns();
             if nnz(cols) < 2
-                title(ax, sprintf('%s: %d cast(s) in this window - need 2 for a section', name, nnz(cols)), 'Interpreter', 'none');
+                title(ax, sprintf('%s: %d cast(s) in %s - need 2 for a section', name, nnz(cols), app.windowText()), ...
+                    'Interpreter', 'none', 'FontSize', app.FontSize + 1);
                 return
             end
             [t, order] = sort(g.time(cols));
             idx = find(cols);
             idx = idx(order);
-            v = g.(name)(:, idx);
-            [label, v] = app.displayed(name, v);
+            [label, v] = app.displayed(name, g.(name)(:, idx));
             % one cell per cast and bin: edges halfway between cast times
             % and at the bin edges, so no cast or bin is dropped
             dt = diff(t);
@@ -362,35 +474,85 @@ classdef MODvis_realtime_monitor < handle
             end
             hold(ax, 'off');
             ax.YDir = 'reverse';
-            colormap(ax, app.CmapDrop.Value);
-            cb = colorbar(ax);
+            colormap(ax, app.colormapNamed(app.CmapDrop(i).Value));
+            cb = colorbar(ax, 'FontSize', app.FontSize);
             cb.Label.String = label;
             cb.Label.Interpreter = 'none';
-            [lims, how] = app.colourLimits(v);
+            cb.Label.FontSize = app.FontSize;
+            [lims, how] = app.colourLimits(i, v);
             if ~isempty(lims)
                 ax.CLim = lims; % not clim(): a user clim.m can shadow it
             end
             zl = app.depthLimits(g.z);
             ylim(ax, zl);
-            xlim(ax, t_edges([1 end]));
-            datetick(ax, 'x', 'keeplimits');
+            tl = app.timeWindow();
+            if isempty(tl)
+                tl = t_edges([1 end]);
+            end
+            xlim(ax, tl);
+            app.TimeLimits = tl;
+            datetick(ax, 'x', 'HH:MM', 'keeplimits');
             ylabel(ax, 'depth [m]');
-            title(ax, {sprintf('%s - %s', app.SurveyDrop.Value, label), ...
-                sprintf('casts: %s (%d%s), colour %s, depth %g-%g m, %g m bins, white = no data', ...
-                app.DirDrop.Value, numel(idx), app.spanText(), how, zl(1), zl(2), g.z_bin_m)}, ...
-                'Interpreter', 'none', 'FontSize', 11);
+            lines = {sprintf('%d. %s, %s, colour %s', i, label, app.CmapDrop(i).Value, how)};
+            if i == 1
+                lines = [{sprintf('%s - %s, casts: %s (%d), depth %g-%g m, %g m bins, white = no data', ...
+                    app.SurveyDrop.Value, app.windowText(), app.DirDrop.Value, numel(idx), zl(1), zl(2), g.z_bin_m)}, lines];
+            end
+            title(ax, lines, 'Interpreter', 'none', 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+            if i < app.NSections
+                ax.XTickLabel = {};
+            else
+                xlabel(ax, sprintf('time UTC, %s to %s', datestr(tl(1), 'yyyy-mm-dd HH:MM'), ...
+                    datestr(tl(2), 'yyyy-mm-dd HH:MM'))); %#ok<DATST>
+            end
         end
 
         function cols = pickColumns(app)
+            % the casts in the time window, in the chosen direction(s)
             g = app.Grid;
             cols = true(1, numel(g.time));
             if ~strcmp(app.DirDrop.Value, 'both')
                 cols = strcmp(g.cast_direction, app.DirDrop.Value);
             end
-            span = app.SpanField.Value;
-            if ~isempty(span) && span > 0 && any(isfinite(g.time))
-                cols = cols & g.time >= max(g.time) - span / 24;
+            w = app.timeWindow();
+            if ~isempty(w)
+                cols = cols & g.time >= w(1) & g.time <= w(2);
             end
+        end
+
+        function w = timeWindow(app)
+            % [start end] datenum (UTC): span hours ending now or at the
+            % typed time; [] for span 0 or empty (all casts)
+            w = [];
+            span = app.SpanField.Value;
+            if isempty(span) || span <= 0
+                return
+            end
+            t_end = datenum(datetime('now', 'TimeZone', 'UTC')); %#ok<DATNM>
+            if startsWith(app.EndDrop.Value, 'this time')
+                t = app.typedTime();
+                if ~isnan(t)
+                    t_end = t;
+                end
+            end
+            w = [t_end - span / 24, t_end];
+        end
+
+        function t = typedTime(app)
+            t = NaN;
+            try
+                t = datenum(datetime(strtrim(app.EndField.Value), 'InputFormat', 'yyyy-MM-dd HH:mm')); %#ok<DATNM>
+            catch
+            end
+        end
+
+        function endTimeTyped(app)
+            if isnan(app.typedTime())
+                app.DetailLbl.Text = sprintf('"%s" isn''t a time - type it as yyyy-mm-dd HH:MM (UTC).', app.EndField.Value);
+                return
+            end
+            app.EndDrop.Value = 'this time (UTC):';
+            app.drawPlots();
         end
 
         function [label, v] = displayed(app, name, v)
@@ -410,9 +572,9 @@ classdef MODvis_realtime_monitor < handle
             end
         end
 
-        function [lims, how] = colourLimits(app, v)
-            lo = app.CMinField.Value;
-            hi = app.CMaxField.Value;
+        function [lims, how] = colourLimits(app, i, v)
+            lo = app.CMinField(i).Value;
+            hi = app.CMaxField(i).Value;
             finite = v(isfinite(v));
             lims = [];
             if ~isempty(lo) && ~isempty(hi) && hi > lo
@@ -423,7 +585,7 @@ classdef MODvis_realtime_monitor < handle
                 if lims(2) <= lims(1)
                     lims = lims(1) + [-1 1] * max(abs(lims(1)) * 0.01, eps);
                 end
-                how = sprintf('auto %.3g to %.3g (2-98%%)', lims(1), lims(2));
+                how = sprintf('auto %.4g to %.4g (2-98%%)', lims(1), lims(2));
             else
                 how = 'auto (no data)';
             end
@@ -448,44 +610,92 @@ classdef MODvis_realtime_monitor < handle
             f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'pressure_time_series.mat');
             pt = app.safeLoad(f);
             if ~isfield(pt, 'dnum') || isempty(pt.dnum)
-                title(ax, 'pressure: none yet');
+                title(ax, 'pressure: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
-            keep = true(size(pt.dnum));
-            span = app.SpanField.Value;
-            if ~isempty(span) && span > 0
-                keep = pt.dnum >= max(pt.dnum) - span / 24;
+            % the sections' time window when there is one, else the last hours
+            tl = app.TimeLimits;
+            if isempty(tl)
+                tl = app.timeWindow();
             end
+            if isempty(tl)
+                tl = [min(pt.dnum) max(pt.dnum)];
+            end
+            keep = pt.dnum >= tl(1) & pt.dnum <= tl(2);
             plot(ax, pt.dnum(keep), pt.P(keep), 'k');
             ax.YDir = 'reverse';
-            datetick(ax, 'x', 'keeplimits');
+            xlim(ax, tl);
+            datetick(ax, 'x', 'HH:MM', 'keeplimits');
             ylabel(ax, 'P [dbar]');
-            title(ax, sprintf('pressure%s', app.spanText()));
+            title(ax, 'pressure (sections'' time window)', 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+        end
+
+        function [idx, colors, labels] = lastCasts(app)
+            % the last NProfiles casts in the sections' window and direction(s), oldest first
+            g = app.Grid;
+            idx = [];
+            colors = [];
+            labels = {};
+            if ~isfield(g, 'time') || isempty(g.time)
+                return
+            end
+            idx = find(app.pickColumns());
+            [~, order] = sort(g.time(idx));
+            idx = idx(order(max(1, end - app.NProfiles + 1):end));
+            colors = parula(numel(idx) + 1);
+            labels = arrayfun(@(k) sprintf('%s %s', datestr(g.time(k), 'HH:MM'), g.cast_direction{k}), ...
+                idx, 'UniformOutput', false); %#ok<DATST>
         end
 
         function drawTS(app)
             ax = app.TSAx;
             cla(ax);
             g = app.Grid;
-            if ~isfield(g, 'SP') || ~isfield(g, 'T') || isempty(g.time)
-                title(ax, 'T-S: no grid yet');
+            [idx, colors, labels] = app.lastCasts();
+            if ~isfield(g, 'SP') || ~isfield(g, 'T') || isempty(idx)
+                title(ax, 'T-S: no grid yet', 'FontSize', app.FontSize + 1);
                 return
             end
-            [~, order] = sort(g.time);
-            last = order(max(1, end - 4):end);
-            colors = parula(numel(last) + 1);
             hold(ax, 'on');
-            labels = cell(1, numel(last));
-            for i = 1:numel(last)
-                k = last(i);
-                plot(ax, g.SP(:, k), g.T(:, k), '.-', 'Color', colors(i, :), 'MarkerSize', 6);
-                labels{i} = sprintf('%s %s', datestr(g.time(k), 'HH:MM'), g.cast_direction{k}); %#ok<DATST>
+            for i = 1:numel(idx)
+                plot(ax, g.SP(:, idx(i)), g.T(:, idx(i)), '.-', 'Color', colors(i, :), 'MarkerSize', 4);
             end
             hold(ax, 'off');
             xlabel(ax, 'SP [psu]');
             ylabel(ax, 'T [degC]');
-            legend(ax, labels, 'Location', 'best', 'FontSize', 8);
-            title(ax, 'T-S, last 5 casts (oldest dark, newest yellow)');
+            legend(ax, labels, 'Location', 'best', 'FontSize', app.FontSize);
+            title(ax, sprintf('T-S, last %d casts (oldest dark, newest yellow)', numel(idx)), ...
+                'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+        end
+
+        function drawWaterfall(app)
+            ax = app.WaterfallAx;
+            cla(ax);
+            g = app.Grid;
+            [idx, colors, labels] = app.lastCasts();
+            if ~isfield(g, 'T') || isempty(idx)
+                title(ax, 'T profiles: no grid yet', 'FontSize', app.FontSize + 1);
+                return
+            end
+            T = g.T(:, idx);
+            offset = app.OffsetField.Value;
+            how = sprintf('%g degC', offset);
+            if isempty(offset)
+                % auto: a quarter of the profiles' range
+                offset = max(diff(prctile(T(isfinite(T)), [2 98])) / 4, 0.01);
+                how = sprintf('auto %.2g degC', offset);
+            end
+            hold(ax, 'on');
+            for i = 1:numel(idx)
+                plot(ax, T(:, i) + (i - 1) * offset, g.z, 'Color', colors(i, :), 'LineWidth', 1);
+            end
+            hold(ax, 'off');
+            ax.YDir = 'reverse';
+            ylim(ax, app.depthLimits(g.z));
+            xlabel(ax, sprintf('T [degC], each cast + %s from the last', how));
+            ylabel(ax, 'depth [m]');
+            legend(ax, labels, 'Location', 'best', 'FontSize', app.FontSize);
+            title(ax, sprintf('T, last %d casts, offset', numel(idx)), 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
         end
 
         function drawTwist(app)
@@ -494,11 +704,13 @@ classdef MODvis_realtime_monitor < handle
             f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'twist_time_series.mat');
             tt = app.safeLoad(f);
             if ~isfield(tt, 'dnum') || isempty(tt.dnum)
-                title(ax, 'twist: none yet');
+                title(ax, 'twist: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
             MODvis_twist_timeseries(tt, ax);
-            title(ax, 'twist count, this survey (cruise-wide count not built yet)');
+            ax.FontSize = app.FontSize;
+            title(ax, 'twist count, this survey (cruise-wide count not built yet)', ...
+                'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
         end
 
         %% Log
@@ -606,7 +818,7 @@ classdef MODvis_realtime_monitor < handle
             end
             app.DetailLbl.Text = sprintf('Selected %s UTC - L1/L2 file: %s', ...
                 datestr(app.SelectedTime, 'yyyy-mm-dd HH:MM:SS'), app.orNone(file)); %#ok<DATST>
-            app.drawSection();
+            app.drawSections();
         end
 
         function openViewer(app, which)
@@ -654,11 +866,14 @@ classdef MODvis_realtime_monitor < handle
             tf = isfile(fullfile(app.Root, 'realtime', 'worker.lock'));
         end
 
-        function txt = spanText(app)
-            span = app.SpanField.Value;
-            txt = '';
-            if ~isempty(span) && span > 0
-                txt = sprintf(', last %g h', span);
+        function txt = windowText(app)
+            w = app.timeWindow();
+            if isempty(w)
+                txt = 'all casts';
+            elseif startsWith(app.EndDrop.Value, 'this time') && ~isnan(app.typedTime())
+                txt = sprintf('%g h to %s UTC', app.SpanField.Value, datestr(w(2), 'yyyy-mm-dd HH:MM')); %#ok<DATST>
+            else
+                txt = sprintf('last %g h to now', app.SpanField.Value);
             end
         end
 
@@ -668,6 +883,14 @@ classdef MODvis_realtime_monitor < handle
     end
 
     methods (Static)
+        function cmap = colormapNamed(name)
+            if any(strcmp(name, {'parula', 'turbo'}))
+                cmap = feval(name, 256);
+            else
+                cmap = cmocean(name);
+            end
+        end
+
         function root = config_root()
             root = '';
             cfg = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'acquisition', 'config.yml');

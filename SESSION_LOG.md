@@ -4,6 +4,17 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-16 - Monitor layout from Nicole's review; cmocean in toolbox/ (branch `main-fork`)
+
+Nicole tried the monitor on a demo grid made from the ASTRAL24 nfft512 profiles (legacy `Profile###.mat` binned the way `MODprocess_grid` bins, in the scratchpad only) and asked for:
+- 4 sections on the left sharing depth and time limits, each with its own variable, colormap and colour range (start: sigma0/dense, T/thermal, SP/haline, log10 epsilon_final/turbo);
+- beside sections 1-2, a 2x2 of small plots half a section wide (as the FastCTD GUI's engineering plots): pressure, T-S of the last 5 casts, the last 5 T profiles offset like a waterfall (offset auto or set), one free spot; the twist count as wide as a section beside section 3; the log beside section 4;
+- a FastCTD-GUI time range: a span in hours ending at the current time (UTC) or a typed time (span 0 = all casts); the bottom axis label gives the full dates;
+- axes text 10.5 pt (the controls unchanged); colormaps parula, turbo and cmocean's.
+cmocean v1.3 (Kristen Thyng's colormaps, Chad Greene's function, BSD license) copied unchanged from Nicole's Dropbox startup_packages into `toolbox/cmocean/` with its license, so the ship computers have it.
+
+Tested with a real window on the demo: the 4 sections and the pressure plot share their time limits; a typed time and a bad one (message, no error); "current time" on 2024 data shows no casts; all 19 colormaps load; panels checked by exporting each axes (the whole window still can't be captured from this Matlab).
+
 ### 2026-10-16 - Monitor app: MODvis_realtime_monitor (branch `main-fork`)
 
 Built to the layout agreed on 2026-10-14 (docs/workflow/processing_data.md), with sections in depth now that the grid is. A uifigure class that reads `realtime/status.json`, the survey's `processed/realtime/grid/grid.mat` (reloaded only when it changes), `pressure_time_series.mat`, `twist_time_series.mat`, `time_index.mat` and the logs every 10 s; writes only `control.json` and PNGs; Start launches `matlab -batch` with `nohup` (output in `realtime/worker_console.txt`), Pause/Stop write `control.json`, Preflight shows the worker's last preflight from `status.json` (nothing rerun, so the monitor never writes a run's files). Every plot setting is in the control panel and written in the plot titles. `ax.CLim` instead of `clim()`: Nicole's `couto_tools/miniscripts/clim.m` shadows Matlab's. Section cells have edges between casts, so no cast or bin is dropped (`pcolor` on centers dropped the last of each).

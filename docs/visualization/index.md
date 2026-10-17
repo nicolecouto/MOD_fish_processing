@@ -154,21 +154,30 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 
 - **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
   missing parameters, last update (red when there are problems or missing parameters).
-- **Left:** a colour section of the survey's grid (`processed/realtime/grid/grid.mat`), one
-  column per cast, depth vs time, with sigma0 contours. Any field in `grid.variables`;
-  epsilon and chi as log10. Click to pick a time: the L1/L2 file holding it is shown.
-- **Middle:** pressure vs time; T-S of the last 5 casts, coloured by age; the survey's twist
-  count (the cruise-wide count isn't built yet).
-- **Bottom:** the survey's `processing.log` (or `cruise_log.txt`), problem lines in red; click a
-  line to see all of it.
+- **Left:** 4 colour sections of the survey's grid (`processed/realtime/grid/grid.mat`), one
+  column per cast, depth vs time, with sigma0 contours. All 4 share the depth and time limits;
+  each has its own variable (any field in `grid.variables`; epsilon and chi as log10),
+  colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
+  haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
+  and turbo. Click one to pick a time: the L1/L2 file holding it is shown.
+- **Middle,** one row per section. Beside the first 2 sections, a 2x2 of small plots half a
+  section's width (like the FastCTD GUI's engineering plots): pressure vs time (same time
+  window) and T-S of the last 5 casts; the last 5 T profiles offset like a waterfall, and a free
+  spot. Beside the 3rd, the survey's twist count, as wide as a section (the cruise-wide count
+  isn't built yet). Beside the 4th, the survey's `processing.log` (or `cruise_log.txt`), problem
+  lines in red - click a line to see all of it.
 - **Right:** Start / Pause / Stop; Preflight (the worker's last preflight for the survey, from
-  `status.json`); section variable, casts (both/down/up), colormap, colour and depth limits
-  (empty = auto), last hours (0 = all), log; open the run in `MODvis_timeseries` or
-  `MODvis_spectra`; Save PNG (`realtime/figures/`). Each setting is written on the plot it changes.
+  `status.json`); for all sections: casts (both/down/up), depth limits, and the time window -
+  a span in hours ending at the current time (UTC) or at a typed time, as in the FastCTD GUI
+  (span 0 = all casts); per section: variable, colormap, colour min/max; the T profile offset;
+  the log; open the run in `MODvis_timeseries` or `MODvis_spectra`; Save PNG
+  (`realtime/figures/`). Empty = auto. Each setting is written on the plot it changes.
 
-![MODvis_realtime_monitor.m panels: T section (both directions), log10 chi_obs_t1 section (down casts), pressure, T-S of the last 5 casts - canyonhead sandbox replay, 2026-10-16](../concepts/images/MODvis_realtime_monitor_panels.png)
+![MODvis_realtime_monitor.m panels: sigma0, T, SP and log10 epsilon_final sections (12 h to 2024-05-21 20:00 UTC), pressure, T-S and offset T profiles of the last 5 casts - ASTRAL24 nfft512 demo](../concepts/images/MODvis_realtime_monitor_panels.png)
 
-The panels above were exported one by one from a sandbox replay of 4 canyonhead files. The
+The panels above were exported one by one from a demo grid made from the ASTRAL24 nfft512
+profiles (legacy `Profile###.mat`, binned the way `MODprocess_grid` bins), and placed as in the
+window, without the log and control panel. The
 whole window couldn't be captured from the Matlab used for testing (`exportapp` failed there;
 Save PNG reports it if it fails).
 

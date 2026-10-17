@@ -1,0 +1,8 @@
+toolbox/cmocean/
+================
+
+cmocean.m - perceptually uniform oceanographic colormaps by Kristen Thyng,
+Matlab function by Chad Greene (cmocean v1.3, 2016), copied unchanged from
+Nicole's Dropbox/Matlab/startup_packages/cmocean_v1.3 so the ship computers
+have it too. BSD license: license.txt (keep it with the file).
+Used by visualization/MODvis_realtime_monitor.m.
