@@ -23,8 +23,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %              external_ctd substitutes for L0_data.ctd instead - see
 %              INPUTS.
 %     alt, isap - raw distance -> height above bottom (hab)
-%     vnav   - cable twist count added as data.twist (see
-%              mod_L1_add_twist.m), computed after ctd so
+%     vnav   - attitude added as vnav.tilt/spin/pitch/roll/yaw
+%              (mod_L1_add_vnav_attitude.m), and the cable twist count
+%              as data.twist (mod_L1_add_twist.m), computed after ctd so
 %              twist.pressure can be interpolated from it
 %   Every other field (gps, seg, spec, ...) passes through
 %   unchanged. Pure transformation - no file I/O, no metadata mutation
@@ -57,7 +58,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %
 % OUTPUTS
 %   data      - same fields as L0_data, with epsi/ctd/alt/isap converted
-%               to physical units and data.twist added, as described above
+%               to physical units, vnav.tilt/spin added and vnav.pitch/
+%               roll/yaw filled (mod_L1_add_vnav_attitude.m) and
+%               data.twist added, as described above
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
@@ -65,7 +68,7 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 % CALLS
 %   toolbox/seawater/gsw/gsw_SP_from_C.m, gsw_SR_from_SP.m, gsw_CT_from_t.m,
 %   gsw_sigma0.m, gsw_z_from_p.m
-%   mod_L1_add_twist.m
+%   mod_L1_add_vnav_attitude.m, mod_L1_add_twist.m
 %   mod_efe_volts_g_to_counts.m, mod_efe_counts_to_volts_g.m
 %   (local subfunctions: apply_setup_efe, process_ctd_fields, calibrate_altimeter_hab)
 %
@@ -136,9 +139,10 @@ if ~isempty(data.isap) && isfield(data.isap, 'dst')
     data.isap.hab = calibrate_altimeter_hab(data.isap.dst, metadata);
 end
 
-%% VecNav: cable twist count (needs data.ctd already calibrated, for
-% twist.pressure) - no-ops (with a warning) if this deployment has no vnav
+%% VecNav: attitude (tilt, spin, pitch, roll, yaw), then the cable twist
+% count (needs data.ctd already calibrated, for twist.pressure)
 if isfield(data, 'vnav') && ~isempty(data.vnav)
+    data.vnav = mod_L1_add_vnav_attitude(data.vnav);
     data = mod_L1_add_twist(data);
 end
 

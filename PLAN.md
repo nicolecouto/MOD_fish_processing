@@ -411,7 +411,7 @@ metadata.manifest.has_fluor   = false;
 
 Slot order is resolved by parsing and numerically sorting the `channel_N` keys - not by yaml field order. YAML libraries preserve declaration order but don't sort it, so `channel_10` would sort before `channel_2` under the old field-order approach the moment a deployment has more than 9 channels; explicit numeric sort avoids that trap.
 
-`metadata.manifest.has_*` (no `has_vnav` since 2026-10-17 - twist follows the data) are presence-only flags today - nothing in L0→L1 reads them yet (`vnav`/`isap`/etc. just pass through from L0 unchanged). They exist so a later step (shear/FPO7 calibration application, or the grouped `shear_channels`/`fpo7_channels` lists below) can start consuming them without every existing `setup.yml` needing a schema migration first.
+`metadata.manifest.has_*` (no `has_vnav` since 2026-10-17 - twist follows the data) are presence-only flags today - nothing in L0→L1 reads them yet (vnav gets attitude and twist, and alt/isap get hab, whenever the data has them, whatever the flags say). They exist so a later step (shear/FPO7 calibration application, or the grouped `shear_channels`/`fpo7_channels` lists below) can start consuming them without every existing `setup.yml` needing a schema migration first.
 
 **Not yet built** - grouped channel-list convenience fields, for when a processing function needs to loop over "all shear channels" rather than check `metadata.AFE.(ch).type` one channel at a time:
 

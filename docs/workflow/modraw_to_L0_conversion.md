@@ -34,7 +34,7 @@ Returns `L0_data` with whichever of these fields are present in the file (missin
 | `epsi` | `time_s`, `dnum`, then `t1_volt`, `t2_volt`, `s1_volt`, `s2_volt` [V] and `a1_g`, `a2_g`, `a3_g` [g] (standard EFE names, or setup.yml's if metadata was passed) |
 | `epsi_conversion` | counts <-> volts/g record for `epsi` - see below. `[]` if the file has no EFE data |
 | `ctd` | `P_raw`, `T_raw`, `C_raw`, `PT_raw` (SBE49 'eng' format) or `P`, `T`, `S`, `C` (SBE41 'PTS' format), `time_s`, `dnum` |
-| `vnav` | `compass`, `acceleration`, `gyro` (or `yaw`/`pitch`/`roll` depending on packet type), `time_s`, `dnum` |
+| `vnav` | `compass`, `acceleration`, `gyro` (or `yaw`/`pitch`/`roll` depending on packet type; the others are NaN), `time_s`, `dnum` - angles for `$VNMAR` are added at L1, see [Which way the fish points](../concepts/vehicle_attitude.md) |
 | `gps` | `latitude`, `longitude`, `dnum` |
 | `alt`, `isap` | altimeter distance (`dst`), `time_s`, `dnum` |
 | `seg`, `spec`, `avgspec` | onboard-computed segment/spectra data (if enabled in firmware) |

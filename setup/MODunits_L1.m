@@ -14,8 +14,8 @@ function u = MODunits_L1()
 %   mod_L2_tile_scans.m's own header docstring already uses.
 %
 %   Field names not listed here (gps, seg, spec, avgspec, dissrate, apf,
-%   fluor, ttv, vnav's own raw sub-fields) pass through from L0 to L1
-%   unchanged - see MODunits_L0.m for those.
+%   fluor, ttv, vnav's own raw sub-fields except yaw/pitch/roll, listed
+%   below) pass through from L0 to L1 unchanged - see MODunits_L0.m for those.
 %
 % OUTPUTS
 %   u - struct, one field per L1 field name (dot-path flattened, e.g.
@@ -55,8 +55,15 @@ u.alt_hab = struct('unit', 'm', 'description', 'MOD altimeter height above botto
 u.isap_hab = struct('unit', 'm', 'description', 'ISA500 altimeter height above bottom - same geometry/conversion as alt.hab.');
 u.isap_dst = struct('unit', 'm (raw, pre-hab)', 'description', 'ISA500 raw range-to-target - pegs at a flat maximum (120 in the one deployment tested) when the target is out of range; not a bug, but don''t mistake a flatlined hab for a real constant range to bottom.');
 
+% --- vnav attitude (mod_L1_add_vnav_attitude.m; docs/concepts/vehicle_attitude.md) ---
+u.vnav_tilt = struct('unit', 'deg', 'description', 'Angle of the sensor z axis (the fish''s long axis) from straight up: 0 = pointing up, 90 = horizontal, 180 = down. From the accelerometer, so only right while the fish isn''t accelerating much.');
+u.vnav_spin = struct('unit', 'deg, unwrapped within the file', 'description', 'Rotation about the long axis, right-handed about sensor z (the gyro z sign; twist.count_gyro, which counts about the vertical, has the same sign while tilt < 90): angle of the x axis from magnetic north once the tilt is taken out. NaN within 1 deg of tilt 180.');
+u.vnav_pitch = struct('unit', 'deg', 'description', 'VectorNav pitch (z-y-x Euler angles from North-East-Down): x axis up positive. From the sensor for $VNYPR, computed from accelerometer + magnetometer for $VNMAR.');
+u.vnav_roll = struct('unit', 'deg', 'description', 'VectorNav roll, right-handed about x, -180 to 180; 0 = z pointing down, so a fish hanging with z up reads near +-180.');
+u.vnav_yaw = struct('unit', 'deg, clockwise from magnetic north', 'description', 'VectorNav yaw: magnetic heading of the x axis seen from above, no declination applied. Off near the ship''s steel.');
+
 % --- twist (cable rotation count, from vnav) ---
-u.twist_count_gyro = struct('unit', 'full rotations', 'description', 'Cumulative cable-twist rotation count, integrated z-axis gyro / (2*pi) - mod_L1_add_twist.m.');
+u.twist_count_gyro = struct('unit', 'full rotations', 'description', 'Cumulative cable-twist rotation count, integrated gyro about the vertical (gyro turned into the gravity-aligned frame) / (2*pi) - mod_L1_add_twist.m.');
 u.twist_pressure = struct('unit', 'dbar', 'description', 'CTD pressure interpolated onto the vnav timebase - marks upcast/downcast for the twist-count plot (NaN if no CTD or interpolation fails).');
 
 u.provenance = struct('unit', 'n/a (record)', 'description', 'What this file was made from (MODutil_provenance.m): the L0 file (.files, L0/<name>.mat; for a profiles_L1 Profile####.mat, the L1 files it was cut from), the yml (.yml) and its SHA-256 when read (.yml_sha256), .run, .survey, .made_utc and the code commit (.code). Paths are relative to the survey folder.');

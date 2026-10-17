@@ -9,8 +9,9 @@ Takes an L0 `.mat` file (raw counts/hex, no calibrations - see [L0: converting .
 - **epsi** - already volts (thermistor/shear channels) or g (accelerometer channels) at L0, using the standard EFE board; L1 re-applies this deployment's setup.yml channel names/config from the exact counts (e.g. renames a repurposed `s2` to `c1`)
 - **ctd** - raw hex → pressure [dbar], temperature [°C], conductivity [S/m], salinity [psu], plus derived potential temperature, potential density, `dP/dt`, depth, `dz/dt`
 - **alt**, **isap** - raw distance → height above bottom (`hab`)
+- **vnav** - attitude added: `tilt`, `spin`, `pitch`, `roll`, `yaw` [deg] (`mod_L1_add_vnav_attitude.m`, below), and the cable twist count as `data.twist`
 
-Every other field (`gps`, `vnav`, `seg`, `spec`, `avgspec`, `dissrate`, `apf`, `fluor`, `ttv`) passes through unchanged.
+Every other field (`gps`, `seg`, `spec`, `avgspec`, `dissrate`, `apf`, `fluor`, `ttv`) passes through unchanged.
 
 Doing this requires a deployment configuration - which physical sensor is on which AFE channel, what its full-scale voltage range is, which CTD calibration coefficients apply - so this is also where a `setup.yml` file first enters the pipeline (see PLAN.md Section 2 for the metadata design).
 
@@ -205,6 +206,20 @@ Given the altimeter's raw slant-range reading (`alt.dst`/`isap.dst`, already in 
 
 This is exactly what `calibrate_altimeter_hab` computes: `hab = dst.*cos(theta) - (feet2meters(H) - inches2meters(P))`, i.e. `dst*cos(theta) - H + P` once `H`/`P` are converted to meters. Confirmed against `blt2021_0715`'s real geometry (θ=10°, H=5 ft, P=2.02 in).
 
+### `mod_L1_add_vnav_attitude.m`: tilt, spin, pitch, roll, yaw
+
+```matlab
+vnav = mod_L1_add_vnav_attitude(vnav)
+```
+
+Called automatically inside `MODprocess_single_L0_to_L1.m`, just before the twist count, whenever
+`data.vnav` is present and non-empty. It works out which way the fish points from the
+accelerometer (up) and magnetometer (magnetic north), for `$VNMAR` data; for `$VNYPR` data it keeps
+the sensor's own yaw/pitch/roll and works out tilt and spin from them. Adds `vnav.tilt` and
+`vnav.spin` and fills `vnav.pitch`, `vnav.roll`, `vnav.yaw` (all degrees). What each one means,
+with diagrams, and when to trust them: [Which way the fish points](../concepts/vehicle_attitude.md).
+`spin / 360` is an independent (magnetometer) check on `twist.count_gyro`.
+
 ### `mod_L1_add_twist.m` and cable twist counting
 
 ```matlab
@@ -314,6 +329,13 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-10-17 (evening) - VectorNav attitude at L1** (branch `main-fork`). New
+`mod_L1_add_vnav_attitude.m` adds `vnav.tilt`, `vnav.spin` and fills `vnav.pitch`/`roll`/`yaw`
+(NaN at L0 for `$VNMAR`), from the accelerometer and magnetometer. See
+[Which way the fish points](../concepts/vehicle_attitude.md) for the definitions and tests. L1 files
+made before this have none of it until reprocessed; `MODvis_vnav_attitude.m` computes it on the fly
+for them.
 
 **2026-10-17 (later) - Twist from the data; VNAV parse fix** (branch `main-fork`). The survey
 twist file is made whenever any L1 file has twist, not when the yml says `has_vnav` (removed).

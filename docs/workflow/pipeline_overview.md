@@ -94,7 +94,7 @@ flowchart LR
 | `mod_efe_counts_to_volts_g.m` / `mod_efe_volts_g_to_counts.m` | epsi, metadata / conversion → epsi | EFE counts → `<name>_volt`/`<name>_g`, and the exact inverse |
 | `MODvis_spectra_L0.m` | browses L0 folder | Quick-look: timeseries rows, click → EFE spectrum of that window vs ADC bit noise; no setup.yml needed, all spectral settings editable |
 | `MODprocess_all_L0_to_L1.m` | L0_dir, metadata → L1_files | Batch orchestrator; also builds every meta/ index below |
-| `MODprocess_single_L0_to_L1.m` | L0_data, metadata → data | Epsi: re-apply setup.yml names/config from the exact counts; CTD P/T/C/S, altimeter hab, `mod_L1_add_twist.m` |
+| `MODprocess_single_L0_to_L1.m` | L0_data, metadata → data | Epsi: re-apply setup.yml names/config from the exact counts; CTD P/T/C/S, altimeter hab, vnav tilt/spin/pitch/roll/yaw (`mod_L1_add_vnav_attitude.m`), `mod_L1_add_twist.m` |
 | `MODprocess_L1_update_file_cache.m` | L1_dir, meta_dir → L1_cache | Per-L1-file time span, `ctd.dnum`/`P` and `twist` in `meta/l1_file_cache.mat`; rereads only new or changed L1 files, so the deployment-wide files below don't reload every L1 file each pass |
 | `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_cache → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
 | `MODprocess_L1_make_time_index.m` | L1_cache → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
@@ -140,6 +140,7 @@ flowchart LR
 | `MODvis_timeseries.m` | browses L0/L1/L2/Profile folder | Any dnum-carrying struct, up to 6 rows, dual y-axis |
 | `MODvis_spectra.m` | browses an L2 folder or a run folder, with the matching L1 (`MODutil_level_folders.m`: the run's own, the `L1_from` run's, or `profiles_L1/`) | Click a point → that scan's raw spectrum, all channels |
 | `MODvis_twist_timeseries.m` | TwistTimeseries → live axes | Cable-twist count for fin adjustment during the cast; spool changes and survey starts on the cruise count |
+| `MODvis_vnav_attitude.m` | L1 folder or survey, time range → figure | Pressure, tilt, spin (with the gyro twist count), pitch, roll, yaw |
 
 ## Postprocess: L1 → profiles → grid
 

@@ -40,7 +40,7 @@ switch level
         steps = {'MODprocess_all_modraw_to_L0.m -> MODprocess_single_modraw_to_L0.m. No calibration besides the standard EFE conversion.'};
         sections = {};
     case 'L1'
-        what = {'One .mat per raw file: physical-unit timeseries - epsi (t1/t2/s1/s2/a1-a3 volts/g with this deployment''s channel names), ctd (P, T, C, SP, CT, SR, sigma0, z, dzdt), alt (hab), vnav, gps, twist, ...'
+        what = {'One .mat per raw file: physical-unit timeseries - epsi (t1/t2/s1/s2/a1-a3 volts/g with this deployment''s channel names), ctd (P, T, C, SP, CT, SR, sigma0, z, dzdt), alt (hab), vnav (with tilt, spin, pitch, roll, yaw), gps, twist, ...'
                 'This is the raw data turned into real data: no spectral or cast choices yet - the starting point for postprocessing.'};
         steps = {'MODprocess_all_L0_to_L1.m -> MODprocess_single_L0_to_L1.m: the run yml''s EFE settings, SBE CTD calibration, derived CTD fields (GSW/TEOS-10), altimeter height above bottom, per-file twist.'
                  'Files built from this L1 are in this run''s meta/ (next to L1/): time_index.mat, pressure_time_series.mat (profiling direction), twist_time_series.mat, fpo7_calibration.mat, l1_file_cache.mat.'};

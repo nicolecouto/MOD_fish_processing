@@ -40,6 +40,7 @@ visualization
     MODvis_spectra.m - browses a folder of .mat files carrying per-scan spectra (this repo's own L2/profile output, or legacy MOD_fish_lib/EPSILOMETER Profile*.mat), with wavenumber/frequency spectrum plots, theoretical overlays, FPO7 noise floors, and ADC bit-noise (24/20/16-bit) and accelerometer noise reference lines
     MODvis_spectra_L0.m - quick-look EFE spectra straight from L0 files vs ADC bit noise, no setup.yml needed: timeseries rows on top, click to pick the spectrum window; nfft/window/overlap/taper/detrend editable in the viewer; export one scan or the whole file's scans (spectra, f, noise floors, indices, settings) to .mat
     MODvis_twist_timeseries.m - plots cable twist count (gyro method) vs. time, highlighting upcast samples, spool changes and survey starts
+    MODvis_vnav_attitude.m - which way the fish was pointing: tilt, spin (with the gyro twist count), pitch, roll, yaw from L1 vnav (docs/concepts/vehicle_attitude.md)
     SpectraExplorerApp.m - plots timeseries from a directory of Profile.mat files;
         includes chi QC diagnostics (cutoff/kmin wavenumbers, modeled vs. observed noise,
         chi raw/noise-subtracted/MLE comparison) — see CHI_INSPECTOR_MANUAL.md

@@ -206,6 +206,20 @@ ax = MODvis_twist_timeseries(T);
 
 ![MODvis_twist_timeseries.m on a cruise twist count: three fake surveys, a spool change between surveys (spool_B) and one logged by hand during a survey (spool_C)](../concepts/images/MODvis_twist_timeseries_example.png)
 
+### MODvis_vnav_attitude.m
+
+Which way the fish was pointing, from a survey's (or any) L1 folder: pressure, tilt, spin next to
+the gyro twist count, pitch and roll, and yaw, on one linked time axis. What the angles mean, with
+diagrams: [Which way the fish points](../concepts/vehicle_attitude.md). For L1 files made before
+the angles were added at L1, it works them out from the vnav (nothing is written).
+
+```matlab
+fig = MODvis_vnav_attitude(survey_folder);                % processed/realtime/L1
+fig = MODvis_vnav_attitude(L1_folder, [t_start t_end]);   % datetime or datenum
+```
+
+![MODvis_vnav_attitude.m on the 2026-10-17 FCTD2 ocean test (four raw files processed in a sandbox): spin and the gyro twist count agree through the whole profile](../concepts/images/MODvis_vnav_attitude_example.png)
+
 ### SpectraExplorerApp.m
 
 Browse `Profile*.mat` files and step through depths, viewing t1/t2 temperature-gradient spectra
