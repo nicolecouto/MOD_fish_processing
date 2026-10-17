@@ -27,6 +27,7 @@ function u = MODunits_L3()
 % --- axes ---
 u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
 u.z_bin_m = struct('unit', 'm', 'description', 'Depth bin size (grid.z_bin_m in the yml).');
+u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C). A grid from another version is rebinned from scratch.');
 u.latitude = struct('unit', 'degrees N', 'description', 'Latitude used for the scans'' depth (metadata.PROCESS.latitude). A change rebins every cast.');
 u.time = struct('unit', 'MATLAB datenum', 'description', 'Mean time of the cast''s CTD samples, 1 x ncast (the middle of the cast if it has none).');
 u.cast_start = struct('unit', 'MATLAB datenum', 'description', 'Cast start time from the cast table (casts.mat dnum_start), 1 x ncast - what a column is keyed by.');
@@ -38,6 +39,7 @@ u.profile_number = struct('unit', 'n/a', 'description', 'The cast''s number in t
 % --- CTD: mean of every L1 CTD sample in the bin ---
 u.P = struct('unit', 'dbar', 'description', 'Mean CTD pressure in the bin, nz x ncast.');
 u.T = struct('unit', 'degC', 'description', 'Mean CTD in-situ temperature (ctd.T) in the bin, nz x ncast.');
+u.C = struct('unit', 'S/m', 'description', 'Mean CTD conductivity (ctd.C) in the bin, nz x ncast. S/m, not mS/cm.');
 u.SP = struct('unit', 'psu (PSS-78)', 'description', 'Mean Practical Salinity (ctd.SP) in the bin, nz x ncast. Not despiked or smoothed.');
 u.SR = struct('unit', 'g/kg', 'description', 'Mean Reference Salinity (ctd.SR) in the bin, nz x ncast.');
 u.CT = struct('unit', 'degC', 'description', 'Mean Conservative Temperature (ctd.CT) in the bin, nz x ncast.');

@@ -26,7 +26,8 @@ function grid = MODprocess_grid(metadata, by)
 %   start, end and source files (their times) are the same as when it was
 %   last binned keeps its column - and doesn't rewrite grid.mat when no
 %   cast changed. A cast still in progress (cast_complete false) is
-%   rebinned every call until it ends. A different by, z_bin_m or latitude
+%   rebinned every call until it ends. A different by, z_bin_m or latitude,
+%   or a grid made by another version of this function (grid_version),
 %   rebins every cast. Each source folder is listed once per call and each
 %   file loaded at most once (only the variables used).
 %
@@ -82,6 +83,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
+GRID_VERSION = 2; % 2: conductivity C added. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -126,7 +128,8 @@ if isfile(grid_file)
             grid_file, old.source, by);
     end
     if ~isfield(old, 'source') || ~strcmp(old.source, by) || ~isfield(old, 'z_bin_m') || old.z_bin_m ~= z_bin ...
-            || ~isfield(old, 'latitude') || ~isequal(old.latitude, lat) || ~isfield(old, 'source_stamp')
+            || ~isfield(old, 'latitude') || ~isequal(old.latitude, lat) || ~isfield(old, 'source_stamp') ...
+            || ~isfield(old, 'grid_version') || old.grid_version ~= GRID_VERSION
         old = []; % made another way - rebin everything
     end
 end
@@ -159,6 +162,7 @@ if n_binned == 0 && ~isempty(old) && isequal(old.cast_start, [casts.dnum_start])
     return
 end
 grid = assemble(columns, casts, z_bin, lat, by);
+grid.grid_version = GRID_VERSION;
 grid.provenance = MODutil_provenance(unique(all_sources, 'stable'), metadata);
 grid.variables = variables_present(grid);
 if ~isfolder(grid_dir)
@@ -209,8 +213,8 @@ col = struct('fields', struct(), 'n_bins', 0);
 in_cast = @(t) t >= c.dnum_start & t <= c.dnum_end;
 
 % CTD: every L1 sample in the cast
-ctd_names = {'P', 'T', 'SP', 'SR', 'CT', 'sigma0', 'dzdt'};
-grid_names = {'P', 'T', 'SP', 'SR', 'CT', 'sigma0', 'w'};
+ctd_names = {'P', 'T', 'C', 'SP', 'SR', 'CT', 'sigma0', 'dzdt'};
+grid_names = {'P', 'T', 'C', 'SP', 'SR', 'CT', 'sigma0', 'w'};
 ctd = struct('dnum', [], 'z', []);
 for i = 1:numel(L1_files)
     s = load_cached(cache, L1_files{i}, {'ctd'});
@@ -365,7 +369,7 @@ end
 function col = column_from_grid(old, k)
 col = struct('fields', struct(), 'n_bins', 0, 'time', old.time(k));
 names = setdiff(fieldnames(old), [axis_fields(), {'z', 'z_bin_m', 'latitude', 'variables', 'source', ...
-    'provenance', 'source_stamp'}]);
+    'provenance', 'source_stamp', 'grid_version'}]);
 for f = 1:numel(names)
     x = old.(names{f});
     if isnumeric(x) && size(x, 1) == numel(old.z) && size(x, 2) == numel(old.time)

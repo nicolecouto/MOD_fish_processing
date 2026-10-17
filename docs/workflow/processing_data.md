@@ -167,7 +167,7 @@ switch only changes what goes in and where the result goes. `'from'` and `'until
 run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_m` meters
 (Nicole's choices, 2026-10-16). Every value is a bin mean, and nothing is interpolated:
 
-- **CTD** (`T`, `SP`, `SR`, `CT`, `sigma0`, `w`, `P`): the mean of every L1 CTD sample in the bin,
+- **CTD** (`T`, `C`, `SP`, `SR`, `CT`, `sigma0`, `w`, `P`): the mean of every L1 CTD sample in the bin,
   at the CTD's full rate (like the old FCTD grid).
 - **Turbulence** (`epsilon_final`, `chi_obs_<ch>`, `chi_mle_<ch>`): the mean of the L2 scans whose
   center is in the bin. A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m
@@ -400,13 +400,12 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
 - **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours; shared
   depth and time limits, each with its own variable, colormap and colour range. Variables
   are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
-- **Middle:**
-  - pressure vs time;
-  - TS of the last ~5 casts, coloured by age, to catch conductivity problems;
-  - cruise twist count vs time (all vehicles - one winch spool) over the sections' time span,
-    with spool changes (dashed) and survey starts (dotted) marked; the title gives the count
-    now, the spool and when it went on;
-  - space left for more panels.
+- **Middle, 3 x 2:**
+  - left: pressure vs time over the cruise twist count (all vehicles - one winch spool), on the
+    same, linked time limits, with spool changes (dashed) and survey starts (dotted) marked; the
+    twist title gives the count now, the spool and when it went on; row 3 free;
+  - right, square: the last ~5 casts' T profiles and C profiles, offset like a waterfall, and
+    their T-S, coloured by age, to catch conductivity problems.
 - **Bottom, streaming log**, with errors highlighted (click one for the full message).
 - **Right, control panel:** Start / Pause / Stop, Preflight, time span, depth range, colour
   limits and colormap, open the run in `MODvis_timeseries` / `MODvis_spectra` (clicking the
@@ -662,3 +661,9 @@ the VectorNav box are gone. Start New Deployment has an ON THE WINCH SPOOL / LAB
 the top instead: a lab test is left out of the cruise twist. Also fixed: the raw-file
 reader could lose a file's VNAV ("VNAV chokes") because of a loop counter left over from an
 earlier block type.
+
+**2026-10-17 (later) - Monitor middle as 3 x 2; conductivity in the grid** (branch `main-fork`).
+Nicole: pressure and the twist count need the same x-limits. They're now stacked on the left,
+linked, and stretch to fill the width; the right column (kept square) has the last casts' T
+profiles, new C profiles and the T-S. The grid gets `C` (S/m) and a `grid_version` (2); a grid
+from before rebins every cast once.

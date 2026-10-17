@@ -21,15 +21,15 @@ classdef MODvis_realtime_monitor < handle
     %           time limits; each has its own variable (from
     %           grid.variables; epsilon and chi as log10), colormap and
     %           colour range.
-    %   Middle, one row per section: small plots half a section's width -
-    %           pressure vs time and T-S of the last 5 casts beside the
-    %           1st section, the last 5 T profiles offset like a waterfall
-    %           beside the 2nd (the 4th spot is free); the cruise twist
-    %           count (<processed_root>/twist/, every survey on the spool, restarting at
-    %           each winch spool change), as wide as a section, beside the
-    %           3rd; the survey's
-    %           processing log (or the cruise log) beside the 4th, problem
-    %           lines in red - click a line to see all of it.
+    %   Middle, 3 rows x 2 columns of small plots beside sections 1-3,
+    %           half a section's width: left, pressure vs time over the
+    %           cruise twist count (<processed_root>/twist/, every survey on
+    %           the spool, restarting at each winch spool change), on the
+    %           same, linked time limits (row 3 is free); right, the last 5
+    %           casts' T profiles and C profiles offset like a waterfall,
+    %           and their T-S. Beside the 4th section, the survey's
+    %           processing log (or the cruise log), problem lines in red -
+    %           click a line to see all of it.
     %   Right:  Start / Pause / Stop, the worker's last preflight for the
     %           survey, and every plot setting (shown on the plots).
     %
@@ -56,6 +56,8 @@ classdef MODvis_realtime_monitor < handle
         TSAx
         WaterfallAx
         TwistAx
+        CondAx
+        MidGrid                      % the middle uigridlayout (its column 2 is kept square)
         LogList
         DetailLbl
 
@@ -75,6 +77,7 @@ classdef MODvis_realtime_monitor < handle
         EndDrop
         EndField
         OffsetField
+        CondOffsetField
         LogDrop
         OpenTSBtn
         OpenSpecBtn
@@ -109,6 +112,7 @@ classdef MODvis_realtime_monitor < handle
             end
             app.Root = char(processed_root);
             app.buildUI();
+            app.layoutMiddle();
             app.refresh();
             app.Timer = timer('ExecutionMode', 'fixedSpacing', 'Period', app.RefreshS, ...
                 'BusyMode', 'drop', 'TimerFcn', @(~, ~) app.refresh());
@@ -128,7 +132,8 @@ classdef MODvis_realtime_monitor < handle
         %% Layout
         function buildUI(app)
             app.Fig = uifigure('Name', ['Realtime monitor - ' app.Root], 'Position', [40 40 1700 1000], ...
-                'CloseRequestFcn', @(~, ~) delete(app));
+                'CloseRequestFcn', @(~, ~) delete(app), 'AutoResizeChildren', 'off', ...
+                'SizeChangedFcn', @(~, ~) app.layoutMiddle());
             g = uigridlayout(app.Fig, [2 3]);
             g.RowHeight = {40, '1x'};
             g.ColumnWidth = {'2x', '2x', 270};
@@ -147,16 +152,24 @@ classdef MODvis_realtime_monitor < handle
                 app.SectionAx(i).ButtonDownFcn = @(~, ev) app.pickTime(ev);
             end
 
-            % middle, one row per section: a 2x2 of small plots beside the
-            % first 2 sections (the 4th spot is free), the cruise twist count as
-            % wide as a section beside the 3rd, the log beside the 4th
+            % middle, one row per section: pressure and the cruise twist count
+            % (same time limits, linked) over a free spot on the left; the
+            % last casts' T and C profiles and their T-S on the right; the log
+            % beside the 4th section
             mid = uigridlayout(g, [app.NSections 2], 'Padding', [0 0 0 0], 'RowSpacing', 2);
             mid.Layout.Row = 2;
             mid.Layout.Column = 2;
+            mid.RowHeight = repmat({'1x'}, 1, app.NSections); % rows line up with the sections
+            app.MidGrid = mid;
             app.PressureAx = app.smallAxes(mid, 1, 1);
-            app.TSAx = app.smallAxes(mid, 1, 2);
-            app.WaterfallAx = app.smallAxes(mid, 2, 1);
-            app.TwistAx = app.smallAxes(mid, 3, [1 2]);
+            app.TwistAx = app.smallAxes(mid, 2, 1);
+            app.WaterfallAx = app.smallAxes(mid, 1, 2);
+            app.CondAx = app.smallAxes(mid, 2, 2);
+            app.TSAx = app.smallAxes(mid, 3, 2);
+            % the profile and T-S plots are square; pressure and twist take the rest of the width
+            for ax = [app.WaterfallAx, app.CondAx, app.TSAx]
+                ax.PlotBoxAspectRatio = [1 1 1];
+            end
             logs = uigridlayout(mid, [2 1], 'Padding', [0 0 0 0], 'RowHeight', {'1x', 44});
             logs.Layout.Row = 4;
             logs.Layout.Column = [1 2];
@@ -165,7 +178,7 @@ classdef MODvis_realtime_monitor < handle
             app.DetailLbl = uilabel(logs, 'Text', '', 'WordWrap', 'on', 'FontName', 'Menlo', 'FontSize', 10);
 
             % right: control panel
-            n_rows = 16 + 3 * app.NSections + 8;
+            n_rows = 16 + 3 * app.NSections + 9;
             c = uigridlayout(g, [n_rows 2], 'RowSpacing', 3, 'Scrollable', 'on');
             c.Layout.Row = 2;
             c.Layout.Column = 3;
@@ -225,6 +238,8 @@ classdef MODvis_realtime_monitor < handle
             row = row + 1;
             app.OffsetField = app.labelled(c, row, 'T profile offset [degC]', 'num', NaN, @(~, ~) app.drawWaterfall());
             row = row + 1;
+            app.CondOffsetField = app.labelled(c, row, 'C profile offset [S/m]', 'num', NaN, @(~, ~) app.drawWaterfall());
+            row = row + 1;
             app.LogDrop = app.labelled(c, row, 'Log', 'drop', {'survey processing.log', 'cruise_log.txt'}, @(~, ~) app.refreshLog());
             row = row + 1;
             note = uilabel(c, 'Text', 'Empty = auto. Span 0 = all casts.', 'FontSize', 10);
@@ -240,6 +255,18 @@ classdef MODvis_realtime_monitor < handle
             root_lbl = uilabel(c, 'Text', app.Root, 'WordWrap', 'on', 'FontSize', 9);
             root_lbl.Layout.Row = [row min(row + 1, n_rows)];
             root_lbl.Layout.Column = [1 2];
+        end
+
+        function layoutMiddle(app)
+            % column 2 of the middle as wide as a row is tall, so its plots
+            % are square; column 1 (pressure, twist) gets the rest
+            if isempty(app.MidGrid) || ~isvalid(app.MidGrid)
+                return
+            end
+            pos = app.Fig.Position;
+            row_h = (pos(4) - 40 - 3 * 10 - (app.NSections - 1) * 2) / app.NSections;
+            mid_w = (pos(3) - 270 - 4 * 10) / 2; % the main grid's middle column, '2x' of '2x' '2x' 270
+            app.MidGrid.ColumnWidth = {'1x', max(120, min(row_h, 0.6 * mid_w))};
         end
 
         function ax = smallAxes(app, parent, row, col)
@@ -291,7 +318,7 @@ classdef MODvis_realtime_monitor < handle
                 if app.loadGrid()
                     app.drawPlots();
                 elseif twist_changed
-                    app.drawTwist();
+                    app.drawTimeSeries();
                 end
                 app.refreshLog();
             catch ME
@@ -424,10 +451,36 @@ classdef MODvis_realtime_monitor < handle
         %% Plots
         function drawPlots(app)
             app.drawSections();
-            app.drawPressure();
             app.drawTS();
             app.drawWaterfall();
+            app.drawTimeSeries();
+        end
+
+        function drawTimeSeries(app)
+            % pressure and the cruise twist count, on the same time limits
+            app.drawPressure();
             app.drawTwist();
+            try
+                linkaxes([app.PressureAx, app.TwistAx], 'x');
+            catch
+                % one of them has nothing to plot yet (no time axis)
+            end
+        end
+
+        function tl = smallPlotWindow(app, t)
+            % [start end] datenum for pressure and twist: the sections'
+            % window; when it ends now, now (newer samples than the last
+            % grid redraw still show); with no window, the data's range
+            w = app.timeWindow();
+            tl = app.TimeLimits;
+            if ~isempty(w) && strcmp(app.EndDrop.Value, app.EndDrop.Items{1})
+                tl = w;
+            elseif isempty(tl)
+                tl = w;
+            end
+            if isempty(tl) && ~isempty(t)
+                tl = [min(t) max(t)];
+            end
         end
 
         function drawSections(app)
@@ -624,19 +677,11 @@ classdef MODvis_realtime_monitor < handle
                 title(ax, 'pressure: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
-            % the sections' time window when there is one, else the last hours
-            tl = app.TimeLimits;
-            if isempty(tl)
-                tl = app.timeWindow();
-            end
-            if isempty(tl)
-                tl = [min(pt.dnum) max(pt.dnum)];
-            end
+            tl = app.smallPlotWindow(pt.dnum);
             keep = pt.dnum >= tl(1) & pt.dnum <= tl(2);
-            plot(ax, pt.dnum(keep), pt.P(keep), 'k');
+            plot(ax, datetime(pt.dnum(keep), 'ConvertFrom', 'datenum'), pt.P(keep), 'k');
             ax.YDir = 'reverse';
-            xlim(ax, tl);
-            datetick(ax, 'x', 'HH:MM', 'keeplimits');
+            xlim(ax, datetime(tl, 'ConvertFrom', 'datenum'));
             ylabel(ax, 'P [dbar]');
             title(ax, 'pressure (sections'' time window)', 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
         end
@@ -680,33 +725,38 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function drawWaterfall(app)
-            ax = app.WaterfallAx;
+            % the last casts' T and C profiles, each offset from the last
+            app.drawProfiles(app.WaterfallAx, 'T', 'degC', app.OffsetField.Value, 0.01);
+            app.drawProfiles(app.CondAx, 'C', 'S/m', app.CondOffsetField.Value, 0.001);
+        end
+
+        function drawProfiles(app, ax, name, unit, offset, min_offset)
             cla(ax);
             g = app.Grid;
             [idx, colors, labels] = app.lastCasts();
-            if ~isfield(g, 'T') || isempty(idx)
-                title(ax, 'T profiles: no grid yet', 'FontSize', app.FontSize + 1);
+            if ~isfield(g, name) || isempty(idx)
+                title(ax, sprintf('%s profiles: none in the grid yet', name), 'FontSize', app.FontSize + 1);
                 return
             end
-            T = g.T(:, idx);
-            offset = app.OffsetField.Value;
-            how = sprintf('%g degC', offset);
+            X = g.(name)(:, idx);
+            how = sprintf('%g %s', offset, unit);
             if isempty(offset)
                 % auto: a quarter of the profiles' range
-                offset = max(diff(prctile(T(isfinite(T)), [2 98])) / 4, 0.01);
-                how = sprintf('auto %.2g degC', offset);
+                offset = max(diff(prctile(X(isfinite(X)), [2 98])) / 4, min_offset);
+                how = sprintf('auto %.2g %s', offset, unit);
             end
             hold(ax, 'on');
             for i = 1:numel(idx)
-                plot(ax, T(:, i) + (i - 1) * offset, g.z, 'Color', colors(i, :), 'LineWidth', 1);
+                plot(ax, X(:, i) + (i - 1) * offset, g.z, 'Color', colors(i, :), 'LineWidth', 1);
             end
             hold(ax, 'off');
             ax.YDir = 'reverse';
             ylim(ax, app.depthLimits(g.z));
-            xlabel(ax, sprintf('T [degC], each cast + %s from the last', how));
+            xlabel(ax, sprintf('%s [%s], + %s per cast', name, unit, how));
             ylabel(ax, 'depth [m]');
             legend(ax, labels, 'Location', 'best', 'FontSize', app.FontSize);
-            title(ax, sprintf('T, last %d casts, offset', numel(idx)), 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+            title(ax, sprintf('%s, last %d casts, offset', name, numel(idx)), 'FontSize', app.FontSize + 1, ...
+                'FontWeight', 'normal');
         end
 
         function changed = loadTwist(app)
@@ -742,16 +792,7 @@ classdef MODvis_realtime_monitor < handle
                 title(ax, 'cruise twist: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
-            % the sections' time window, as for pressure
-            tl = app.TimeLimits;
-            if isempty(tl)
-                tl = app.timeWindow();
-            end
-            if isempty(tl)
-                tl = [tt.dnum(1) tt.dnum(end)];
-            elseif strcmp(app.EndDrop.Value, app.EndDrop.Items{1})
-                tl(2) = max(tl(2), tt.dnum(end)); % ending now: newer twist than the last grid redraw
-            end
+            tl = app.smallPlotWindow(tt.dnum); % the same limits as pressure
             keep = tt.dnum >= tl(1) & tt.dnum <= tl(2);
             w = tt;
             for name = {'dnum', 'count_gyro', 'count_compass', 'pressure', 'survey_index'}
@@ -783,11 +824,12 @@ classdef MODvis_realtime_monitor < handle
                 since = sprintf(' (on since %s)', datestr(tt.spool_swaps(end).dnum, 'mm-dd HH:MM')); %#ok<DATST>
             end
             spool = app.orNone(tt.spool);
-            title(ax, sprintf('cruise twist %+.1f turns   |   spool %s%s   |   latest %s UTC', now_count, spool, ...
-                since, datestr(tt.dnum(end), 'mm-dd HH:MM')), 'FontSize', app.FontSize + 1, 'FontWeight', 'normal', ...
+            title(ax, {sprintf('cruise twist %+.1f turns, spool %s%s', now_count, spool, since), ...
+                sprintf('latest %s UTC; orange upcasts, dashed spool change, dotted survey start', ...
+                datestr(tt.dnum(end), 'mm-dd HH:MM'))}, 'FontSize', app.FontSize + 1, 'FontWeight', 'normal', ...
                 'Interpreter', 'none'); %#ok<DATST>
-            xlabel(ax, 'orange: upcasts   dashed: spool change (count restarts)   dotted: survey start   neutral is negative', ...
-                'FontSize', app.FontSize);
+            ylabel(ax, 'turns (neutral is negative)');
+            xlabel(ax, '');
         end
 
         %% Log
