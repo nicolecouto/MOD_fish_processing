@@ -474,7 +474,9 @@ manifest_flags = {'isap', 'alt', 'gps', 'fluor'};
 has_manifest = isfield(yml, 'instrument_manifest');
 for iF = 1:numel(manifest_flags)
     flag = manifest_flags{iF};
-    present = has_manifest && isfield(yml.instrument_manifest, flag) && logical(yml.instrument_manifest.(flag));
+    % true, or {sn: ...} (Start New Deployment writes the serial number when given)
+    present = has_manifest && isfield(yml.instrument_manifest, flag) && ...
+        (isstruct(yml.instrument_manifest.(flag)) || logical(yml.instrument_manifest.(flag)));
     metadata.manifest.(['has_' flag]) = present;
 end
 

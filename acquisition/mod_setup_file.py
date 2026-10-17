@@ -47,6 +47,9 @@ PATH_MAX = 255              # char[256] calibration paths in ctd.h
 
 # AFE analog slots 1-4. Slots 5-7 are always the accelerometers a1-a3.
 SENSOR_TYPES = ['fpo7', 'shear', 'fluor', 'microcond', 'none']
+# What AFE slots 1-4 are called on the board (labels only - the channel names
+# processing uses still come from the sensor type, slot_names)
+BOARD_SLOT_NAMES = ['t1', 't2', 's1', 's2']
 SENSOR_LABELS = {'fpo7': 'FP07', 'shear': 'shear', 'fluor': 'fluorometer',
                  'microcond': 'microconductivity', 'none': 'none'}
 # Logical channel names, handed out in slot order per type (t1 then t2, ...)
@@ -556,9 +559,10 @@ def render_dev1_setup_yml(values, config):
         L.append('    channel_%d: %s}' % (i + 1, entry))
     for i, n in enumerate(['a1', 'a2', 'a3']):
         L.append('    channel_%d: {name: %s, type: acc}' % (i + 5, n))
-    for flag in ('alt', 'fluor'):
+    for flag in ('alt', 'fluor'):   # fluor: the digital fluorometer (its own $ECOP stream)
         if values.get(flag):
-            L.append('  %s: true' % flag)
+            sn = str(values.get(flag + '_sn', '') or '').strip()
+            L.append('  %s: {sn: %s}' % (flag, yq(sn)) if sn else '  %s: true' % flag)
     L += ['', 'afe:', '  channels:']
     for n in names + ['a1', 'a2', 'a3']:
         fr, conf = AFE_CHANNEL_SETTINGS.get(n, (2.5, 'Bipolar'))
@@ -669,7 +673,7 @@ def log_spool_change(values, config, survey):
 
 LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch_spool', 'on_winch_spool', 'fish_flag', 'fish_pc', 'ctd_sn',
               'ch1_type', 'ch1_sn', 'ch2_type', 'ch2_sn', 'ch3_type', 'ch3_sn',
-              'ch4_type', 'ch4_sn', 'microcond_sn', 'experiment', 'cruise',
+              'ch4_type', 'ch4_sn', 'microcond_sn', 'alt', 'alt_sn', 'fluor', 'fluor_sn', 'experiment', 'cruise',
               'setup_backup', 'dev1_setup_yml']
 
 
@@ -717,6 +721,11 @@ def write_all(values, config, write_yml=True):
         row['on_winch_spool'] = 'true' if on_winch_spool(v) else 'false'
         if not on_winch_spool(v):
             row['winch_spool'] = ''  # as in dev1_setup.yml
+        for flag in ('alt', 'fluor'):
+            on = str(v.get(flag, '')).strip().lower() in ('true', '1', 'yes')
+            row[flag] = 'true' if on else 'false'
+            if not on:
+                row[flag + '_sn'] = ''
         d = os.path.dirname(log_path)
         if d:
             os.makedirs(d, exist_ok=True)

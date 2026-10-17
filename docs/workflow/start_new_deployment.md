@@ -140,6 +140,18 @@ and keeps its standard name with `type: none` in dev1_setup.yml, so slot positio
 never shift. `Setup` also records each slot's type (`CTD.chN_type`), which
 `fctd_epsi` ignores but copies into every `.modraw` header.
 
+The window labels slots 1-4 with their names on the board, **Slot 1 (t1)**,
+**Slot 2 (t2)**, **Slot 3 (s1)**, **Slot 4 (s2)** (`BOARD_SLOT_NAMES` in
+`mod_setup_file.py`, if the board ever changes). The **Name** column is the
+channel name processing uses, which follows the sensor type (e.g. `c1` for
+microconductivity on slot 4).
+
+**Digital fluorometer** (its own `$ECOP` stream, not a fluorometer on an AFE
+slot) and **Altimeter** each have a box and a serial number. They go into
+`dev1_setup.yml` as `fluor: {sn: '...'}` / `alt: {sn: '...'}` (`true` with no
+serial number) and into the deployment log, not into `Setup` (it has no keys
+for them).
+
 ## Rules `Setup` has to follow
 
 From `fctd_epsi`'s source (`main.c` ReadSetupFile, `file_utils.c`,
@@ -183,6 +195,13 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/meta
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-17 - Board slot names; serial numbers for the digital fluorometer and altimeter**
+(branch `main-fork`). Slots are labelled Slot 1 (t1) ... Slot 4 (s2); "Separate fluorometer" is
+now "Digital fluorometer"; both it and the altimeter take a serial number, written to
+`dev1_setup.yml` (`{sn: ...}`) and the deployment log (new `alt`, `alt_sn`, `fluor`, `fluor_sn`
+columns, so the first Create Setup after this sets the old log aside). `MODsetup_read_yaml`
+reads `{sn: ...}` as present.
 
 **2026-10-17 - ON THE WINCH SPOOL / LAB TEST switch; no VectorNav box** (branch `main-fork`).
 LAB TEST: no spool in `dev1_setup.yml` or the deployment log, `on_winch_spool: false`, no

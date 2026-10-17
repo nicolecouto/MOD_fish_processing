@@ -59,7 +59,8 @@ ADVANCED_NOTES = {
 }
 # config.yml keys that write_all/validate read from config, editable under Advanced
 CONFIG_OVERRIDES = ['processed_root', 'deployment_log', 'calibrations_root']
-REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'alt', 'fluor'] + \
+REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'alt', 'alt_sn', 'fluor',
+              'fluor_sn'] + \
     ['ch%d_%s' % (i, k) for i in range(1, 5) for k in ('type', 'sn')]
 TYPE_BY_LABEL = {v: k for k, v in msf.SENSOR_LABELS.items()}
 
@@ -259,7 +260,8 @@ class StartNewDeployment:
         ttk.Label(ins, text='Serial number', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=3, sticky='w', **pad)
         for i in range(1, 5):
             r = i + 1
-            ttk.Label(ins, text='Slot %d' % i).grid(row=r, column=0, sticky='w', **pad)
+            ttk.Label(ins, text='Slot %d (%s)' % (i, msf.BOARD_SLOT_NAMES[i - 1])).grid(
+                row=r, column=0, sticky='w', **pad)
             cb = ttk.Combobox(ins, textvariable=self.var('ch%d_type' % i, value='none'), state='readonly', width=16,
                               values=[msf.SENSOR_LABELS[t] for t in msf.SENSOR_TYPES])
             cb.grid(row=r, column=1, sticky='w', **pad)
@@ -273,8 +275,13 @@ class StartNewDeployment:
                   foreground='#777').grid(row=6, column=0, columnspan=4, sticky='w', **pad)
         chk = ttk.Frame(ins)
         chk.grid(row=7, column=0, columnspan=6, sticky='w', **pad)
-        for k, label in (('fluor', 'Separate fluorometer'), ('alt', 'Altimeter')):
-            ttk.Checkbutton(chk, text=label, variable=self.var(k, tk.BooleanVar, False)).pack(side='left', padx=8)
+        self.extra_sn_entries = {}
+        for k, label in (('fluor', 'Digital fluorometer'), ('alt', 'Altimeter')):
+            ttk.Checkbutton(chk, text=label, variable=self.var(k, tk.BooleanVar, False)).pack(side='left', padx=(8, 2))
+            ttk.Label(chk, text='SN').pack(side='left')
+            e = ttk.Entry(chk, textvariable=self.var(k + '_sn'), width=12)
+            e.pack(side='left', padx=(2, 16))
+            self.extra_sn_entries[k] = e
         ttk.Label(ins, text='Latitude').grid(row=8, column=0, sticky='w', **pad)
         ttk.Entry(ins, textvariable=self.var('latitude', value=self.config.get('latitude', '')),
                   width=8).grid(row=8, column=1, sticky='w', **pad)
@@ -445,6 +452,8 @@ class StartNewDeployment:
             sns = [s for s in history.get(t, []) if s not in sns] + sns
             self.sn_boxes[i].config(values=sns, state='disabled' if t == 'none' else 'normal')
         self.spool_entry.config(state='normal' if v.get('on_winch_spool') else 'disabled')
+        for k, e in self.extra_sn_entries.items():
+            e.config(state='normal' if v.get(k) else 'disabled')
         survey = v['survey']
         errors, warnings = msf.validate(v, self.effective_config(v))
         today = datetime.datetime.utcnow().strftime('%y_%m%d')
