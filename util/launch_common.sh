@@ -14,6 +14,8 @@
 #            "No MATLAB bin directory for this machine architecture, ARCH =
 #            maca64" (DEV3, 2026-10-17); empty otherwise
 # On a problem it prints why, waits for a key and exits.
+# launch_style colors this Terminal window and titles it, so the launcher
+# windows stand out from ordinary ones (and aren't closed by accident).
 #
 # Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -50,4 +52,33 @@ launch_find_matlab() {
     else
         echo "MATLAB: $MATLAB"
     fi
+}
+
+# launch_style "title" R G B: window title, and (macOS Terminal only) a
+# background colour (0-255 each) with white text, for this window's own tab
+# (matched by its tty, so another window in front isn't changed). The first
+# time, macOS may ask to let osascript control Terminal - allow it; refusing
+# only means the colour isn't set.
+launch_style() {
+    printf '\033]0;%s\007' "$1"
+    [ "$TERM_PROGRAM" = Apple_Terminal ] || return 0
+    local me
+    me="$(tty)"
+    osascript - "$me" "$(( $2 * 257 ))" "$(( $3 * 257 ))" "$(( $4 * 257 ))" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+    set myTTY to item 1 of argv
+    set bg to {(item 2 of argv) as integer, (item 3 of argv) as integer, (item 4 of argv) as integer}
+    tell application "Terminal"
+        repeat with w in windows
+            repeat with t in tabs of w
+                if tty of t is myTTY then
+                    set background color of t to bg
+                    set normal text color of t to {65535, 65535, 65535}
+                    set bold text color of t to {65535, 65535, 65535}
+                end if
+            end repeat
+        end repeat
+    end tell
+end run
+APPLESCRIPT
 }

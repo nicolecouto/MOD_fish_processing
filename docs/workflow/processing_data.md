@@ -309,7 +309,10 @@ There are two Matlab processes on DEV3. They talk only through files.
 It has no windows. On an Apple Silicon Mac with an Intel-only MATLAB (`bin/maci64`, no
 `bin/maca64` - releases before R2023b), both start it with `arch -x86_64` (Rosetta); without that
 MATLAB stops with "No MATLAB bin directory for this machine architecture, ARCH = maca64"
-(seen on DEV3, 2026-10-17). Each pass:
+(seen on DEV3, 2026-10-17). Its Terminal window turns dark red, titled "REALTIME PROCESSING - DO
+NOT CLOSE": closing it stops the worker. (`Start Realtime Monitor.command`'s window is dark blue;
+closing that one stops nothing.) The first time, macOS may ask to let osascript control Terminal -
+allow it; refusing only leaves the window uncoloured. Each pass:
 
 1. links new raw files from `RAW_full_cruise/` into their survey's `raw/`;
 2. for each survey that has something new (oldest first; the newest is the active one), runs

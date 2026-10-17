@@ -11,6 +11,7 @@
 SRC="$(cd "$(dirname "$(readlink "$0" || echo "$0")")" && pwd)"
 [ -d "$SRC/processing" ] || SRC="$(cd "$(dirname "$0")" && pwd)"
 source "$SRC/util/launch_common.sh"
+launch_style "Realtime monitor (safe to close once MATLAB is open)" 15 45 100
 launch_find_root "$1"
 launch_find_matlab
 

@@ -20,6 +20,7 @@ for a in "$@"; do
     if [ "$a" = "--force" ]; then FORCE=true; else ROOT="$a"; fi
 done
 source "$SRC/util/launch_common.sh"
+launch_style "REALTIME PROCESSING - DO NOT CLOSE (closing stops the worker)" 110 20 20
 launch_find_root "$ROOT"
 launch_find_matlab
 
