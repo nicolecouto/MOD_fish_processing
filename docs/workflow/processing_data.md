@@ -306,7 +306,10 @@ There are two Matlab processes on DEV3. They talk only through files.
 **Worker (built):** `MODprocess_deployment(processed_root, 'watch', true)`, started by
 `Start Realtime Processing.command` (double-click; it reads `processed_root` from
 `acquisition/config.yml`) or later by the monitor app's **Start** button, with `matlab -batch`.
-It has no windows. Each pass:
+It has no windows. On an Apple Silicon Mac with an Intel-only MATLAB (`bin/maci64`, no
+`bin/maca64` - releases before R2023b), both start it with `arch -x86_64` (Rosetta); without that
+MATLAB stops with "No MATLAB bin directory for this machine architecture, ARCH = maca64"
+(seen on DEV3, 2026-10-17). Each pass:
 
 1. links new raw files from `RAW_full_cruise/` into their survey's `raw/`;
 2. for each survey that has something new (oldest first; the newest is the active one), runs
@@ -409,7 +412,8 @@ Run once on the ship computers, with the code that will be used at sea:
 
 1. **Code, on DEV1 and on DEV3.** In `Software_current_cruise/MOD_fish_processing`: `git switch
    main-fork`, `git pull`, then `bash acquisition/check_software/check_ship_setup.sh` and fix
-   every `FIX` line. In `MOD_fish_calibrations`: `git pull` and `git fetch --tags`.
+   every `FIX` line (it also says which MATLAB architecture each install has). In
+   `MOD_fish_calibrations`: `git pull` and `git fetch --tags`.
 2. **The cruise yml** (`Processed/cruise_meta_data.yml` on DEV3): compare it with
    `setup/cruise_meta_data_template.yml`. Values added or renamed since it was made are listed by
    preflight as missing, or in a "no longer used" note (2026-10-16: `lowpass_sec` and

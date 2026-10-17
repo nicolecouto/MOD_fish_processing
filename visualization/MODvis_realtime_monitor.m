@@ -757,10 +757,18 @@ classdef MODvis_realtime_monitor < handle
             if ~isfolder(fileparts(out))
                 mkdir(fileparts(out));
             end
-            cmd = sprintf(['MOD_FISH_PROCESSING_DIR=%s MOD_PROCESSED_ROOT=%s nohup %s -batch ' ...
+            % An Intel MATLAB (no bin/maca64) on an Apple Silicon Mac only starts
+            % under Rosetta (arch -x86_64). Asked of the hardware, since uname -m
+            % from inside a Rosetta MATLAB says x86_64.
+            prefix = '';
+            [~, arm] = system('sysctl -n hw.optional.arm64 2>/dev/null');
+            if strcmp(strtrim(arm), '1') && ~isfolder(fullfile(matlabroot, 'bin', 'maca64'))
+                prefix = 'arch -x86_64 ';
+            end
+            cmd = sprintf(['MOD_FISH_PROCESSING_DIR=%s MOD_PROCESSED_ROOT=%s nohup %s%s -batch ' ...
                 '"addpath(genpath(getenv(''MOD_FISH_PROCESSING_DIR''))); ' ...
                 'MODprocess_deployment(getenv(''MOD_PROCESSED_ROOT''), ''watch'', true)" > %s 2>&1 &'], ...
-                app.shellQuote(repo), app.shellQuote(app.Root), ...
+                app.shellQuote(repo), app.shellQuote(app.Root), prefix, ...
                 app.shellQuote(fullfile(matlabroot, 'bin', 'matlab')), app.shellQuote(out));
             [rc, msg] = system(cmd);
             if rc == 0

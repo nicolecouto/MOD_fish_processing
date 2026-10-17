@@ -4,6 +4,14 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-17 - Intel MATLAB on an Apple Silicon Mac (DEV3) (branch `main-fork`)
+
+Nicole, starting `Start Realtime Processing.command` on DEV3: "No MATLAB bin directory for this machine architecture, ARCH = maca64". DEV3 is Apple Silicon and its MATLAB is the Intel build (`bin/maci64` only), which runs under Rosetta only when started with `arch -x86_64`.
+- `Start Realtime Processing.command`: when `uname -m` is arm64 and the MATLAB found (PATH, else `/Applications/MATLAB_R20*.app`, symlinks followed) has no `bin/maca64` but has `bin/maci64`, it runs it as `arch -x86_64`; stops with a clear message if Rosetta is missing or the install has neither; prints which MATLAB it uses.
+- `MODvis_realtime_monitor` Start: the same rule, asking `sysctl hw.optional.arm64` (inside a Rosetta MATLAB `uname -m` says x86_64).
+- `check_ship_setup.sh`: lists each MATLAB's architectures; a note for Intel MATLAB on Apple Silicon, FIX when Rosetta is missing.
+Tested on this laptop: a fake MATLAB folder with only `bin/maci64` ran as x86_64 through the `.command`; one with neither stopped with the message; the real R2024b (maca64, through a PATH symlink) got no prefix; `arch -x86_64 uname -m` = x86_64 while `sysctl hw.optional.arm64` = 1; `bash -n` and checkcode clean. Not yet run on DEV3.
+
 ### 2026-10-16 - Monitor layout from Nicole's review; cmocean in toolbox/ (branch `main-fork`)
 
 Nicole tried the monitor on a demo grid made from the ASTRAL24 nfft512 profiles (legacy `Profile###.mat` binned the way `MODprocess_grid` bins, in the scratchpad only) and asked for:

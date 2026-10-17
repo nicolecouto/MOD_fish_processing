@@ -5,7 +5,8 @@
 # that the MOD_fish_calibrations clone has every file processing needs, what
 # is in the processed-data folder (cruise_meta_data.yml, RAW_full_cruise,
 # spool_swap_log.csv, a leftover worker.lock), and that python3 with tkinter
-# and matlab are found. Each line starts with OK, FIX (needs doing before a
+# and matlab (and its architecture: an Intel MATLAB on Apple Silicon needs
+# Rosetta) are found. Each line starts with OK, FIX (needs doing before a
 # test) or note (worth knowing). Nothing is changed except git's view of
 # GitHub (git fetch).
 #
@@ -75,3 +76,21 @@ echo "== Tools"
 python3 -c 'import tkinter' 2>/dev/null && ok "python3 with tkinter ($(python3 --version 2>&1))" || bad "python3 with tkinter not found (Start New Deployment needs it)"
 M=$(command -v matlab || ls -d /Applications/MATLAB_R20*.app/bin/matlab 2>/dev/null | tail -1)
 [ -n "$M" ] && ok "matlab: $M" || note "matlab not found (needed on DEV3 only)"
+# Apple Silicon + an Intel-only MATLAB: works under Rosetta (Start Realtime
+# Processing.command adds arch -x86_64), slower than a native MATLAB
+APPLE=$(sysctl -n hw.optional.arm64 2>/dev/null)
+for app in /Applications/MATLAB_R20*.app; do
+    [ -d "$app/bin" ] || continue
+    A=$(ls "$app/bin" | grep -E '^mac(a|i)64$' | tr '\n' ' ')
+    note "$(basename "$app"): ${A:-no mac build}"
+done
+if [ -n "$M" ] && [ "$APPLE" = 1 ]; then
+    MB="$(cd "$(dirname "$(readlink "$M" || echo "$M")")" && pwd)"
+    if [ ! -d "$MB/maca64" ] && [ -d "$MB/maci64" ]; then
+        if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            note "Apple Silicon Mac with an Intel MATLAB: runs under Rosetta (slower than a native R2023b+ MATLAB)"
+        else
+            bad "Intel MATLAB on Apple Silicon needs Rosetta - run: softwareupdate --install-rosetta --agree-to-license"
+        fi
+    fi
+fi
