@@ -17,6 +17,11 @@ templates
     MODtemplate_postprocess_by_stage.m - the same, one section per stage (L0, L1, casts, L2, grid) to look at each stage's output before the next
     MODtemplate_postprocess_steps.m - postprocessing one line per level (metadata = ..., L0_files = ..., L1_files = ..., ...): the processing functions called directly, no driver
 
+launchers (repo folder, double-click on DEV3)
+    Start Realtime Processing.command - starts the realtime worker (matlab -batch) on processed_root from acquisition/config.yml
+    Start Realtime Monitor.command - opens MODvis_realtime_monitor in a second MATLAB next to the worker
+    util/launch_common.sh - what both share: the processed folder and the MATLAB to use (arch -x86_64 for an Intel MATLAB on Apple Silicon)
+
 processing
     MODprocess_deployment.m - the one driver: realtime worker (MODprocess_deployment(processed_root, 'watch', true), or double-click "Start Realtime Processing.command") and one-pass/postprocessing runs (MODprocess_deployment(survey_folder, 'run', name, ...)): one yml per run (survey/meta/meta_data_<run>.yml) and one output folder (survey/processed/<run>/); see docs/workflow/processing_data.md
     MODprocess_grid.m - the grid: one column per cast (down and up) in depth bins of grid.z_bin_m - CTD = mean of the L1 samples in each bin, epsilon/chi = mean of the scans whose center is in it (processed/<run>/grid/grid.mat)

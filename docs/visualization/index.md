@@ -147,6 +147,13 @@ reads the worker's files and refreshes every 10 s; it writes only `realtime/cont
 Stop) and saved PNGs, and **Start** launches the worker as its own `matlab -batch` process, so
 closing the monitor never stops processing.
 
+**To open it on DEV3,** double-click `Start Realtime Monitor.command` (repo folder, next to
+`Start Realtime Processing.command`). It starts a second MATLAB with the monitor, next to the
+worker's, on `processed_root` from `acquisition/config.yml` (or a folder given as an argument from
+a Terminal). Double-clicking MATLAB itself doesn't work while the worker runs - macOS only brings
+the running MATLAB forward; `open -n /Applications/MATLAB_R20XX.app` does open a second one.
+From a MATLAB that's already open:
+
 ```matlab
 app = MODvis_realtime_monitor();                                  % processed_root from acquisition/config.yml
 app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folder

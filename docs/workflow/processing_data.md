@@ -384,7 +384,9 @@ and in `<survey>/processed/<run>/meta/log/` (each run, realtime or not):
 
 ### Monitor app (built: `MODvis_realtime_monitor`)
 
-`MODvis_realtime_monitor()` (or with the processed folder). How to use it, with an example: see
+Open it by double-clicking `Start Realtime Monitor.command` (a second MATLAB, next to the
+worker's), or with `MODvis_realtime_monitor()` (or the processed folder) in a MATLAB that's
+already open. How to use it, with an example: see
 [Plots and visualization](../visualization/index.md#modvis_realtime_monitorm). It reads the
 worker's files every 10 s and writes only `control.json` and saved PNGs, so it can't stop
 processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi variables added:

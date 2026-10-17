@@ -4,6 +4,10 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-17 - Start Realtime Monitor.command (branch `main-fork`)
+
+Nicole couldn't open a second MATLAB on DEV3 for the monitor while the worker ran (double-clicking MATLAB only brings the running one forward; `matlab` isn't on the PATH); `open -n /Applications/MATLAB_R20XX.app` worked, and she asked for a command. New `Start Realtime Monitor.command`: `nohup [arch -x86_64] .../bin/matlab -desktop -r "...; app = MODvis_realtime_monitor(<processed_root>)" &` (MATLAB's messages to `realtime/monitor_console.txt`), so the Terminal window can be closed. The folder and MATLAB lookup (and the Rosetta rule) moved into `util/launch_common.sh`, sourced by both launchers so they can't drift. Tested on this laptop: both launchers with a fake Intel MATLAB (ran as x86_64 with the right arguments and environment), a bad folder stops with the message, and the real R2024b opened a second desktop MATLAB with the monitor while a `-batch` MATLAB was running. Not yet run on DEV3.
+
 ### 2026-10-17 - Intel MATLAB on an Apple Silicon Mac (DEV3) (branch `main-fork`)
 
 Nicole, starting `Start Realtime Processing.command` on DEV3: "No MATLAB bin directory for this machine architecture, ARCH = maca64". DEV3 is Apple Silicon and its MATLAB is the Intel build (`bin/maci64` only), which runs under Rosetta only when started with `arch -x86_64`.

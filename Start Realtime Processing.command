@@ -19,42 +19,9 @@ ROOT=""
 for a in "$@"; do
     if [ "$a" = "--force" ]; then FORCE=true; else ROOT="$a"; fi
 done
-if [ -z "$ROOT" ]; then
-    ROOT="$(sed -n 's/^processed_root:[[:space:]]*//p' "$SRC/acquisition/config.yml" | sed 's/[[:space:]]*#.*$//' | head -1)"
-    ROOT="${ROOT%\"}"; ROOT="${ROOT#\"}"; ROOT="${ROOT%\'}"; ROOT="${ROOT#\'}"   # drop surrounding quotes
-fi
-if [ -z "$ROOT" ] || [ ! -d "$ROOT" ]; then
-    echo "Processed data folder not found: '$ROOT' (processed_root in acquisition/config.yml)."
-    read -n 1 -s -r -p "Press any key to close"; exit 1
-fi
-
-MATLAB="$(command -v matlab)"
-[ -z "$MATLAB" ] && MATLAB="$(ls -d /Applications/MATLAB_R20*.app/bin/matlab 2>/dev/null | tail -1)"
-if [ -z "$MATLAB" ]; then
-    echo "matlab not found - add it to the PATH or install it in /Applications."
-    read -n 1 -s -r -p "Press any key to close"; exit 1
-fi
-# An Intel MATLAB (bin/maci64 only) on an Apple Silicon Mac runs under Rosetta,
-# but only when started with arch -x86_64 - otherwise its launcher stops with
-# "No MATLAB bin directory for this machine architecture, ARCH = maca64".
-MBIN="$(cd "$(dirname "$(readlink "$MATLAB" || echo "$MATLAB")")" && pwd)"
-RUN=()
-if [ "$(uname -m)" = arm64 ] && [ ! -d "$MBIN/maca64" ]; then
-    if [ -d "$MBIN/maci64" ]; then
-        if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
-            echo "$MATLAB is the Intel build, and Rosetta isn't installed. Install it with:"
-            echo "  softwareupdate --install-rosetta --agree-to-license"
-            read -n 1 -s -r -p "Press any key to close"; exit 1
-        fi
-        RUN=(arch -x86_64)
-        echo "MATLAB: $MATLAB (Intel build, run under Rosetta on this Apple Silicon Mac)"
-    else
-        echo "$MATLAB has neither bin/maca64 nor bin/maci64 - not a MATLAB this Mac can run."
-        read -n 1 -s -r -p "Press any key to close"; exit 1
-    fi
-else
-    echo "MATLAB: $MATLAB"
-fi
+source "$SRC/util/launch_common.sh"
+launch_find_root "$ROOT"
+launch_find_matlab
 
 echo "Realtime processing of $ROOT"
 echo "Status: $ROOT/realtime/status.json   Log: $ROOT/realtime/cruise_log.txt"
