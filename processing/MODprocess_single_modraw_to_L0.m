@@ -105,8 +105,10 @@ end
 [ind_isap_start      , ind_isap_stop]      = regexp(str,'\$ISAP([\S\s]+?)\*([0-9A-Fa-f][0-9A-Fa-f])\r\n','start','end');
 [ind_act_start      , ind_act_stop]      = regexp(str,'\$ACTU([\S\s]+?)\*([0-9A-Fa-f][0-9A-Fa-f])\r\n','start','end');
 [ind_vnav_start     , ind_vnav_stop]     = regexp(str,'\$VNMAR([\S\s]+?)\*([0-9A-Fa-f][0-9A-Fa-f])\r\n','start','end');
+vnav_is_ypr = false; % $VNMAR: compass, acceleration, gyro
 if isempty(ind_vnav_start)
     [ind_vnav_start     , ind_vnav_stop] = regexp(str,'\$VNYPR([\S\s]+?)\*([0-9A-Fa-f][0-9A-Fa-f])\r\n','start','end');
+    vnav_is_ypr = true; % $VNYPR: yaw, pitch, roll
 end
 [ind_seg_start      , ind_seg_stop]      = regexp(str,'\$SEGM([\S\s]+?)\*([0-9A-Fa-f][0-9A-Fa-f])\r\n','start','end');
 [ind_spec_start     , ind_spec_stop]     = regexp(str,'\$SPEC([\S\s]+?)\*([0-9A-Fa-f][0-9A-Fa-f])\r\n','start','end');
@@ -685,16 +687,13 @@ try
         vnav.pitch = nan(vecnav.data.n_recs,1);
         vnav.roll = nan(vecnav.data.n_recs,1);
 
-        %     % Grab the block of data starting with the header
-        %     vnav_block_str = str(ind_vnav_start(iB):ind_vnav_stop(iB));
-        %     %Commented out and moved below by Bethan June 26
-        Lsample=length(str(ind_vnav_start(iB):ind_vnav_stop(iB)));
-
         % Loop through data blocks and parse strings
         for iB=1:vecnav.data.n_blocks
 
-            % Grab the block of data starting with the header
-            vnav_block_str = str(ind_vnav_start(iB):ind_vnav_stop(iB)); %Moved here by Bethan June 26
+            % Which message this is comes from the regex that matched
+            % above - it used to come from one block's length, taken
+            % before this loop with an iB left over from an earlier block
+            % type's loop, which lost a file's VNAV when that iB was too big.
             % For the vecnav, we use the hexadecimal timestamp that comes before
             % $VNMAR
             % vnav_timestamp(iB) = hex2dec(str(ind_time_start(iB):ind_time_stop(iB)));
@@ -707,17 +706,16 @@ try
             data_split = strsplit(vnav_block_data,',');
 
             % Compass, acceleration, and gyro each have x, y, and z components
-            switch Lsample
-                case 38 %yaw pitch roll
-                    vnav.yaw(iB)   = str2double(data_split{2});
-                    vnav.pitch(iB) = str2double(data_split{3});
-                    vnav.roll(iB)  = str2double(data_split{4});
-                otherwise
-                    for iC=1:3
-                        vnav.compass(iB,iC)=str2double(data_split{1,iC+1}); %Compass (x,y,z) units = gauss
-                        vnav.acceleration(iB,iC)=str2double(data_split{1,iC+4}); %Acceleration (x,y,x) units = m/s^2
-                        vnav.gyro(iB,iC)=str2double(data_split{1,iC+7}); %Gyro (x,y,z) units = rad/s
-                    end
+            if vnav_is_ypr
+                vnav.yaw(iB)   = str2double(data_split{2});
+                vnav.pitch(iB) = str2double(data_split{3});
+                vnav.roll(iB)  = str2double(data_split{4});
+            else
+                for iC=1:3
+                    vnav.compass(iB,iC)=str2double(data_split{1,iC+1}); %Compass (x,y,z) units = gauss
+                    vnav.acceleration(iB,iC)=str2double(data_split{1,iC+4}); %Acceleration (x,y,x) units = m/s^2
+                    vnav.gyro(iB,iC)=str2double(data_split{1,iC+7}); %Gyro (x,y,z) units = rad/s
+                end
             end
 
         end
@@ -730,8 +728,12 @@ try
         vnav = orderfields(vnav,{'dnum','time_s','compass','acceleration','gyro','yaw','pitch','roll'});
 
     end %end loop if there is vnav data
-catch
-    warning('l.1057 mod_som_read_epai_files_v4.m VNAV chokes')
+catch ME
+    warning('MODprocess_single_modraw_to_L0:vnav', 'VNAV data in %s could not be read (%s) - no vnav for this file.', ...
+        modraw_file, ME.message);
+    vnav = [];
+    processed_data_types(strcmp(processed_data_types, 'vnav')) = [];
+    no_data_types = [no_data_types, 'vnav'];
 end
 
 

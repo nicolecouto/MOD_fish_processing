@@ -33,7 +33,9 @@ function [swaps, warnings_out] = MODprocess_find_spool_swaps(processed_root, spo
 %     - A log row for the spool already in use (e.g. the first spool of
 %       the cruise) is kept as a change too; at the start of the cruise it
 %       just starts the count at 0.
-%   Spool names are compared ignoring case and surrounding spaces.
+%   Spool names are compared ignoring case and surrounding spaces. Surveys
+%   not on the winch spool (on_winch_spool false: lab tests) are
+%   left out.
 %
 % INPUTS
 %   processed_root - folder holding the survey folders (each with
@@ -68,6 +70,7 @@ MATCH_AFTER_DAYS = 10 / (24 * 60); % a log row up to 10 min after the survey's d
 warnings_out = {};
 
 [surveys, survey_warnings] = MODutil_list_surveys(processed_root);
+surveys = surveys([surveys.on_spool]); % a lab test's spool isn't a change
 log_rows = read_spool_log(spool_log_csv);
 warnings_out = [warnings_out, survey_warnings, log_rows.warnings];
 log_rows = log_rows.list;

@@ -386,7 +386,6 @@ instrument_manifest:
     channel_5: {name: a1, type: acc}
     channel_6: {name: a2, type: acc}
     channel_7: {name: a3, type: acc}
-  vnav: true
   isap: true
   # alt, gps not on this deployment - keys simply omitted
 
@@ -403,7 +402,7 @@ metadata.PROCESS.channels     = {'t1','t2','s1','s2','a1','a2','a3'};  % ADC slo
 metadata.AFE.s1.type          = 'shear';
 metadata.AFE.s1.SN            = '261';
 metadata.AFE.s1.cal           = 33.49;        % Sv, looked up by SN
-metadata.manifest.has_vnav    = true;
+metadata.manifest.has_vnav    = true;   % (removed 2026-10-17: twist is made whenever raw files have VNAV)
 metadata.manifest.has_isap    = true;
 metadata.manifest.has_alt     = false;        % key absent from setup.yml -> false, not an error
 metadata.manifest.has_gps     = false;
@@ -412,7 +411,7 @@ metadata.manifest.has_fluor   = false;
 
 Slot order is resolved by parsing and numerically sorting the `channel_N` keys - not by yaml field order. YAML libraries preserve declaration order but don't sort it, so `channel_10` would sort before `channel_2` under the old field-order approach the moment a deployment has more than 9 channels; explicit numeric sort avoids that trap.
 
-`metadata.manifest.has_*` are presence-only flags today - nothing in L0→L1 reads them yet (`vnav`/`isap`/etc. just pass through from L0 unchanged). They exist so a later step (shear/FPO7 calibration application, twist counting, or the grouped `shear_channels`/`fpo7_channels` lists below) can start consuming them without every existing `setup.yml` needing a schema migration first.
+`metadata.manifest.has_*` (no `has_vnav` since 2026-10-17 - twist follows the data) are presence-only flags today - nothing in L0→L1 reads them yet (`vnav`/`isap`/etc. just pass through from L0 unchanged). They exist so a later step (shear/FPO7 calibration application, or the grouped `shear_channels`/`fpo7_channels` lists below) can start consuming them without every existing `setup.yml` needing a schema migration first.
 
 **Not yet built** - grouped channel-list convenience fields, for when a processing function needs to loop over "all shear channels" rather than check `metadata.AFE.(ch).type` one channel at a time:
 
@@ -435,7 +434,7 @@ Processing functions loop over manifest fields — no more hardcoded channel nam
 
 | Function | Description | Status |
 |----------|-------------|--------|
-| `MODsetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, AFE/CTD/altimeter fields resolved from an explicit `instrument_manifest` block (Section 5), CTD calibration loaded from `MOD_fish_calibrations`. Saves `metadata.mat` (no paths). Deliberately minimal so far - only resolves what L0→L1 uses today; grows as later steps need more (grouped `metadata.manifest.shear_channels`/`fpo7_channels`/etc. from Section 5 not built yet, since nothing consumes them yet - presence flags `metadata.manifest.has_vnav`/`.has_isap`/etc. are). | Done (branch `l0_to_l1_conversion`) |
+| `MODsetup_read_yaml.m` | Read `setup.yml` → `metadata` struct with paths derived fresh, AFE/CTD/altimeter fields resolved from an explicit `instrument_manifest` block (Section 5), CTD calibration loaded from `MOD_fish_calibrations`. Saves `metadata.mat` (no paths). Deliberately minimal so far - only resolves what L0→L1 uses today; grows as later steps need more (grouped `metadata.manifest.shear_channels`/`fpo7_channels`/etc. from Section 5 not built yet, since nothing consumes them yet - presence flags `metadata.manifest.has_vnav (removed 2026-10-17)`/`.has_isap`/etc. are). | Done (branch `l0_to_l1_conversion`) |
 | `MODsetup_verify_paths.m` | Check required directories exist, create L0/L1/L2/grid/figures if not | Not started |
 | `MODsetup_save_metadata.m` | Central save wrapper for `metadata.mat`. Compares the metadata to be saved against what's on disk and picks one of three outcomes: no-op (unchanged — nothing written), `'create'` (yaml differs — archives existing file to `meta/archive/metadata_<timestamp>.mat`, then writes the new one), or `'update'` (yaml unchanged but a derived value like a calibration lookup is new/changed — writes in place). Every non-no-op outcome appends an event to `metadata.header.history`. See Section 2, "Metadata provenance and archiving." | Done (branch `l0_to_l1_conversion`) |
 

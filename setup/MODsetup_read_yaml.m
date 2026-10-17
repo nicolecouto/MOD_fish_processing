@@ -16,7 +16,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %
 %   setup.yml's instrument_manifest block is the single place that says
 %   what's physically on the vehicle (which AFE channel holds which probe
-%   type/SN, plus presence flags for vnav/isap/alt/gps/fluor) - see
+%   type/SN, plus presence flags for isap/alt/gps/fluor) - see
 %   PLAN.md Section 5. Electrical/sampling specifics (full_range,
 %   ADCconf, sample_per_record, ...) live in separate detail sections
 %   (afe.channels, ctd, altimeter), keyed by the same names the manifest
@@ -117,7 +117,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     spool serve every vehicle; the cruise
 %                                     twist count restarts where it changes.
 %                                     '' if not declared.
-%     manifest.has_vnav/.has_isap/.has_alt/.has_gps/.has_fluor
+%     manifest.has_isap/.has_alt/.has_gps/.has_fluor
 %                                   - presence flags from setup.yml's
 %                                     instrument_manifest block. false when
 %                                     the key is missing entirely, same as
@@ -125,7 +125,8 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     consumed by L0->L1 today (vnav etc.
 %                                     just pass through unchanged) - a
 %                                     record of what's on the vehicle for
-%                                     later steps.
+%                                     later steps. (No has_vnav: twist is
+%                                     made whenever the raw files have VNAV.)
 %     manifest.has_epsi             - true only when setup.yml's
 %                                     instrument_manifest.afe block is
 %                                     present and declares at least one
@@ -469,7 +470,7 @@ end
 % reads them yet), []/false when the key is missing entirely, same as an
 % explicit false - a later step can start reading these without every
 % existing setup.yml needing an edit first.
-manifest_flags = {'vnav', 'isap', 'alt', 'gps', 'fluor'};
+manifest_flags = {'isap', 'alt', 'gps', 'fluor'};
 has_manifest = isfield(yml, 'instrument_manifest');
 for iF = 1:numel(manifest_flags)
     flag = manifest_flags{iF};
@@ -482,8 +483,8 @@ end
 % not a boolean key - it's a whole sub-struct of channel_N slots - so this
 % is computed separately rather than folded into manifest_flags. A
 % CTD-only vehicle (no AFE board) simply omits instrument_manifest.afe
-% entirely, same "absent key means not on the vehicle" rule as vnav/isap/
-% alt/gps/fluor.
+% entirely, same "absent key means not on the vehicle" rule as isap/alt/
+% gps/fluor.
 has_epsi = has_manifest && isfield(yml.instrument_manifest, 'afe') ...
     && ~isempty(fieldnames(yml.instrument_manifest.afe));
 metadata.manifest.has_epsi = has_epsi;

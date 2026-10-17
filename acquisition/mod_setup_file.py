@@ -388,7 +388,10 @@ def validate(values, config=None):
         warnings.append('Vehicle %s looks like an FCTD, but fish type is EPSI' % values.get('vehicle'))
     spool = str(values.get('winch_spool', '') or '').strip()
     previous_spool = str(values.get('previous_winch_spool', '') or '').strip()
-    if not spool:
+    if not on_winch_spool(values):
+        warnings.append('Lab test (not on the winch spool) - left out of the cruise twist count. '
+                        'Switch to ON THE WINCH SPOOL for a deployment on the cable.')
+    elif not spool:
         warnings.append('No winch spool set - the cruise twist count needs it')
     elif previous_spool and spool != previous_spool:
         warnings.append('Winch spool changed from %s to %s - the twist count restarts from 0 at this deployment'
@@ -530,7 +533,10 @@ def render_dev1_setup_yml(values, config):
         'cruise: %s' % yq(values.get('cruise', '')),
         'experiment: %s' % yq(values.get('experiment', '')),
         'vehicle_name: %s' % yq(values.get('vehicle', '')),
-        'winch_spool: %s # one spool for every vehicle; twist restarts when it changes' % yq(values.get('winch_spool', '')),
+        'winch_spool: %s # one spool for every vehicle; twist restarts when it changes'
+        % yq(values.get('winch_spool', '') if on_winch_spool(values) else ''),
+        'on_winch_spool: %s # false: a lab test, left out of the cruise twist count'
+        % ('true' if on_winch_spool(values) else 'false'),
         'pressure_case: %s' % yq(values.get('fish_pc', '')),
         'fish_flag: %s # EPSI or FCTD' % values['fish_flag'],
         'profiling_direction: %s # for turbulence data, up or down' % values.get('profiling_direction', 'down'),
@@ -550,7 +556,7 @@ def render_dev1_setup_yml(values, config):
         L.append('    channel_%d: %s}' % (i + 1, entry))
     for i, n in enumerate(['a1', 'a2', 'a3']):
         L.append('    channel_%d: {name: %s, type: acc}' % (i + 5, n))
-    for flag in ('vnav', 'alt', 'fluor'):
+    for flag in ('alt', 'fluor'):
         if values.get(flag):
             L.append('  %s: true' % flag)
     L += ['', 'afe:', '  channels:']
@@ -607,6 +613,13 @@ def dev1_setup_yml_path(values, config):
     return os.path.join(config['processed_root'], values['survey'], 'meta', 'dev1_setup.yml')
 
 
+def on_winch_spool(values):
+    """Whether this deployment is on the winch spool (the window's box); a
+    value from before the switch existed counts as on the spool."""
+    v = values.get('on_winch_spool', True)
+    return str(v).strip().lower() not in ('false', '0', 'no', '')
+
+
 SPOOL_LOG_FIELDS = ['datetime_utc', 'spool_id', 'spool_length_m', 'notes']
 SPOOL_LOG_COMMENT = ('# Winch spool changes for the cruise (one winch, one spool at a time, every vehicle). '
                      'Start New Deployment adds a row when the spool changes; add a row by hand for a change '
@@ -637,7 +650,7 @@ def log_spool_change(values, config, survey):
     path written, or ''. The twist count restarts at this time."""
     path = spool_log_path(config)
     spool = str(values.get('winch_spool', '') or '').strip()
-    if not path or not spool:
+    if not path or not spool or not on_winch_spool(values):
         return ''
     previous = last_logged_spool(config)
     if spool == previous:
@@ -654,7 +667,7 @@ def log_spool_change(values, config, survey):
     return path
 
 
-LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch_spool', 'fish_flag', 'fish_pc', 'ctd_sn',
+LOG_FIELDS = ['utc_written', 'survey', 'vehicle', 'winch_spool', 'on_winch_spool', 'fish_flag', 'fish_pc', 'ctd_sn',
               'ch1_type', 'ch1_sn', 'ch2_type', 'ch2_sn', 'ch3_type', 'ch3_sn',
               'ch4_type', 'ch4_sn', 'microcond_sn', 'experiment', 'cruise',
               'setup_backup', 'dev1_setup_yml']
@@ -701,6 +714,9 @@ def write_all(values, config, write_yml=True):
         row['utc_written'] = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         row['setup_backup'] = os.path.basename(result['backup'])
         row['dev1_setup_yml'] = result['yml']
+        row['on_winch_spool'] = 'true' if on_winch_spool(v) else 'false'
+        if not on_winch_spool(v):
+            row['winch_spool'] = ''  # as in dev1_setup.yml
         d = os.path.dirname(log_path)
         if d:
             os.makedirs(d, exist_ok=True)

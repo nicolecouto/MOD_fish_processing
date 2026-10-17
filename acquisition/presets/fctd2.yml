@@ -13,6 +13,5 @@ ch4_type: microcond
 ch4_sn: 2024-06-27-03
 compass_sn:
 profiling_direction: up
-vnav: true
 alt: true
 fluor: false

@@ -21,6 +21,11 @@ function [surveys, warnings_out] = MODutil_list_surveys(processed_root)
 %                    .dev1_yml - path of its dev1_setup.yml
 %                    .dnum     - when it was set up [datenum, UTC]
 %                    .spool    - winch_spool ('' if not set)
+%                    .on_spool - on_winch_spool (Start New Deployment's
+%                                ON THE WINCH SPOOL / LAB TEST switch; false
+%                                for a lab test, which the cruise twist
+%                                leaves out). A yml from before the switch:
+%                                true when winch_spool is filled in.
 %   warnings_out - cellstr: files that couldn't be read (skipped) or had
 %                  no written-at line
 %
@@ -33,7 +38,7 @@ function [surveys, warnings_out] = MODutil_list_surveys(processed_root)
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 addpath(fullfile(fileparts(fileparts(mfilename('fullpath'))), 'toolbox', 'YAMLMatlab_0.4.3'));
-surveys = struct('survey', {}, 'folder', {}, 'dev1_yml', {}, 'dnum', {}, 'spool', {});
+surveys = struct('survey', {}, 'folder', {}, 'dev1_yml', {}, 'dnum', {}, 'spool', {}, 'on_spool', {});
 warnings_out = {};
 files = dir(fullfile(processed_root, '*', 'meta', 'dev1_setup.yml'));
 for iF = 1:numel(files)
@@ -49,6 +54,11 @@ for iF = 1:numel(files)
         if isfield(y, 'survey_name')
             survey = char(string(y.survey_name));
         end
+        on_spool = ~isempty(spool);
+        if isfield(y, 'on_winch_spool') && ~isempty(y.on_winch_spool)
+            v = y.on_winch_spool;
+            on_spool = (islogical(v) || isnumeric(v)) && logical(v(1)) || any(strcmpi(string(v), ["true", "yes"]));
+        end
     catch ME
         warnings_out{end+1} = sprintf('Could not read %s (%s) - skipped.', f, ME.message); %#ok<AGROW>
         continue
@@ -61,7 +71,8 @@ for iF = 1:numel(files)
         warnings_out{end+1} = sprintf(['%s has no "written ... UTC" first line - using the file''s ' ...
             'modification time.'], f); %#ok<AGROW>
     end
-    surveys(end+1) = struct('survey', survey, 'folder', folder, 'dev1_yml', f, 'dnum', dnum, 'spool', spool); %#ok<AGROW>
+    surveys(end+1) = struct('survey', survey, 'folder', folder, 'dev1_yml', f, 'dnum', dnum, 'spool', spool, ...
+        'on_spool', on_spool); %#ok<AGROW>
 end
 if ~isempty(surveys)
     [~, order] = sort([surveys.dnum]);

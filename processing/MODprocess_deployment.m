@@ -42,7 +42,7 @@ function summary = MODprocess_deployment(target, varargin)
 %     6. _README.txt in each level folder (MODutil_write_folder_readme.m)
 %   Then, once per pass over processed_root (realtime run, with L1):
 %     7. the cruise twist count, <processed_root>/twist/twist_time_series.mat
-%        (MODprocess_cruise_twist.m): every survey joined, restarting at
+%        (MODprocess_cruise_twist.m): every survey on the winch spool joined, restarting at
 %        each winch spool change
 %   'from' and 'until' run only some of the stages (L0, L1, casts, L2,
 %   grid); 'until', 'yml' only builds and checks the yml (for every stage
@@ -331,7 +331,7 @@ while true
         end
     end
 
-    % 7. the cruise twist count, over every survey (one winch spool for all)
+    % 7. the cruise twist count, over every survey on the winch spool
     if isempty(only_survey_folder) && strcmp(opts.run, 'realtime') && ismember('L1', opts.stages) && ~stopped
         try
             tw = MODprocess_cruise_twist(processed_root);

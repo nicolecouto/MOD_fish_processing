@@ -71,7 +71,7 @@ flowchart LR
     PDIR --> PTSOUT[("meta/pressure_<br/>time_series.mat")]
     L1ALL --> TIDX["MODprocess_L1_<br/>make_time_index.m"]
     TIDX --> TIDXOUT[("meta/time_index.mat")]
-    L1ALL -->|if has_vnav| TWIST["MODprocess_L1_accumulate_<br/>twist_timeseries.m"]
+    L1ALL -->|if L1 has twist| TWIST["MODprocess_L1_accumulate_<br/>twist_timeseries.m"]
     TWIST --> TWISTOUT[("meta/twist_<br/>time_series.mat")]
     PTSOUT -.->|if real onboard CTD| FPO7CAL["MODprocess_L1_apply_<br/>fpo7_calibration.m"]
   end
@@ -84,7 +84,7 @@ flowchart LR
 
 | Function | In → out | Role |
 |---|---|---|
-| `MODsetup_read_yaml.m` | setup_yml → metadata | Resolves AFE/CTD/altimeter manifest, calibration lookups, `has_epsi`/`has_vnav`/... flags |
+| `MODsetup_read_yaml.m` | setup_yml → metadata | Resolves AFE/CTD/altimeter manifest, calibration lookups, `has_epsi`/`has_isap`/... flags (no `has_vnav`: twist follows the data) |
 | `MODsetup_add_derived_metadata.m` | metadata → metadata | Adds what isn't in the yml: electronics filters (`MODsetup_define_filters.m`) and the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat`. Called by the L0 → L1 and L1 → L2 drivers |
 | `MODsetup_define_filters.m` | metadata → metadata | Resolves each channel's fixed electronics/ADC transfer function once per deployment |
 | `MODprocess_all_modraw_to_L0.m` | raw_dir, L0_dir → L0_files | Batch orchestrator; skips already-converted files. All three per-file drivers take `'newest_min_redo_s'` and `'continue_on_error'` (`MODutil_needs_redo.m`) for realtime use |
@@ -98,8 +98,8 @@ flowchart LR
 | `MODprocess_L1_update_file_cache.m` | L1_dir, meta_dir → L1_cache | Per-L1-file time span, `ctd.dnum`/`P` and `twist` in `meta/l1_file_cache.mat`; rereads only new or changed L1 files, so the deployment-wide files below don't reload every L1 file each pass |
 | `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_cache → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
 | `MODprocess_L1_make_time_index.m` | L1_cache → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
-| `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous survey count, from 0 at the survey start (no spool resets) - only if `has_vnav` |
-| `MODprocess_cruise_twist.m` | processed_root → TwistTimeseries | The cruise twist count: every survey's count joined at 1 s, restarting at each winch spool change (`MODprocess_find_spool_swaps.m`); `Processed/twist/twist_time_series.mat`, run by the worker after every pass |
+| `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous survey count, from 0 at the survey start (no spool resets) - whenever L1 has twist (raw VNAV), not set by the yml |
+| `MODprocess_cruise_twist.m` | processed_root → TwistTimeseries | The cruise twist count: every on-spool survey's count joined at 1 s, restarting at each winch spool change (`MODprocess_find_spool_swaps.m`); `Processed/twist/twist_time_series.mat`, run by the worker after every pass |
 | `MODprocess_L1_apply_fpo7_calibration.m` | L1_dir, metadata, PressureTimeseries → metadata | In-situ volts→°C fit against real CTD T - only if real onboard CTD |
 
 ## Realtime: L1 → L2 (per file), live viz
@@ -125,7 +125,7 @@ flowchart LR
   L1OUT --> VIS1["MODvis_timeseries.m"]
   L2OUT --> VIS1
   L2OUT --> VIS2["MODvis_spectra.m"]
-  TWISTOUT --> CRUISE["MODprocess_cruise_<br/>twist.m (every survey)"]
+  TWISTOUT --> CRUISE["MODprocess_cruise_<br/>twist.m (surveys on the spool)"]
   CRUISE --> CRUISEOUT[("Processed/twist/twist_<br/>time_series.mat")]
   CRUISEOUT --> VIS3["MODvis_twist_<br/>timeseries.m"]
 ```

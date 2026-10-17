@@ -27,7 +27,28 @@ the window fills in the spool used at the last Create Setup, whatever the
 vehicle was. Change it only when the spool is changed - the window then warns
 that the twist count restarts from 0 at this deployment. It's written to
 `dev1_setup.yml` (`winch_spool:`) and the deployment log (not to `Setup` -
-`fctd_epsi` doesn't use it), and the window warns if it's empty.
+`fctd_epsi` doesn't use it), and the window warns if it's empty - all only
+in **ON THE WINCH SPOOL** mode.
+
+**The switch at the top** - **ON THE WINCH SPOOL** or **LAB TEST (not on a
+spool)** - says whether this deployment is on the cable. It alone decides; the
+survey's name doesn't. In LAB TEST mode:
+- the winch spool entry is greyed out; `dev1_setup.yml` gets
+  `on_winch_spool: false` and no spool, no row is added to the spool log, and
+  the window warns that the deployment is left out of the cruise twist count
+  (`MODprocess_cruise_twist.m`). Its own twist count is still made.
+- cruise and experiment are filled in as `lab` and profiling direction as
+  `down`, still editable (`fctd_epsi` crashes on an empty value). Switching
+  back to ON THE WINCH SPOOL puts the previous values back.
+
+The mode is remembered from the last Create Setup, whatever the vehicle. A
+`dev1_setup.yml` from before the switch existed counts as on the spool when
+its `winch_spool` is filled in; to change that, add `on_winch_spool: true` or
+`false` after its `winch_spool:` line, on DEV3 (the share copy is overwritten
+by the rsync).
+
+There's no VectorNav checkbox: twist is computed whenever the raw files have
+VNAV data.
 
 When the spool differs from the last row of the cruise
 `<processed root>/spool_swap_log.csv` (or that file doesn't exist yet), Create
@@ -39,7 +60,7 @@ by hand for a spool changed in the middle of a deployment (columns
 (`MODprocess_find_spool_swaps.m`), so losing either one doesn't lose a change.
 
 If `deployment_log.csv` already exists with different columns (e.g. one
-written before the winch_spool column), it's set aside as
+written before the winch_spool or on_winch_spool column), it's set aside as
 `deployment_log_old_columns.csv` and a new log is started, so rows never end
 up under the wrong headers. The Create Setup message says when this happens.
 
@@ -162,6 +183,13 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/meta
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-17 - ON THE WINCH SPOOL / LAB TEST switch; no VectorNav box** (branch `main-fork`).
+LAB TEST: no spool in `dev1_setup.yml` or the deployment log, `on_winch_spool: false`, no
+spool-log row, a warning that it's left out of the cruise twist count, and cruise, experiment
+and profiling direction prefilled (`lab`, `lab`, `down`, editable). Remembered from the last
+Create Setup. The VectorNav box is gone (twist follows the data). The deployment log has a
+new `on_winch_spool` column, so the first Create Setup after this sets the old log aside.
 
 **2026-10-15 - dev1_setup.yml feeds processing runs** (branch `main-fork`). Processing now builds one yml per processing run from `dev1_setup.yml` (`meta/meta_data_<run>.yml`, see [Processing data](processing_data.md)) and takes every path from where that yml is, so `data_root` here is kept as a record of the ship's path. No change to the window or the files it writes.
 

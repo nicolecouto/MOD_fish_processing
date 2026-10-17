@@ -4,8 +4,8 @@ function TwistTimeseries = MODprocess_cruise_twist(processed_root)
 % TwistTimeseries = MODprocess_cruise_twist(processed_root)
 %
 % DESCRIPTION
-%   The cruise twist count: one series over every survey of the cruise, in
-%   time order, at 1 s. There is one winch with one spool on it at a time,
+%   The cruise twist count: one series over every survey on the winch
+%   spool, in time order, at 1 s. There is one winch with one spool on it at a time,
 %   used by every vehicle, so the count carries on from one survey to the
 %   next and restarts from 0 only when the spool is changed
 %   (MODprocess_find_spool_swaps.m - the one place spool changes come from).
@@ -18,6 +18,11 @@ function TwistTimeseries = MODprocess_cruise_twist(processed_root)
 %   changed (1 s copies kept in <processed_root>/twist/twist_by_survey.mat),
 %   and twist_time_series.mat is only rewritten when a survey file or a
 %   spool change has changed, so the monitor reloads it only then.
+%
+%   Only surveys on the winch spool count (on_winch_spool in
+%   dev1_setup.yml, Start New Deployment's ON THE WINCH SPOOL / LAB TEST
+%   switch; a yml from before the switch counts when winch_spool is filled
+%   in). A lab test still has its own twist_time_series.mat.
 %
 %   The realtime worker (MODprocess_deployment.m, given processed_root)
 %   calls this after every pass. Run it by hand on a copied Processed/
@@ -84,6 +89,9 @@ pieces = struct('survey', {}, 'file', {}, 'file_time', {}, 'dnum', {}, 'count_gy
 new_cache = cache([]);
 changed = false;
 for iS = 1:numel(surveys)
+    if ~surveys(iS).on_spool
+        continue % a lab test: its own twist is kept, but not summed here
+    end
     f = fullfile(surveys(iS).folder, 'processed', 'realtime', 'meta', 'twist_time_series.mat');
     if ~isfile(f)
         continue
@@ -122,7 +130,14 @@ end
 changed = changed || ~isequal(sort({new_cache.file}), sort({cache.file})); % a survey added or gone
 
 if isempty(pieces)
+    % no survey on the spool has twist (any more): no cruise file, so the
+    % monitor doesn't keep showing one made from surveys now left out
     TwistTimeseries = struct();
+    for f = {out_file, cache_file}
+        if isfile(f{1})
+            delete(f{1});
+        end
+    end
     return
 end
 
@@ -181,7 +196,7 @@ TwistTimeseries.survey_start_dnum = arrayfun(@(p) p.dnum(1), pieces);
 TwistTimeseries.spool_swaps = swaps;
 TwistTimeseries.spool_swap_dnum = [swaps.dnum]';
 TwistTimeseries.spool = '';
-spools = {surveys.spool};
+spools = {surveys([surveys.on_spool]).spool};
 if ~isempty(swaps)
     TwistTimeseries.spool = swaps(end).spool_id;
 elseif any(~cellfun(@isempty, spools))

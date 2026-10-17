@@ -24,7 +24,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   MODprocess_all_modraw_to_L0.m's same rule one level up). Pass
 %   reprocess_all = true to force every file to be redone regardless.
 %
-%   If metadata.manifest.has_vnav is true, also re-chains every L1 file's
+%   Whenever any L1 file has twist (its raw file had VNAV data - the yml
+%   isn't asked), also re-chains every L1 file's
 %   per-file twist count into a deployment-level meta/twist_time_series.mat
 %   (via MODprocess_L1_accumulate_twist_timeseries.m) at the end of every
 %   call - cheap, since it only concatenates fields already computed
@@ -93,7 +94,7 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   MODsetup_add_derived_metadata.m, MODsetup_save_metadata.m (unconditional)
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
-%   MODprocess_L1_accumulate_twist_timeseries.m (only when metadata.manifest.has_vnav)
+%   MODprocess_L1_accumulate_twist_timeseries.m (writes nothing when no L1 file has twist)
 %   MODprocess_L1_make_pressure_timeseries.m, mod_L1_detect_profiling_direction.m
 %   (only when this deployment has CTD data)
 %   MODprocess_L1_make_time_index.m (unconditional - see below)
@@ -242,12 +243,8 @@ save(fullfile(metadata.paths.L1_meta, 'time_index.mat'), '-struct', 'TimeIndex')
 
 % Deployment-level twist count: re-chain every L1 file's per-file twist
 % field (added inside MODprocess_single_L0_to_L1) into meta/twist_time_series.mat.
-% Only meaningful when this deployment actually has a vnav - skip
-% otherwise rather than let it churn through every L1 file logging
-% "missing vnav" for nothing.
-if isfield(metadata, 'manifest') && isfield(metadata.manifest, 'has_vnav') && metadata.manifest.has_vnav
-    MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta);
-end
+% The data decide: any L1 file with twist (its raw file had VNAV) makes it.
+MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta);
 
 % Deployment-level pressure record + profiling-direction classification:
 % only meaningful if this deployment actually has CTD data (either an SBE

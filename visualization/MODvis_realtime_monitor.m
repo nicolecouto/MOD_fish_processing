@@ -25,7 +25,7 @@ classdef MODvis_realtime_monitor < handle
     %           pressure vs time and T-S of the last 5 casts beside the
     %           1st section, the last 5 T profiles offset like a waterfall
     %           beside the 2nd (the 4th spot is free); the cruise twist
-    %           count (<processed_root>/twist/, every survey, restarting at
+    %           count (<processed_root>/twist/, every survey on the spool, restarting at
     %           each winch spool change), as wide as a section, beside the
     %           3rd; the survey's
     %           processing log (or the cruise log) beside the 4th, problem
@@ -360,6 +360,9 @@ classdef MODvis_realtime_monitor < handle
                 txt = fileread(yml);
                 vehicle = app.ymlValue(txt, 'vehicle_name');
                 spool = app.ymlValue(txt, 'winch_spool');
+                if strcmpi(app.ymlValue(txt, 'on_winch_spool'), 'false')
+                    spool = 'none (lab test)';
+                end
             end
             line1 = sprintf('Worker: %s   |   %s   %s   spool %s   |   state: %s', worker, app.SurveyDrop.Value, ...
                 vehicle, spool, app.field(s, 'state', '-'));

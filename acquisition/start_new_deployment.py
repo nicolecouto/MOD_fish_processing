@@ -59,7 +59,7 @@ ADVANCED_NOTES = {
 }
 # config.yml keys that write_all/validate read from config, editable under Advanced
 CONFIG_OVERRIDES = ['processed_root', 'deployment_log', 'calibrations_root']
-REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'vnav', 'alt', 'fluor'] + \
+REMEMBERED = ['fish_flag', 'fish_pc', 'ctd_sn', 'compass_sn', 'profiling_direction', 'alt', 'fluor'] + \
     ['ch%d_%s' % (i, k) for i in range(1, 5) for k in ('type', 'sn')]
 TYPE_BY_LABEL = {v: k for k, v in msf.SENSOR_LABELS.items()}
 
@@ -94,6 +94,8 @@ class StartNewDeployment:
         # start from the one used at the last Create Setup
         if not self.vars['winch_spool'].get():
             self.vars['winch_spool'].set(self.previous_winch_spool())
+        # ON THE WINCH SPOOL or LAB TEST is remembered the same way
+        self.vars['on_winch_spool'].set(bool(self.read_last_used().get('_cruise', {}).get('on_winch_spool', True)))
 
     # ------------------------------------------------------------------ data
     def load_presets(self):
@@ -120,11 +122,15 @@ class StartNewDeployment:
 
     def save_last_used(self, values):
         """Remember this vehicle's probes etc. (filled in next time it's picked),
-        the winch spool for the cruise (one spool for every vehicle), and add
-        each slot's serial number to that sensor type's dropdown list."""
+        the winch spool for the cruise (one spool for every vehicle) and
+        whether it's in use, and add each slot's serial number to that sensor
+        type's dropdown list."""
         data = self.read_last_used()
         data[values['vehicle']] = {k: values.get(k) for k in REMEMBERED}
-        data.setdefault('_cruise', {})['winch_spool'] = values.get('winch_spool', '')
+        cruise = data.setdefault('_cruise', {})
+        cruise['on_winch_spool'] = bool(values.get('on_winch_spool'))
+        if values.get('on_winch_spool'):
+            cruise['winch_spool'] = values.get('winch_spool', '')
         history = data.setdefault('_sn_history', {})
         for i in range(1, 5):
             t, sn = values.get('ch%d_type' % i), values.get('ch%d_sn' % i)
@@ -176,6 +182,18 @@ class StartNewDeployment:
 
         self.banner = tk.Label(outer, text='', fg='white', bg='#b00020', anchor='w', justify='left',
                                font=('TkDefaultFont', 13, 'bold'), padx=8, pady=4)
+
+        # On the winch spool or a lab test: decides whether this deployment is
+        # in the cruise twist count (on_winch_spool), whatever it's called
+        mode = tk.Frame(outer)
+        mode.pack(fill='x', padx=6, pady=(3, 8))
+        on_spool = self.var('on_winch_spool', tk.BooleanVar, True)
+        for value, label in ((True, 'ON THE WINCH SPOOL'), (False, 'LAB TEST (not on a spool)')):
+            tk.Radiobutton(mode, text=label, variable=on_spool, value=value, indicatoron=0,
+                           font=('TkDefaultFont', 15, 'bold'), padx=16, pady=8, width=24,
+                           selectcolor='#cfe8d2' if value else '#f3dcb0').pack(side='left', padx=(0, 8))
+        on_spool.trace_add('write', lambda *a: self.on_mode())
+        self.sea_values = {}
 
         # Deployment
         dep = ttk.LabelFrame(outer, text='Deployment', padding=8)
@@ -232,7 +250,8 @@ class StartNewDeployment:
         ttk.Combobox(ins, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up'],
                      state='readonly', width=6).grid(row=0, column=5, sticky='w', **pad)
         ttk.Label(ins, text='Winch spool').grid(row=0, column=6, sticky='e', **pad)
-        ttk.Entry(ins, textvariable=self.var('winch_spool'), width=12).grid(row=0, column=7, sticky='w', **pad)
+        self.spool_entry = ttk.Entry(ins, textvariable=self.var('winch_spool'), width=12)
+        self.spool_entry.grid(row=0, column=7, sticky='w', **pad)
 
         ttk.Label(ins, text='AFE slot', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=0, sticky='w', **pad)
         ttk.Label(ins, text='Sensor', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=1, sticky='w', **pad)
@@ -254,7 +273,7 @@ class StartNewDeployment:
                   foreground='#777').grid(row=6, column=0, columnspan=4, sticky='w', **pad)
         chk = ttk.Frame(ins)
         chk.grid(row=7, column=0, columnspan=6, sticky='w', **pad)
-        for k, label in (('fluor', 'Separate fluorometer'), ('alt', 'Altimeter'), ('vnav', 'VectorNav')):
+        for k, label in (('fluor', 'Separate fluorometer'), ('alt', 'Altimeter')):
             ttk.Checkbutton(chk, text=label, variable=self.var(k, tk.BooleanVar, False)).pack(side='left', padx=8)
         ttk.Label(ins, text='Latitude').grid(row=8, column=0, sticky='w', **pad)
         ttk.Entry(ins, textvariable=self.var('latitude', value=self.config.get('latitude', '')),
@@ -315,6 +334,22 @@ class StartNewDeployment:
         ttk.Button(load, text='Load current Setup', command=self.load_current_setup).pack(side='left')
         ttk.Label(load, text="Fill this form from the Setup that's there now. Doesn't write or save anything.",
                   foreground='#777', wraplength=520).pack(side='left', padx=8)
+
+    def on_mode(self):
+        """Lab test: prefill cruise, experiment and profiling direction (still
+        editable - fctd_epsi needs a value) and keep what was there; back on
+        the spool, put those back."""
+        keys = ('cruise', 'experiment', 'profiling_direction')
+        if not all(k in self.vars for k in keys):
+            return
+        if self.vars['on_winch_spool'].get():
+            for k, val in self.sea_values.items():
+                self.vars[k].set(val)
+            self.sea_values = {}
+        elif not self.sea_values:
+            self.sea_values = {k: self.vars[k].get() for k in keys}
+            for k, val in (('cruise', 'lab'), ('experiment', 'lab'), ('profiling_direction', 'down')):
+                self.vars[k].set(val)
 
     def toggle_advanced(self):
         if self.adv_shown.get():
@@ -409,6 +444,7 @@ class StartNewDeployment:
             sns = msf.list_probe_sns(cal_dirs.get(t))
             sns = [s for s in history.get(t, []) if s not in sns] + sns
             self.sn_boxes[i].config(values=sns, state='disabled' if t == 'none' else 'normal')
+        self.spool_entry.config(state='normal' if v.get('on_winch_spool') else 'disabled')
         survey = v['survey']
         errors, warnings = msf.validate(v, self.effective_config(v))
         today = datetime.datetime.utcnow().strftime('%y_%m%d')

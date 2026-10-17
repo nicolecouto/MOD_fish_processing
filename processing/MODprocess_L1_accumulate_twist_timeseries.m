@@ -35,10 +35,11 @@ function TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(cache, meta
 %   MODutil_save_atomic.m (the cache comes from MODprocess_L1_update_file_cache.m)
 %
 % NOTES
-%   Also saves twist_time_series.mat into meta_dir. The twist field in each
-%   L1 file is self-contained (count starts from ~0 for each file), so
-%   reprocessing one file never corrupts the accumulated timeseries - this
-%   function just re-chains whatever's currently in the cache (i.e. in L1/).
+%   Also saves twist_time_series.mat into meta_dir (not when no L1 file
+%   has twist). The twist field in each L1 file is self-contained (count
+%   starts from ~0 for each file), so reprocessing one file never corrupts
+%   the accumulated timeseries - this function just re-chains whatever's
+%   currently in the cache (i.e. in L1/).
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -52,8 +53,7 @@ sortKey   = [cache(has_twist).twist_sort_key];
 twistData = {cache(has_twist).twist};
 
 if isempty(twistData)
-    disp('Error! No twist data.')
-    % empty struct to make sure there is a return value
+    % no VNAV in any raw file (a vehicle without a VectorNav): nothing to write
     TwistTimeseries = struct('time_s', [], 'dnum', [], 'pressure', [], 'count_gyro', [], 'count_compass', []);
     return
 end

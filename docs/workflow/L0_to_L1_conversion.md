@@ -34,7 +34,7 @@ Reads a deployment's `setup.yml` and returns a `metadata` struct:
 |---|---|
 | `paths.data_root`, `.raw`, `.L0`, `.L1`, `.meta`, `.calibrations_root` | Derived fresh from `setup.yml`'s `data_root` field - **never saved to disk**, since paths are machine-specific |
 | `fish_flag` | `'FCTD'` or `'EPSI'` - selects which `altimeter` geometry block in the yaml applies |
-| `manifest.has_vnav`, `.has_isap`, `.has_alt`, `.has_gps`, `.has_fluor` | Presence flags from `setup.yml`'s `instrument_manifest` block. `false` when the key is missing entirely, same as an explicit `false`. Not consumed by L0→L1 today (those fields just pass through from L0 unchanged) - a record of what's on the vehicle for later steps |
+| `manifest.has_isap`, `.has_alt`, `.has_gps`, `.has_fluor` | Presence flags from `setup.yml`'s `instrument_manifest` block. `false` when the key is missing entirely, same as an explicit `false`. Not consumed by L0→L1 today (those fields just pass through from L0 unchanged) - a record of what's on the vehicle for later steps. There is no `has_vnav` (since 2026-10-17): twist is made whenever the raw files have VNAV |
 | `PROCESS.latitude` | Used for `ctd.z` (depth from pressure) when a file has no GPS fix |
 | `PROCESS.channels` | AFE sensor names in ADC slot order, e.g. `{'t1','t2','s1','s2','a1','a2','a3'}` - order comes from `instrument_manifest.afe.channel_N` keys, sorted numerically by `N` (not from yaml field order) |
 | `AFE.(channel).full_range`, `.ADCconf` | Per channel, from `setup.yml`'s `afe.channels` detail block (keyed by sensor name) |
@@ -75,7 +75,6 @@ instrument_manifest:
     channel_6: {name: a2, type: acc}
     channel_7: {name: a3, type: acc}
   isap: true
-  vnav: true
   fluor: true
   # no alt or gps hardware on this deployment - keys omitted entirely
 
@@ -118,7 +117,6 @@ instrument_manifest:
     channel_5: {name: a1, type: acc}
     channel_6: {name: a2, type: acc}
     channel_7: {name: a3, type: acc}
-  vnav: true
   # no ctd, isap, alt, or gps hardware on this deployment - keys omitted
 
 afe:
@@ -215,7 +213,7 @@ data = mod_L1_add_twist(data)
 
 Called automatically inside `MODprocess_single_L0_to_L1.m` (after `process_ctd_fields`, so it has calibrated pressure to interpolate) whenever `data.vnav` is present and non-empty - a no-op (with a warning) otherwise, so deployments without a VecNav just don't get a `twist` field.
 
-The physical problem: the instrument cable twists as it profiles. On the FastCTD a fin can be adjusted to counteract this, but the operator needs the current twist count **during** the deployment to know when and how much to adjust it. Epsi rarely twists much on its own - the cable twisting mostly comes from FastCTD - but a cruise often switches between both instruments on the same winch cable, so the twist count is tracked per file and per deployment regardless of vehicle type (gated on `metadata.manifest.has_vnav`, not on `fish_flag`).
+The physical problem: the instrument cable twists as it profiles. On the FastCTD a fin can be adjusted to counteract this, but the operator needs the current twist count **during** the deployment to know when and how much to adjust it. Epsi rarely twists much on its own - the cable twisting mostly comes from FastCTD - but a cruise often switches between both instruments on the same winch cable, so the twist count is tracked per file and per deployment regardless of vehicle type: whenever the raw files have VNAV data (not gated on `fish_flag` or the yml).
 
 Algorithm (ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`):
 
@@ -233,9 +231,9 @@ Algorithm (ported from `MOD_fish_lib/FastCTD_MATLAB/GV_PlotUpAccumulation.m`):
 TwistTimeseries = MODprocess_L1_accumulate_twist_timeseries(L1_cache, meta_dir)
 ```
 
-Called automatically at the end of `MODprocess_all_L0_to_L1.m`, gated on `metadata.manifest.has_vnav` - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/twist_time_series.mat`.
+Called automatically at the end of `MODprocess_all_L0_to_L1.m`, whenever any L1 file has twist (its raw file had VNAV data; the yml isn't asked) - re-chains every L1 file's per-file `twist` field into one continuous, non-resetting rotation count for the whole deployment, sorted by file start time (each file's own count restarts at 0, so this offsets each by the running cumulative total from all prior files). Saves `meta/twist_time_series.mat`.
 
-No spool-swap resets here (since 2026-10-17): the count starts from 0 at the survey start and just keeps going. There is one winch spool for every vehicle and one spool log per cruise, `Processed/spool_swap_log.csv`, so resets are applied only in the cruise twist count, `MODprocess_cruise_twist.m` ([Processing data](processing_data.md#stages) stage 5), which joins every survey's file into `Processed/twist/twist_time_series.mat`. A survey's own `meta/spool_swap_log.csv` (or legacy `SpoolSwapLog.csv`) is no longer read.
+No spool-swap resets here (since 2026-10-17): the count starts from 0 at the survey start and just keeps going. There is one winch spool for every vehicle and one spool log per cruise, `Processed/spool_swap_log.csv`, so resets are applied only in the cruise twist count, `MODprocess_cruise_twist.m` ([Processing data](processing_data.md#stages) stage 5), which joins every on-spool survey's file into `Processed/twist/twist_time_series.mat`. A survey's own `meta/spool_swap_log.csv` (or legacy `SpoolSwapLog.csv`) is no longer read.
 
 The per-file `twist` fields come from the L1 file cache (see the next section), not from loading every L1 file.
 
@@ -278,7 +276,7 @@ Options for realtime use (the worker, `MODprocess_deployment.m`, sets them; the 
 
 Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_external_ctd`, a local subfunction) - see "External CTD (DeepSolo, Wirewalker)" above.
 
-At the end of every call, if `metadata.manifest.has_vnav` is true, also calls `MODprocess_L1_accumulate_twist_timeseries` once to re-chain every L1 file's twist field into `meta/twist_time_series.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
+At the end of every call, also calls `MODprocess_L1_accumulate_twist_timeseries` (it writes nothing when no L1 file has twist) once to re-chain every L1 file's twist field into `meta/twist_time_series.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
 
 Also, if this deployment has any CTD data, calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/pressure_time_series.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
 
@@ -316,6 +314,14 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-10-17 (later) - Twist from the data; VNAV parse fix** (branch `main-fork`). The survey
+twist file is made whenever any L1 file has twist, not when the yml says `has_vnav` (removed).
+`MODprocess_single_modraw_to_L0.m` took each VNAV block's length with a loop counter left over
+from an earlier block type, so a file with fewer VNAV messages than that count lost all its VNAV
+("VNAV chokes"); it's taken per block now, and a VNAV read failure says why. Checked: the
+ocean-test file gives the same vnav as the share's L0; a file cut to 10 VNAV messages lost them
+with the old code and keeps them now.
 
 **2026-10-17 - Survey twist no longer resets at spool changes** (branch `main-fork`).
 `MODprocess_L1_accumulate_twist_timeseries(L1_cache, meta_dir)` drops its third argument and

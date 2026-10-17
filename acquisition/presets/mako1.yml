@@ -15,6 +15,5 @@ ch4_type: shear
 ch4_sn: 427
 compass_sn:
 profiling_direction: down
-vnav: true
 alt: true
 fluor: false
