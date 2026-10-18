@@ -4,6 +4,14 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-18 - Monitor map fills its box (branch `main-fork`)
+
+Nicole: the map didn't cover the log, "but it is really narrow because we just did a straight line. If setting the axes makes it really narrow in one direction or the other add latitude or longitude around it so that there is more blank axes space."
+- `drawMap`: after the track + margin limits, the narrow side is widened about its center until the distance ratio (longitude range x cos(latitude) / latitude range) matches the axes' drawing area (`InnerPosition`); equal distances in x and y kept. The title and labels are drawn first and the aspect ratio set back to auto before measuring - otherwise `InnerPosition` is the last draw's shrunken box and the shapes drift from draw to draw. Only widens, never cuts the track.
+- Docs: visualization/index.md, the monitor's header.
+
+Tested in a scratchpad sandbox, batch MATLAB, synthetic tracks: a north line, an east line, one fix and a loop each filled the (default-size) map box to within 4% (the tick labels change width after the new limits), track inside the limits, DataAspectRatio [1 cosd(lat) 1]. Not checked in a real window (batch MATLAB doesn't lay out the monitor); the deck-test run was skipped - the straight lines cover its case.
+
 ### 2026-10-18 - Grid position: first GPS fix for Epsi downcasts from the ship; `platform` (branch `main-fork`)
 
 Nicole: the per-cast position "should be the first position of the profile for downward Epsi casts and the mean position for FCTD casts. This is because Epsi free falls, so it stays at the same lat/lon we dropped it irrespective of what the ship does. FCTD falls quickly but it is also pulled by the ship. Epsi always has slack in the line, FCTD does not." Upcasts: the mean (her choice). Which casts free fall needed a platform: "Start New Deployment is only ever used for the ship platform collecting real-time data. Every other platform we use does post-processed data so the user can manually type the platform into the .yml file."

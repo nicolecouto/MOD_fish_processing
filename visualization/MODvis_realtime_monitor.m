@@ -29,7 +29,8 @@ classdef MODvis_realtime_monitor < handle
     %           same, linked time limits, over a map of the survey's GPS
     %           track (meta/gps_time_series.mat) in the sections' time
     %           window, the latest fix bigger and red, equal distances in x
-    %           and y; right, the last 5
+    %           and y (latitude or longitude added around a straight track
+    %           so the map fills its box); right, the last 5
     %           casts' T profiles and C profiles offset like a waterfall,
     %           and their T-S. Beside the 4th section, the survey's
     %           processing log (or the cruise log), problem lines in red -
@@ -866,11 +867,6 @@ classdef MODvis_realtime_monitor < handle
             hold(ax, 'on');
             plot(ax, lon(end), lat(end), 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0.85 0.1 0.1], 'MarkerEdgeColor', 'k');
             hold(ax, 'off');
-            % limits: the track plus a margin, at least ~100 m each side
-            pad = @(v) max(0.05 * (max(v) - min(v)), 0.001);
-            ylim(ax, [min(lat) - pad(lat), max(lat) + pad(lat)]);
-            xlim(ax, [min(lon) - pad(lon), max(lon) + pad(lon)]);
-            ax.DataAspectRatio = [1 cosd(mean(ax.YLim)) 1];
             grid(ax, 'on');
             ax.XAxis.Exponent = 0;
             ax.YAxis.Exponent = 0;
@@ -882,6 +878,30 @@ classdef MODvis_realtime_monitor < handle
                 datestr(t(end), 'mm-dd HH:MM'), abs(lat(end)), ns(1 + (lat(end) < 0)), ...
                 abs(lon(end)), ew(1 + (lon(end) < 0)))}, ...
                 'FontSize', app.FontSize + 1, 'FontWeight', 'normal'); %#ok<DATST>
+            % limits: the track plus a margin, at least ~100 m each side
+            pad = @(v) max(0.05 * (max(v) - min(v)), 0.001);
+            ylim(ax, [min(lat) - pad(lat), max(lat) + pad(lat)]);
+            xlim(ax, [min(lon) - pad(lon), max(lon) + pad(lon)]);
+            % equal distances in x and y shrink a straight track's box to a
+            % sliver: widen the narrow side (about its center) to the axes' shape
+            coslat = cosd(mean(ax.YLim));
+            % the drawing area: free of the last draw's aspect ratio, after the title and labels
+            ax.DataAspectRatioMode = 'auto';
+            ax.PlotBoxAspectRatioMode = 'auto';
+            drawnow;
+            p = ax.InnerPosition;
+            r = p(3) / p(4); % width / height
+            if ~(isfinite(r) && r > 0)
+                r = 1; % not laid out yet
+            end
+            wx = diff(ax.XLim) * coslat; % both in degrees of latitude, i.e. distance
+            wy = diff(ax.YLim);
+            if wx / wy < r
+                xlim(ax, mean(ax.XLim) + [-1 1] * r * wy / coslat / 2);
+            else
+                ylim(ax, mean(ax.YLim) + [-1 1] * wx / r / 2);
+            end
+            ax.DataAspectRatio = [1 coslat 1];
         end
 
         function drawTwist(app)

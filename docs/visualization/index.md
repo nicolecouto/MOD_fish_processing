@@ -175,7 +175,8 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the survey's
   GPS track (`meta/gps_time_series.mat`) over the sections' time window, the latest fix a bigger
   red dot (its time and position in the title), equal distances in x and y, grid on; no
-  bathymetry yet. The twist
+  bathymetry yet. Limits: the track plus a margin, then latitude or longitude added around it
+  until the map fills its box (a straight track would otherwise be a thin sliver). The twist
   title gives the count now, the spool and when it went on; spool changes are dashed, survey
   starts dotted; one line, up and down casts alike. Right, square: the last 5 casts' T profiles and C profiles, each
   offset like a waterfall, and their T-S. The log is the survey's `processing.log` (or
