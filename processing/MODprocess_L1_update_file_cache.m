@@ -17,6 +17,7 @@ function cache = MODprocess_L1_update_file_cache(L1_dir, meta_dir)
 %     - the time span (epsi.dnum, else ctd.dnum) - for time_index.mat
 %     - ctd.dnum and ctd.P - for pressure_time_series.mat
 %     - the twist field and the first vnav.dnum - for twist_time_series.mat
+%     - gps.dnum, .latitude and .longitude - for gps_time_series.mat
 %
 % INPUTS
 %   L1_dir   - folder of L1 .mat files
@@ -30,6 +31,7 @@ function cache = MODprocess_L1_update_file_cache(L1_dir, meta_dir)
 %     .ctd_dnum, .ctd_P      - column vectors; [] if no ctd.P
 %     .twist                 - the L1 file's twist struct; [] if no vnav/twist
 %     .twist_sort_key        - min(vnav.dnum); NaN if no twist
+%     .gps_dnum, .gps_lat, .gps_lon - column vectors of GPS fixes; [] if no gps
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
@@ -41,7 +43,7 @@ function cache = MODprocess_L1_update_file_cache(L1_dir, meta_dir)
 
 cache_file = fullfile(meta_dir, 'l1_file_cache.mat');
 empty_entry = struct('name', '', 'mtime', NaN, 'bytes', NaN, 'dnum_start', NaN, 'dnum_end', NaN, ...
-    'ctd_dnum', [], 'ctd_P', [], 'twist', [], 'twist_sort_key', NaN);
+    'ctd_dnum', [], 'ctd_P', [], 'twist', [], 'twist_sort_key', NaN, 'gps_dnum', [], 'gps_lat', [], 'gps_lon', []);
 cache = repmat(empty_entry, 0, 1);
 if isfile(cache_file)
     saved = load(cache_file, 'cache');
@@ -86,7 +88,7 @@ end %end function
 %% What the deployment-wide files need from one L1 file
 function e = summarize(fpath, e)
 warnState = warning('off', 'MATLAB:load:variableNotFound');
-S = load(fpath, 'epsi', 'ctd', 'vnav', 'twist');
+S = load(fpath, 'epsi', 'ctd', 'vnav', 'twist', 'gps');
 warning(warnState);
 
 if isfield(S, 'epsi') && ~isempty(S.epsi) && isfield(S.epsi, 'dnum') && ~isempty(S.epsi.dnum)
@@ -107,5 +109,12 @@ if isfield(S, 'vnav') && ~isempty(S.vnav) && isfield(S.vnav, 'dnum') && ~isempty
         && isfield(S, 'twist') && ~isempty(S.twist)
     e.twist = S.twist;
     e.twist_sort_key = min(S.vnav.dnum);
+end
+
+if isfield(S, 'gps') && isstruct(S.gps) && all(isfield(S.gps, {'dnum', 'latitude', 'longitude'})) ...
+        && ~isempty(S.gps.dnum) && numel(S.gps.latitude) == numel(S.gps.dnum) && numel(S.gps.longitude) == numel(S.gps.dnum)
+    e.gps_dnum = S.gps.dnum(:);
+    e.gps_lat = S.gps.latitude(:);
+    e.gps_lon = S.gps.longitude(:);
 end
 end

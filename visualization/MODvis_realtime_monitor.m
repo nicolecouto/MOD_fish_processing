@@ -17,7 +17,8 @@ classdef MODvis_realtime_monitor < handle
     %   Top:    status - worker state, survey, vehicle, winch spool, file
     %           counts, casts, lag, problems, last update.
     %   Left:   4 colour sections of the grid, one column per cast (depth
-    %           vs time; one cast spans its own start to end), with sigma0 contours (2+ casts). All 4 share the depth and
+    %           vs time; one cast spans its own start to end), with sigma0 contours (2+ casts; on/off and the interval in
+    %           the controls). All 4 share the depth and
     %           time limits; each has its own variable (from
     %           grid.variables; epsilon and chi as log10), colormap and
     %           colour range.
@@ -25,7 +26,10 @@ classdef MODvis_realtime_monitor < handle
     %           half a section's width: left, pressure vs time over the
     %           cruise twist count (<processed_root>/twist/, every survey on
     %           the spool, restarting at each winch spool change), on the
-    %           same, linked time limits (row 3 is free); right, the last 5
+    %           same, linked time limits, over a map of the survey's GPS
+    %           track (meta/gps_time_series.mat) in the sections' time
+    %           window, the latest fix bigger and red, equal distances in x
+    %           and y; right, the last 5
     %           casts' T profiles and C profiles offset like a waterfall,
     %           and their T-S. Beside the 4th section, the survey's
     %           processing log (or the cruise log), problem lines in red -
@@ -56,6 +60,7 @@ classdef MODvis_realtime_monitor < handle
         TSAx
         WaterfallAx
         TwistAx
+        MapAx
         CondAx
         MidGrid                      % the middle uigridlayout (its column 2 is kept square)
         LogList
@@ -76,6 +81,8 @@ classdef MODvis_realtime_monitor < handle
         SpanField
         EndDrop
         EndField
+        ContourBox                   % sigma0 contours on/off
+        ContourField                 % sigma0 contour interval [kg/m^3], empty = 10 levels
         OffsetField
         CondOffsetField
         LogDrop
@@ -153,7 +160,7 @@ classdef MODvis_realtime_monitor < handle
             end
 
             % middle, one row per section: pressure and the cruise twist count
-            % (same time limits, linked) over a free spot on the left; the
+            % (same time limits, linked) over the map of the GPS track on the left; the
             % last casts' T and C profiles and their T-S on the right; the log
             % beside the 4th section
             mid = uigridlayout(g, [app.NSections 2], 'Padding', [0 0 0 0], 'RowSpacing', 2);
@@ -163,6 +170,7 @@ classdef MODvis_realtime_monitor < handle
             app.MidGrid = mid;
             app.PressureAx = app.smallAxes(mid, 1, 1);
             app.TwistAx = app.smallAxes(mid, 2, 1);
+            app.MapAx = app.smallAxes(mid, 3, 1);
             app.WaterfallAx = app.smallAxes(mid, 1, 2);
             app.CondAx = app.smallAxes(mid, 2, 2);
             app.TSAx = app.smallAxes(mid, 3, 2);
@@ -178,7 +186,7 @@ classdef MODvis_realtime_monitor < handle
             app.DetailLbl = uilabel(logs, 'Text', '', 'WordWrap', 'on', 'FontName', 'Menlo', 'FontSize', 10);
 
             % right: control panel
-            n_rows = 16 + 3 * app.NSections + 9;
+            n_rows = 19 + 3 * app.NSections + 9;
             c = uigridlayout(g, [n_rows 2], 'RowSpacing', 3, 'Scrollable', 'on');
             c.Layout.Row = 2;
             c.Layout.Column = 3;
@@ -210,6 +218,15 @@ classdef MODvis_realtime_monitor < handle
             app.EndField = uieditfield(c, 'text', 'Value', '', 'Placeholder', 'yyyy-mm-dd HH:MM', ...
                 'ValueChangedFcn', @(~, ~) app.endTimeTyped());
             app.EndField.Layout.Row = row; app.EndField.Layout.Column = 2;
+            row = row + 2; % a gap: the section settings start here
+            lbl = uilabel(c, 'Text', 'sigma0 contours');
+            lbl.Layout.Row = row; lbl.Layout.Column = 1;
+            app.ContourBox = uicheckbox(c, 'Text', 'show', 'Value', true, 'ValueChangedFcn', @(~, ~) app.drawSections());
+            app.ContourBox.Layout.Row = row; app.ContourBox.Layout.Column = 2;
+            row = row + 1;
+            app.ContourField = app.labelled(c, row, '  every [kg/m^3]', 'num', NaN, @(~, ~) app.drawSections());
+            app.ContourField.Limits = [0 Inf];
+            app.ContourField.LowerLimitInclusive = 'off';
             app.VarDrop = gobjects(1, app.NSections);
             app.CmapDrop = gobjects(1, app.NSections);
             app.CMinField = gobjects(1, app.NSections);
@@ -457,9 +474,10 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function drawTimeSeries(app)
-            % pressure and the cruise twist count, on the same time limits
+            % pressure, the cruise twist count and the GPS track, on the same time limits
             app.drawPressure();
             app.drawTwist();
+            app.drawMap();
             try
                 linkaxes([app.PressureAx, app.TwistAx], 'x');
             catch
@@ -531,10 +549,11 @@ classdef MODvis_realtime_monitor < handle
             h.EdgeColor = 'none';
             h.HitTest = 'off';
             hold(ax, 'on');
-            if isfield(g, 'sigma0') && ~strcmp(name, 'sigma0')
+            if app.ContourBox.Value && isfield(g, 'sigma0') && ~strcmp(name, 'sigma0')
                 s0 = g.sigma0(:, idx);
-                if size(s0, 2) > 1 && any(isfinite(s0(:)))
-                    [~, hc] = contour(ax, t, g.z, s0, 10, 'k', 'LineWidth', 0.5);
+                levels = app.contourLevels(s0);
+                if size(s0, 2) > 1 && ~isempty(levels)
+                    [~, hc] = contour(ax, t, g.z, s0, levels, 'k', 'LineWidth', 0.5);
                     hc.HitTest = 'off';
                 end
             end
@@ -567,8 +586,9 @@ classdef MODvis_realtime_monitor < handle
             ylabel(ax, 'depth [m]');
             lines = {sprintf('%d. %s, %s, colour %s', i, label, app.CmapDrop(i).Value, how)};
             if i == 1
-                lines = [{sprintf('%s - %s, casts: %s (%d), depth %g-%g m, %g m bins, white = no data', ...
-                    app.SurveyDrop.Value, app.windowText(), app.DirDrop.Value, numel(idx), zl(1), zl(2), g.z_bin_m)}, lines];
+                lines = [{sprintf('%s - %s, casts: %s (%d), depth %g-%g m, %g m bins, %s, white = no data', ...
+                    app.SurveyDrop.Value, app.windowText(), app.DirDrop.Value, numel(idx), zl(1), zl(2), g.z_bin_m, ...
+                    app.contourText())}, lines];
             end
             title(ax, lines, 'Interpreter', 'none', 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
             if i < app.NSections
@@ -791,8 +811,82 @@ classdef MODvis_realtime_monitor < handle
             end
         end
 
+        function levels = contourLevels(app, s0)
+            % sigma0 contour levels: every ContourField kg/m^3 on round
+            % values, or 10 levels when it's empty; [] = nothing to draw
+            levels = [];
+            lo = min(s0(:));
+            hi = max(s0(:));
+            if ~(hi > lo)
+                return
+            end
+            d = app.ContourField.Value;
+            if isempty(d)
+                levels = 10;
+            else
+                levels = (ceil(lo / d):floor(hi / d)) * d;
+                if isscalar(levels)
+                    levels = [levels levels]; % contour reads a scalar as a number of levels
+                end
+            end
+        end
+
+        function txt = contourText(app)
+            if ~app.ContourBox.Value
+                txt = 'no sigma0 contours';
+            elseif isempty(app.ContourField.Value)
+                txt = 'sigma0 contours: 10 levels';
+            else
+                txt = sprintf('sigma0 contours every %g kg/m^3', app.ContourField.Value);
+            end
+        end
+
+        function drawMap(app)
+            % the survey's GPS track (meta/gps_time_series.mat) in the
+            % sections' time window, the last fix bigger and red; equal
+            % distances in x and y (as n_axes_map.m), grid on
+            ax = app.MapAx;
+            cla(ax);
+            f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'gps_time_series.mat');
+            gp = app.safeLoad(f);
+            if ~isfield(gp, 'dnum') || isempty(gp.dnum)
+                title(ax, 'position: no GPS yet', 'FontSize', app.FontSize + 1);
+                return
+            end
+            tl = app.smallPlotWindow(gp.dnum);
+            keep = gp.dnum >= tl(1) & gp.dnum <= tl(2);
+            if ~any(keep)
+                title(ax, 'position: no GPS fixes in the sections'' time window', 'FontSize', app.FontSize + 1);
+                return
+            end
+            lat = gp.latitude(keep);
+            lon = gp.longitude(keep);
+            t = gp.dnum(keep);
+            plot(ax, lon, lat, '.', 'Color', [0 0.4470 0.7410], 'MarkerSize', 4);
+            hold(ax, 'on');
+            plot(ax, lon(end), lat(end), 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0.85 0.1 0.1], 'MarkerEdgeColor', 'k');
+            hold(ax, 'off');
+            % limits: the track plus a margin, at least ~100 m each side
+            pad = @(v) max(0.05 * (max(v) - min(v)), 0.001);
+            ylim(ax, [min(lat) - pad(lat), max(lat) + pad(lat)]);
+            xlim(ax, [min(lon) - pad(lon), max(lon) + pad(lon)]);
+            ax.DataAspectRatio = [1 cosd(mean(ax.YLim)) 1];
+            grid(ax, 'on');
+            ax.XAxis.Exponent = 0;
+            ax.YAxis.Exponent = 0;
+            xlabel(ax, 'longitude [deg E]');
+            ylabel(ax, 'latitude [deg N]');
+            ns = 'NS';
+            ew = 'EW';
+            title(ax, {'position (sections'' time window)', sprintf('red: %s UTC, %.4f %s, %.4f %s', ...
+                datestr(t(end), 'mm-dd HH:MM'), abs(lat(end)), ns(1 + (lat(end) < 0)), ...
+                abs(lon(end)), ew(1 + (lon(end) < 0)))}, ...
+                'FontSize', app.FontSize + 1, 'FontWeight', 'normal'); %#ok<DATST>
+        end
+
         function drawTwist(app)
             ax = app.TwistAx;
+            delete(allchild(ax)); % not cla: it leaves MODvis_twist_timeseries' hidden-handle xlines, which pile up
             cla(ax);
             legend(ax, 'off');
             tt = app.Twist;
@@ -803,7 +897,10 @@ classdef MODvis_realtime_monitor < handle
             tl = app.smallPlotWindow(tt.dnum); % the same limits as pressure
             keep = tt.dnum >= tl(1) & tt.dnum <= tl(2);
             w = tt;
-            for name = {'dnum', 'count_gyro', 'count_compass', 'pressure', 'survey_index'}
+            if isfield(w, 'pressure')
+                w = rmfield(w, 'pressure'); % no pressure = one line, no upcast highlighting
+            end
+            for name = {'dnum', 'count_gyro', 'count_compass', 'survey_index'}
                 if isfield(w, name{1})
                     w.(name{1}) = tt.(name{1})(keep);
                 end
@@ -816,7 +913,6 @@ classdef MODvis_realtime_monitor < handle
             if isempty(w.dnum)
                 w.dnum = tl(:);
                 w.count_gyro = nan(2, 1);
-                w.pressure = nan(2, 1);
             end
             MODvis_twist_timeseries(w, ax);
             ax.FontSize = app.FontSize;
@@ -833,7 +929,7 @@ classdef MODvis_realtime_monitor < handle
             end
             spool = app.orNone(tt.spool);
             title(ax, {sprintf('cruise twist %+.1f turns, spool %s%s', now_count, spool, since), ...
-                sprintf('latest %s UTC; orange upcasts, dashed spool change, dotted survey start', ...
+                sprintf('latest %s UTC; dashed spool change, dotted survey start', ...
                 datestr(tt.dnum(end), 'mm-dd HH:MM'))}, 'FontSize', app.FontSize + 1, 'FontWeight', 'normal', ...
                 'Interpreter', 'none'); %#ok<DATST>
             ylabel(ax, 'turns (neutral is negative)');

@@ -116,7 +116,7 @@ Run nfft512 - .../26_1015_fctd2_deck_test/meta/meta_data_nfft512.yml
 | `processed/<run>/L2/` | **Scans only**, one file per L1 file with the **same name**: spectra, FP07 chi, epsilon and CTD values at each scan (microconductivity chi and fluorometer scan means later, steps 7-8). The time series stay in the L1 file, so nothing is stored twice; the viewers load both (`MODutil_level_folders.m`). |
 | `processed/<run>/profiles_L1/`, `profiles_L2/` | By-profile runs: `Profile####.mat` cut by cast (time series), and its scans under the same name |
 | `processed/<run>/grid/` | `grid.mat`: one column per cast (down and up), in depth bins of `grid.z_bin_m` - see [The grid](#the-grid) |
-| `processed/<run>/meta/` | Files built from this run's L1 (`time_index.mat`, `pressure_time_series.mat`, `twist_time_series.mat`, `fpo7_calibration.mat`, `l1_file_cache.mat` - with the L1 they came from), this run's `casts.mat`, `metadata.mat`, and `log/` (`processing.log`, `problems.json`) |
+| `processed/<run>/meta/` | Files built from this run's L1 (`time_index.mat`, `pressure_time_series.mat`, `twist_time_series.mat`, `gps_time_series.mat`, `fpo7_calibration.mat`, `l1_file_cache.mat` - with the L1 they came from), this run's `casts.mat`, `metadata.mat`, and `log/` (`processing.log`, `problems.json`) |
 | `Processed/twist/` (cruise-wide) | `twist_time_series.mat`: the cruise twist count, every survey on the winch spool at 1 s, restarting at each spool change (stage 5); `twist_by_survey.mat`: the 1 s copy of each survey's twist, so a survey file is reread only when it changes |
 
 L1 is never rewritten after it's made.
@@ -177,8 +177,21 @@ run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_
   have scans. `epsilon_final` is gridded only when L2 computed it, so a vehicle without shear probes, like
   the FCTD, has none (L2 doesn't write it then; an older L2 file's all-NaN one, with an empty
   `epsilon_final_source`, is skipped).
-- **Position** (`latitude`, `longitude`, one per cast): the mean of the L1 GPS fixes during the
-  cast; NaN for a cast with none. Taken from the L1 files whether the grid is by file or by profile.
+- **Position** (`latitude`, `longitude`, one per cast), from the L1 GPS fixes during the cast:
+
+    | Cast | Position | Why |
+    |---|---|---|
+    | Epsi downcast from the ship (`platform: ship`, `fish_flag: EPSI`) | first GPS fix | Epsi free falls with slack in the line, so it stays where it was dropped whatever the ship does |
+    | Epsi upcast | mean of the cast's fixes | the winch hauls it in, so the ship pulls it along |
+    | Every FCTD cast | mean of the cast's fixes | FCTD falls quickly but the ship pulls it along - no slack in the line |
+    | Any other platform | mean of the cast's fixes | |
+
+  NaN for a cast with none. Taken from the L1 files whether the grid is by file or by profile.
+  `platform` is how the vehicle is deployed: Start New Deployment always writes `platform: ship`
+  (it's only used on the ship, in realtime); for a postprocessed platform (`wirewalker`,
+  `deepsolo`, `uuv`, `apex`, ...) type it into the yml. A yml without it is `ship`, or
+  `deepsolo`/`wirewalker` when `vehicle_name` is one. Changing `platform` or `fish_flag` rebins
+  the casts whose rule changes.
 
 `grid.mat` contains:
 - axes `z` (bin centers, m, positive down) and `z_bin_m`; per cast `time`, `latitude`, `longitude`,
@@ -411,13 +424,15 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
 
 - **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
   last update; problems count; missing parameters.
-- **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours; shared
+- **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours (turn
+  them off or set the interval in kg/m^3 - empty = 10 levels); shared
   depth and time limits, each with its own variable, colormap and colour range. Variables
   are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
 - **Middle, 3 x 2:**
   - left: pressure vs time over the cruise twist count (all vehicles - one winch spool), on the
     same, linked time limits, with spool changes (dashed) and survey starts (dotted) marked; the
-    twist title gives the count now, the spool and when it went on; row 3 free;
+    twist title gives the count now, the spool and when it went on; row 3: a map of the GPS
+    track over the sections' time window, the latest fix bigger and red (no bathymetry yet);
   - right, square: the last ~5 casts' T profiles and C profiles, offset like a waterfall, and
     their T-S, coloured by age, to catch conductivity problems.
 - **Bottom, streaming log**, with errors highlighted (click one for the full message).
@@ -702,3 +717,13 @@ worker ("stopped: CTD calibration changed"); `MODprocess_reset_survey.m` clears 
 reprocessing from raw. L0 files made before this are redone once, so
 every survey's L0 and L1 are remade on the first pass. See
 [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file).
+
+**2026-10-18 (later) - Monitor map; first GPS fix for Epsi downcasts** (branch `main-fork`). The
+monitor's middle row 3 is a map of the survey's GPS track (`meta/gps_time_series.mat`, new, made
+with L1) over the sections' time window, the latest fix bigger and red; sigma0 contours can be
+turned off or given an interval; the twist count is one line. Nicole: a cast's position "should be
+the first position of the profile for downward Epsi casts and the mean position for FCTD casts.
+This is because Epsi free falls ... Epsi always has slack in the line, FCTD does not"; upcasts keep
+the mean. New `platform` key (Start New Deployment writes `ship`; "every other platform we use does
+post-processed data so the user can manually type the platform into the .yml"). `grid_version` 4,
+so existing grids rebin once.

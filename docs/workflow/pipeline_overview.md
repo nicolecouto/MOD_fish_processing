@@ -73,6 +73,8 @@ flowchart LR
     TIDX --> TIDXOUT[("meta/time_index.mat")]
     L1ALL -->|if L1 has twist| TWIST["MODprocess_L1_accumulate_<br/>twist_timeseries.m"]
     TWIST --> TWISTOUT[("meta/twist_<br/>time_series.mat")]
+    L1ALL -->|if L1 has GPS| GPS["MODprocess_L1_make_<br/>gps_timeseries.m"]
+    GPS --> GPSOUT[("meta/gps_<br/>time_series.mat")]
     PTSOUT -.->|if real onboard CTD| FPO7CAL["MODprocess_L1_apply_<br/>fpo7_calibration.m"]
   end
 
@@ -100,6 +102,7 @@ flowchart LR
 | `MODprocess_L1_update_file_cache.m` | L1_dir, meta_dir → L1_cache | Per-L1-file time span, `ctd.dnum`/`P` and `twist` in `meta/l1_file_cache.mat`; rereads only new or changed L1 files, so the deployment-wide files below don't reload every L1 file each pass |
 | `MODprocess_L1_make_pressure_timeseries.m` + `mod_L1_detect_profiling_direction.m` | L1_cache → PressureTimeseries | Deployment-length pressure record + descending/ascending classification |
 | `MODprocess_L1_make_time_index.m` | L1_cache → TimeIndex | Per-L1-file dnum start/end, so a profile's file(s) can be found without loading everything |
+| `MODprocess_L1_make_gps_timeseries.m` | L1_cache → GpsTimeseries | Every L1 file's GPS fixes as one track (`meta/gps_time_series.mat`), for the realtime monitor's map |
 | `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous survey count, from 0 at the survey start (no spool resets) - whenever L1 has twist (raw VNAV), not set by the yml |
 | `MODprocess_cruise_twist.m` | processed_root → TwistTimeseries | The cruise twist count: every on-spool survey's count joined at 1 s, restarting at each winch spool change (`MODprocess_find_spool_swaps.m`); `Processed/twist/twist_time_series.mat`, run by the worker after every pass |
 | `MODprocess_L1_apply_fpo7_calibration.m` | L1_dir, metadata, PressureTimeseries → metadata | In-situ volts→°C fit against real CTD T - only if real onboard CTD |

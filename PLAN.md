@@ -314,6 +314,7 @@ deployment_root/
     time_index.mat             ← created during L0→L1 processing (MODprocess_L1_make_time_index.m)
     pressure_time_series.mat   ← created during L1/profile processing
     twist_time_series.mat      ← created by MODprocess_L1_accumulate_twist_timeseries
+    gps_time_series.mat        ← created during L0→L1 processing (MODprocess_L1_make_gps_timeseries.m)
                                   (since 2026-10-17 the spool log is cruise-wide,
                                   Processed/spool_swap_log.csv - see processing_data.md stage 5)
   L0/                          ← created by pipeline

@@ -544,6 +544,7 @@ def render_dev1_setup_yml(values, config):
         'cruise: %s' % yq(values.get('cruise', '')),
         'experiment: %s' % yq(values.get('experiment', '')),
         'vehicle_name: %s' % yq(values.get('vehicle', '')),
+        'platform: ship # how it is deployed; Start New Deployment is always the ship (realtime)',
         'winch_spool: %s # one spool for every vehicle; twist restarts when it changes'
         % yq(values.get('winch_spool', '') if on_winch_spool(values) else ''),
         'on_winch_spool: %s # false: a lab test, left out of the cruise twist count'

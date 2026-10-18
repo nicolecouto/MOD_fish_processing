@@ -110,6 +110,15 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     file (paths.ctd) rather than
 %                                     $SB49/$SB41 blocks in the raw stream
 %                                     - see MODprocess_read_external_ctd.m
+%     platform                     - how the vehicle is deployed, lower
+%                                     case: 'ship' (Start New Deployment
+%                                     always writes it), or typed into the
+%                                     yml for a postprocessed one, e.g.
+%                                     'wirewalker', 'deepsolo', 'uuv',
+%                                     'apex'. A yml without it: 'deepsolo'
+%                                     or 'wirewalker' when vehicle_name is
+%                                     one, else 'ship'. MODprocess_grid.m
+%                                     uses it for each cast's position.
 %     winch_spool                  - the spool on the winch, from setup.yml
 %                                     (Start New Deployment writes it to
 %                                     dev1_setup.yml). One winch and one
@@ -444,6 +453,15 @@ metadata.PROCESS.latitude = yml.latitude;
 metadata.vehicle_name = '';
 if isfield(yml, 'vehicle_name')
     metadata.vehicle_name = yml.vehicle_name;
+end
+% platform: typed for postprocessed platforms; an older yml without it was
+% the ship unless its vehicle_name says it was a profiler
+if isfield(yml, 'platform') && ~isempty(yml.platform)
+    metadata.platform = lower(char(string(yml.platform)));
+elseif any(strcmpi(metadata.vehicle_name, {'deepsolo', 'wirewalker'}))
+    metadata.platform = lower(metadata.vehicle_name);
+else
+    metadata.platform = 'ship';
 end
 metadata.winch_spool = '';
 if isfield(yml, 'winch_spool')

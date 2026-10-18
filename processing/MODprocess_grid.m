@@ -22,8 +22,13 @@ function grid = MODprocess_grid(metadata, by)
 %   vehicle's grid has no turbulence fields, one with no shear channels
 %   has no epsilon_final (L2's epsilon_final_source is empty) and one with
 %   no fpo7 channels has no chi.
-%   Position (latitude, longitude per cast) is the mean of the L1 GPS
-%   fixes during the cast, from the L1 files either way (by profile too).
+%   Position (latitude, longitude per cast) is from the L1 GPS fixes
+%   during the cast, from the L1 files either way (by profile too): the
+%   first fix for an Epsi downcast from the ship (metadata.platform
+%   'ship', fish_flag EPSI) - it free falls with slack in the line, so it
+%   stays where it was dropped whatever the ship does - and the mean of
+%   the fixes for every other cast (FCTD is pulled along by the ship; on
+%   an upcast the winch pulls any fish).
 %
 %   Each call rebins only the casts that are new or changed - a cast whose
 %   start, end and source files (their times) are the same as when it was
@@ -52,8 +57,8 @@ function grid = MODprocess_grid(metadata, by)
 %   grid - (call it something else, e.g. G: grid is Matlab's grid on/off)
 %          the struct saved in grid.mat (see setup/MODunits_L3.m for every
 %          field): z (bin centers, m), z_bin_m, then per cast
-%          (1 x ncast) time, latitude, longitude (mean GPS fix during the
-%          cast, NaN without one), cast_start, cast_end, cast_direction, cast_complete,
+%          (1 x ncast) time, latitude, longitude (first or mean GPS fix
+%          during the cast, see above; NaN without one), cast_start, cast_end, cast_direction, cast_complete,
 %          profile_number, then nz x ncast fields, variables (the units
 %          and descriptions of the fields present), source ('file' or
 %          'profile'), provenance. An empty grid (no columns) if there are
@@ -90,11 +95,13 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 3; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final. A grid from another version rebins every cast.
+GRID_VERSION = 4; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
 lat = metadata.PROCESS.latitude;
+% Epsi from the ship free falls: its downcasts keep the drop position
+free_fall = strcmpi(metadata.platform, 'ship') && strcmpi(metadata.fish_flag, 'EPSI');
 
 casts_file = fullfile(metadata.paths.meta, 'casts.mat');
 if ~isfile(casts_file)
@@ -152,8 +159,10 @@ for iC = 1:numel(casts)
     c = casts(iC);
     [L1_files, L2_files, gps_files] = cast_sources(c, by, metadata, time_index, dates);
     sources = unique([L1_files, L2_files, gps_files], 'stable');
-    % lat is in the stamp (not saved on its own): the scans' depth uses it
-    stamp = [c.dnum_end, double(c.complete), lat, cellfun(@(f) dates(f), sources)];
+    % lat is in the stamp (not saved on its own): the scans' depth uses it;
+    % so is the position rule (a platform or fish_flag typed in later)
+    first_fix = free_fall && strcmp(c.direction, 'down');
+    stamp = [c.dnum_end, double(c.complete), lat, double(first_fix), cellfun(@(f) dates(f), sources)];
     all_sources = [all_sources, sources]; %#ok<AGROW>
     k = [];
     if ~isempty(old) && ~isempty(old.cast_start)
@@ -162,7 +171,7 @@ for iC = 1:numel(casts)
     if ~isempty(k) && isequal(old.source_stamp{k}, stamp)
         columns{iC} = column_from_grid(old, k);
     else
-        columns{iC} = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache);
+        columns{iC} = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache, first_fix);
         n_binned = n_binned + 1;
     end
     columns{iC}.source_stamp = stamp;
@@ -223,11 +232,12 @@ end
 end
 
 %% Bin one cast: one value per bin (1 = 0 to z_bin m) per field
-function col = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache)
+function col = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache, first_fix)
 col = struct('fields', struct(), 'n_bins', 0);
 in_cast = @(t) t >= c.dnum_start & t <= c.dnum_end;
 
-% Position: the mean of the GPS fixes during the cast (NaN if none)
+% Position: the first GPS fix during the cast (first_fix) or their mean
+% (NaN if none)
 fix = zeros(0, 3);
 for i = 1:numel(gps_files)
     s = load_cached(cache, gps_files{i}, {'gps'});
@@ -238,7 +248,10 @@ for i = 1:numel(gps_files)
     keep = in_cast(s.gps.dnum(:)) & isfinite(s.gps.latitude(:)) & isfinite(s.gps.longitude(:));
     fix = [fix; s.gps.dnum(keep), s.gps.latitude(keep), s.gps.longitude(keep)]; %#ok<AGROW>
 end
-[~, iu] = unique(fix(:, 1)); % the same fix from two L1 files is counted once
+[~, iu] = unique(fix(:, 1)); % sorted by time; the same fix from two L1 files is counted once
+if first_fix
+    iu = iu(1:min(1, end));
+end
 col.latitude = mean(fix(iu, 2));
 col.longitude = mean(fix(iu, 3));
 if isempty(iu)

@@ -268,7 +268,7 @@ PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_cache);
 PressureTimeseries = mod_L1_detect_profiling_direction(PressureTimeseries, metadata);
 ```
 
-`meta/time_index.mat`, `meta/pressure_time_series.mat` and `meta/twist_time_series.mat` (in a processing run's `processed/<run>/meta/`, next to the L1 they come from - see [Processing data](processing_data.md#processing-runs)) are all built from `meta/l1_file_cache.mat` (`MODprocess_L1_update_file_cache.m`), which keeps each L1 file's time span, `ctd.dnum`/`ctd.P` and `twist` and reloads only L1 files that are new or changed - so these deployment-wide files don't reload every L1 file on every realtime pass. Results are identical to building them from every L1 file (checked against the previous code on a `blt2021_0715` sandbox, cold and warm cache). L1 files themselves are never changed.
+`meta/time_index.mat`, `meta/pressure_time_series.mat`, `meta/twist_time_series.mat` and `meta/gps_time_series.mat` (in a processing run's `processed/<run>/meta/`, next to the L1 they come from - see [Processing data](processing_data.md#processing-runs)) are all built from `meta/l1_file_cache.mat` (`MODprocess_L1_update_file_cache.m`), which keeps each L1 file's time span, `ctd.dnum`/`ctd.P`, `twist` and GPS fixes and reloads only L1 files that are new or changed - so these deployment-wide files don't reload every L1 file on every realtime pass. Results are identical to building them from every L1 file (checked against the previous code on a `blt2021_0715` sandbox, cold and warm cache). L1 files themselves are never changed.
 
 Called automatically at the end of `MODprocess_all_L0_to_L1.m` (right after the twist accumulation step), whenever this deployment has any CTD data - builds `meta/pressure_time_series.mat`, the deployment-length pressure record with a smoothed `dPdt` and an `is_down` (descending) classification per sample. This is deliberately an L1-level product, not an L2 one - see [L1 → L2: direction-gated spectra](L1_to_L2_conversion.md) for the full writeup of the classification algorithm and why it lives here rather than in L2.
 
@@ -329,6 +329,12 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-10-18 - GPS track** (branch `main-fork`). `MODprocess_all_L0_to_L1.m` writes
+`meta/gps_time_series.mat` (`dnum`, `latitude`, `longitude`; sorted, each time once) whenever an
+L1 file has GPS fixes, from the L1 file cache (`MODprocess_L1_make_gps_timeseries.m`), for the
+realtime monitor's map. The cache now keeps each file's fixes; a cache from before is rebuilt
+once (every L1 file reread on the first pass).
 
 **2026-10-18 - SBE calibration from `$DCAL`** (branch `main-fork`). `MODsetup_read_yaml.m` no
 longer reads `SBE/<SN>.CAL` (`metadata.CTD.cal` is gone); `process_ctd_fields` uses the L0 file's

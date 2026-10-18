@@ -163,7 +163,8 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   missing parameters, last update (red when there are problems or missing parameters).
 - **Left:** 4 colour sections of the survey's grid (`processed/realtime/grid/grid.mat`), one
   column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
-  there are 2 or more. All 4 share the depth and time limits;
+  there are 2 or more ("sigma0 contours": on/off, and the interval in kg/m^3; empty = 10
+  levels; shown in the first section's title). All 4 share the depth and time limits;
   each has its own variable (any field in `grid.variables`; epsilon and chi as log10),
   colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
@@ -171,9 +172,12 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 - **Middle,** 3 rows x 2 columns beside sections 1-3, then the log beside section 4. Left:
   pressure vs time over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
   survey on the winch spool, restarting at each spool change), on the same time limits and
-  linked, so zooming one zooms both; they stretch to fill the width (row 3 is free). The twist
+  linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the survey's
+  GPS track (`meta/gps_time_series.mat`) over the sections' time window, the latest fix a bigger
+  red dot (its time and position in the title), equal distances in x and y, grid on; no
+  bathymetry yet. The twist
   title gives the count now, the spool and when it went on; spool changes are dashed, survey
-  starts dotted, upcasts orange. Right, square: the last 5 casts' T profiles and C profiles, each
+  starts dotted; one line, up and down casts alike. Right, square: the last 5 casts' T profiles and C profiles, each
   offset like a waterfall, and their T-S. The log is the survey's `processing.log` (or
   `cruise_log.txt`), problem lines in red - click a line to see all of it.
 - **Right:** Start / Pause / Stop; Preflight (the worker's last preflight for the survey, from

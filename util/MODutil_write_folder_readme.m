@@ -44,7 +44,7 @@ switch level
         what = {'One .mat per raw file: physical-unit timeseries - epsi (t1/t2/s1/s2/a1-a3 volts/g with this deployment''s channel names), ctd (P, T, C, SP, CT, SR, sigma0, z, dzdt), alt (hab), vnav (with tilt, spin, pitch, roll, yaw), gps, twist, ...'
                 'This is the raw data turned into real data: no spectral or cast choices yet - the starting point for postprocessing.'};
         steps = {'MODprocess_all_L0_to_L1.m -> MODprocess_single_L0_to_L1.m: the run yml''s EFE settings, SBE CTD calibration (the L0 file''s ctd_cal), derived CTD fields (GSW/TEOS-10), altimeter height above bottom, per-file twist.'
-                 'Files built from this L1 are in this run''s meta/ (next to L1/): time_index.mat, pressure_time_series.mat (profiling direction), twist_time_series.mat, fpo7_calibration.mat, l1_file_cache.mat.'};
+                 'Files built from this L1 are in this run''s meta/ (next to L1/): time_index.mat, pressure_time_series.mat (profiling direction), twist_time_series.mat, gps_time_series.mat (the GPS track), fpo7_calibration.mat, l1_file_cache.mat.'};
         sections = {'afe', 'ctd', 'profile_detection'};
     case 'L2'
         what = {'One .mat per L1 file, with the same name: per-scan spectra and turbulence (chi from FP07, epsilon from shear) for the scans in the direction(s) set by profile_detection.profile_dir. Scans only - the time series are in the L1 file of the same name.'};
@@ -59,7 +59,7 @@ switch level
         steps = {'MODprocess_all_L1_to_L2.m pointed at profiles_L1/ (postprocessing).'};
         sections = {'spectral', 'ctd', 'profile_detection', 'chi', 'epsilon'};
     case 'grid'
-        what = {'grid.mat: one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. CTD = mean of every L1 CTD sample in the bin; turbulence = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans; no epsilon_final without shear probes). Per cast: latitude/longitude = mean GPS fix during it. grid.variables lists each field''s unit and description.'};
+        what = {'grid.mat: one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. CTD = mean of every L1 CTD sample in the bin; turbulence = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans; no epsilon_final without shear probes). Per cast: latitude/longitude = the first GPS fix for an Epsi downcast from the ship (it free falls where it was dropped), else the mean fix during the cast. grid.variables lists each field''s unit and description.'};
         steps = {'MODprocess_grid.m, from the L1 and L2 files (by file) or profiles_L1/ and profiles_L2/ (by profile) - see grid.source. Only new or changed casts are rebinned.'};
         sections = {'grid', 'profile_detection'};
     otherwise

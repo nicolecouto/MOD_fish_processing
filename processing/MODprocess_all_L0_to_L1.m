@@ -44,6 +44,10 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   profile's time range without loading every file's full contents - see
 %   PLAN.md Section 6.3.
 %
+%   If any L1 file has GPS fixes, also builds meta/gps_time_series.mat -
+%   the deployment's track (MODprocess_L1_make_gps_timeseries.m), for the
+%   realtime monitor's map.
+%
 %   If that CTD is the onboard one specifically (no external-CTD file -
 %   an external-CTD vehicle like DeepSolo never has real temperature),
 %   also fits and persists each FP07 channel's in-situ volts->degC calibration
@@ -94,6 +98,7 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
 %   MODprocess_L1_accumulate_twist_timeseries.m (writes nothing when no L1 file has twist)
+%   MODprocess_L1_make_gps_timeseries.m (only when some L1 file has GPS)
 %   MODprocess_L1_make_pressure_timeseries.m, mod_L1_detect_profiling_direction.m
 %   (only when this deployment has CTD data)
 %   MODprocess_L1_make_time_index.m (unconditional - see below)
@@ -244,6 +249,13 @@ save(fullfile(metadata.paths.L1_meta, 'time_index.mat'), '-struct', 'TimeIndex')
 % field (added inside MODprocess_single_L0_to_L1) into meta/twist_time_series.mat.
 % The data decide: any L1 file with twist (its raw file had VNAV) makes it.
 MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta);
+
+% Deployment-level GPS track (for the realtime monitor's map): any L1 file
+% with GPS fixes makes it
+if any(arrayfun(@(c) ~isempty(c.gps_dnum), L1_cache))
+    GpsTimeseries = MODprocess_L1_make_gps_timeseries(L1_cache);
+    save(fullfile(metadata.paths.L1_meta, 'gps_time_series.mat'), '-struct', 'GpsTimeseries');
+end
 
 % Deployment-level pressure record + profiling-direction classification:
 % only when some L1 file has CTD pressure (the data decide - onboard SBE

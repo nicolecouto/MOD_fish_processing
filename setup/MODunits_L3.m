@@ -27,9 +27,9 @@ function u = MODunits_L3()
 % --- axes ---
 u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, metadata.PROCESS.latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
 u.z_bin_m = struct('unit', 'm', 'description', 'Depth bin size (grid.z_bin_m in the yml).');
-u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final). A grid from another version is rebinned from scratch.');
-u.latitude = struct('unit', 'degrees N', 'description', 'Mean of the L1 GPS fixes (gps.latitude) during the cast, 1 x ncast; NaN if the cast has none.');
-u.longitude = struct('unit', 'degrees E', 'description', 'Mean of the L1 GPS fixes (gps.longitude) during the cast, 1 x ncast; NaN if the cast has none. A plain mean, so wrong for a cast that crosses 180 deg.');
+u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship). A grid from another version is rebinned from scratch.');
+u.latitude = struct('unit', 'degrees N', 'description', 'From the L1 GPS fixes (gps.latitude) during the cast, 1 x ncast: the first fix for an Epsi downcast from the ship (platform ship, fish_flag EPSI - it free falls where it was dropped), else their mean; NaN if the cast has none.');
+u.longitude = struct('unit', 'degrees E', 'description', 'From the L1 GPS fixes (gps.longitude) during the cast, 1 x ncast, as latitude; NaN if the cast has none. A plain mean, so wrong for a cast that crosses 180 deg.');
 u.time = struct('unit', 'MATLAB datenum', 'description', 'Mean time of the cast''s CTD samples, 1 x ncast (the middle of the cast if it has none).');
 u.cast_start = struct('unit', 'MATLAB datenum', 'description', 'Cast start time from the cast table (casts.mat dnum_start), 1 x ncast - what a column is keyed by.');
 u.cast_end = struct('unit', 'MATLAB datenum', 'description', 'Cast end time from the cast table (dnum_end), 1 x ncast.');
@@ -56,6 +56,6 @@ u.chi_mle_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans
 % --- record ---
 u.variables = struct('unit', 'n/a (struct array)', 'description', 'name, unit and description of each gridded field present (from this registry).');
 u.source = struct('unit', 'n/a (string)', 'description', '''file'' (L1/L2 files, through time_index.mat) or ''profile'' (profiles_L1/ and profiles_L2/).');
-u.source_stamp = struct('unit', 'n/a (cell)', 'description', 'Per cast: its end time, complete flag and the times of the files it was binned from. A column is rebinned when this changes.');
+u.source_stamp = struct('unit', 'n/a (cell)', 'description', 'Per cast: its end time, complete flag, the yml latitude, whether its position is the first GPS fix, and the times of the files it was binned from. A column is rebinned when this changes.');
 u.provenance = struct('unit', 'n/a (record)', 'description', 'What this grid was made from (MODutil_provenance.m): the L1 and L2 (or profile) files, the run yml and its SHA-256, the run, when, and the code version.');
 end %end function

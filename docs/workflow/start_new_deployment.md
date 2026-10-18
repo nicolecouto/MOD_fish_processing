@@ -228,11 +228,19 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/meta
 (`MODsetup_read_yaml` can read `dev1_setup.yml` itself too, but then it takes its paths from
 `data_root`, the old layout.)
 
+`platform: ship` is always written: Start New Deployment is only used on the ship, in realtime.
+Other platforms (`wirewalker`, `deepsolo`, `uuv`, `apex`, ...) are postprocessed, with `platform`
+typed into the yml by hand. The grid uses it for each cast's position (see
+[Processing data](processing_data.md#the-grid)).
+
 `vehicle_name` is the unit (`MAKO1`, `FCTD3`, ...). The shared altimeter geometry table
 (`setup/platform_instrument_geometry.yml`) matches it ignoring case, falling back to the family
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-18 (later) - `platform: ship`** (branch `main-fork`). `dev1_setup.yml` gets
+`platform: ship` after `vehicle_name`; other platforms type it into their yml.
 
 **2026-10-18 - Check CTD calibration; shear calibration dates** (branch `main-fork`). New
 `acquisition/ctd_calibration.py` (ask the fish with `sbe.dcal`, parse `$DCAL` and `.CAL`,
