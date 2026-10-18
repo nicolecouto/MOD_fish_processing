@@ -145,12 +145,13 @@ The SBE49 counts are converted at L1 with the calibration L0 keeps in each file'
 
 The calibration block in the `.modraw` header ("as in Fish calibration file") is **never read**: it's a copy of the computer's `.CAL` file and is wrong whenever that file wasn't updated. See [the `$DCAL` tag](modraw_tag_format.md#dcal-sbe-calibration-coefficients).
 
-**One calibration per survey.** The first one seen is recorded in `ctd_calibration.mat` in the `meta/` folder next to `L0/` (`<survey>/meta`), with `cal` and `file` (the raw file it came from). Every later file's is compared with it: serial number, the three calibration dates, and every coefficient, to 1 part in a million (`$DCAL` and `.CAL` often differ in the last printed digit, which doesn't count). If one differs - e.g. the first file had no `$DCAL` and used an out-of-date `.CAL`, and the next file's `$DCAL` is newer - L0 stops for that survey with `MODprocess_all_modraw_to_L0:ctdCalibrationChanged` (even with `'continue_on_error'`). The message gives both calibrations and the fix:
+**One calibration per survey.** The first one seen is recorded in `ctd_calibration.mat` in the `meta/` folder next to `L0/` (`<survey>/meta`), with `cal` and `file` (the raw file it came from). Every later file's is compared with it on serial number and the three calibration dates (coefficients aren't compared - a new calibration always has a new date). If one differs - e.g. the first file had no `$DCAL` and used an out-of-date `.CAL`, and the next file's `$DCAL` is newer - L0 stops for that survey with `MODprocess_all_modraw_to_L0:ctdCalibrationChanged` (even with `'continue_on_error'`). The message gives both calibrations and the fix:
 
 1. Update `calibrations_root/SBE/<SN>.CAL` to match the fish (Start New Deployment's **Check CTD calibration** can write it - see [Start New Deployment](start_new_deployment.md)).
-2. Reprocess from raw: delete the survey's `L0/`, `processed/` and `meta/ctd_calibration.mat`, and run `MODprocess_deployment(survey_folder)`.
+2. Reprocess that survey from raw: `MODprocess_reset_survey(survey_folder)` shows what it will delete (the survey's `L0/`, `processed/` - every run in it - and `meta/ctd_calibration.mat`; `raw/` and the ymls stay), asks, and deletes them. It refuses while the worker is running.
+3. Restart the worker (Start Realtime Processing), or run `MODprocess_deployment(survey_folder)`.
 
-The realtime worker shows that survey as "paused: CTD calibration changed", makes nothing after L0 for it, and doesn't try it again until its `raw/` changes (or it's rerun by hand after the fix); other surveys keep going.
+**The realtime worker stops altogether** (ALL STOP, every survey): it writes `stop` to `control.json`, `status.json` says "stopped: CTD calibration changed" (the monitor's Worker line shows it) with the message in `warnings`, and the cruise log says what to do. It runs again only when it's restarted, and stops again straight away if the survey wasn't reset.
 
 A header serial number that differs from the `$DCAL` one (the setup named the wrong CTD) is a warning; the `$DCAL` one is used.
 

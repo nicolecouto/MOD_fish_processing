@@ -20,12 +20,12 @@ function [L0_files, problems, processed] = MODprocess_all_modraw_to_L0(raw_dir, 
 %   takes TOFFSET/CSLOPE/POFFSET from the survey's $DCAL (a .CAL can't hold
 %   them). A $DCAL that can't be read counts as none. The first
 %   calibration is recorded in <L0_dir>/../meta/ctd_calibration.mat (for a
-%   survey, <survey>/meta); a later file with a different one (another SN,
-%   calibration date or coefficient - beyond 1e-6 relative, the last
-%   printed digit - e.g. an out-of-date .CAL then a newer $DCAL) stops L0
-%   for this survey with
+%   survey, <survey>/meta); a later file with a different one (another SN
+%   or calibration date - coefficients aren't compared - e.g. an
+%   out-of-date .CAL then a newer $DCAL) stops L0 for this survey with
 %   MODprocess_all_modraw_to_L0:ctdCalibrationChanged, even with
-%   'continue_on_error' - update the .CAL file, then reprocess from raw.
+%   'continue_on_error' (the realtime worker then stops) - update the .CAL
+%   file, then reprocess from raw (MODprocess_reset_survey.m).
 %   A header CTD.SerialNum that differs from the $DCAL one is a warning
 %   (MODprocess_all_modraw_to_L0:ctdSerialNumber); the $DCAL one is used.
 %
@@ -286,16 +286,17 @@ if ~isempty(what)
     describe = @(f, c) sprintf('  %s: SBE %s from %s, calibrated T %s, C %s, P %s', f, c.SN, c.source, ...
         char(c.TempCal_date, 'dd-MMM-yy'), char(c.CondCal_date, 'dd-MMM-yy'), char(c.PresCal_date, 'dd-MMM-yy'));
     error('MODprocess_all_modraw_to_L0:ctdCalibrationChanged', ['CTD calibration changed within this ' ...
-        'survey (%s) - processing paused.\n%s\n%s\nUpdate the .CAL file in calibrations_root/SBE to match the ' ...
-        'fish (Start New Deployment: Check CTD calibration), then reprocess from raw: delete %s, %s and %s, ' ...
-        'and run MODprocess_deployment(''%s'') again.'], strjoin(what, ', '), describe(record.file, r), ...
-        describe(filename, cal), fullfile(survey_dir, 'L0'), fullfile(survey_dir, 'processed'), record_file, survey_dir);
+        'survey (%s) - processing stopped.\n%s\n%s\nUpdate the .CAL file in calibrations_root/SBE to match the ' ...
+        'fish (Start New Deployment: Check CTD calibration), then reprocess from raw: ' ...
+        'MODprocess_reset_survey(''%s'') (deletes %s, %s and %s), and restart the worker.'], ...
+        strjoin(what, ', '), describe(record.file, r), describe(filename, cal), survey_dir, ...
+        fullfile(survey_dir, 'L0'), fullfile(survey_dir, 'processed'), record_file);
 end
 end
 
-%% What differs between two SBE calibrations: SN, calibration dates, or a
-% coefficient by more than 1e-6 (relative) - $DCAL and .CAL round the last
-% printed digit differently, which doesn't count
+%% What differs between two SBE calibrations: serial number or a
+% calibration date (Nicole: those say a calibration changed; coefficients
+% aren't compared)
 function what = cal_differences(a, b)
 what = {};
 if ~strcmp(a.SN, b.SN)
@@ -304,13 +305,6 @@ end
 for d = {'TempCal_date', 'CondCal_date', 'PresCal_date'}
     if a.(d{1}) ~= b.(d{1})
         what{end+1} = d{1}; %#ok<AGROW>
-    end
-end
-f = setdiff(fieldnames(a), {'SN', 'TempCal_date', 'CondCal_date', 'PresCal_date', 'source', 'text'});
-for k = 1:numel(f)
-    x = a.(f{k}); y = b.(f{k});
-    if abs(x - y) > 1e-6 * max(abs(x), abs(y))
-        what{end+1} = f{k}; %#ok<AGROW>
     end
 end
 end

@@ -359,12 +359,13 @@ Nothing stops the worker except **Stop**:
   shows "waiting for parameters" (with the list) until they're added to `cruise_meta_data.yml`
   or `meta_data_realtime.yml`; a survey with no raw files yet shows "waiting for raw files". The
   parameters checked are the ones the stages need (see [Metadata](#metadata)).
-- A survey whose CTD calibration changes partway (another SBE serial number or calibration date
-  than its first file - e.g. an out-of-date `SBE/<SN>.CAL` used for a file without `$DCAL`, then
-  a newer `$DCAL`) shows "paused: CTD calibration changed": nothing after L0 is made for it, and
-  the cruise log and `problems.json` say both calibrations and the fix (update the `.CAL`, delete
-  the survey's `L0/`, `processed/` and `meta/ctd_calibration.mat`, rerun). It isn't tried again
-  until its `raw/` changes; other surveys keep going. See [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file).
+- **A CTD calibration that changes partway through a survey stops the worker** (another SBE
+  serial number or calibration date than its first file - e.g. an out-of-date `SBE/<SN>.CAL` used
+  for a file without `$DCAL`, then a newer `$DCAL`). It's ALL STOP: `control.json` is set to
+  `stop`, `status.json` says "stopped: CTD calibration changed", and the cruise log and
+  `problems.json` give both calibrations and the fix - update the `.CAL`,
+  `MODprocess_reset_survey(survey_folder)` (deletes that survey's `L0/`, `processed/` and
+  `meta/ctd_calibration.mat`, after asking), restart the worker. See [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file).
 - **Stop** (`{"command": "stop"}` in `control.json`) finishes the current stage and exits; the
   survey shows "stopped mid-pass" and is picked up where it left off next time. **pause** keeps
   the worker alive without processing.
@@ -696,7 +697,8 @@ own start to end. Tested on sandbox copies of 8 ocean-test raw files: 2 casts at
 
 **2026-10-18 - CTD calibration from the fish** (branch `main-fork`). L0 takes each raw file's
 `$DCAL` (the SBE's own calibration), and `SBE/<SN>.CAL` only for a file without one; the yml
-read no longer loads a calibration. A calibration change within a survey pauses that survey
-after L0 ("paused: CTD calibration changed"). L0 files made before this are redone once, so
+read no longer loads a calibration. A calibration change within a survey stops the whole
+worker ("stopped: CTD calibration changed"); `MODprocess_reset_survey.m` clears that survey for
+reprocessing from raw. L0 files made before this are redone once, so
 every survey's L0 and L1 are remade on the first pass. See
 [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file).

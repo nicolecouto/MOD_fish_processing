@@ -91,8 +91,8 @@ Use it the first time a fish is used on a cruise, and after an SBE comes back fr
 Processing doesn't depend on this: it takes the calibration from each raw file's `$DCAL` (the
 fish's), and the `.CAL` file only for a raw file without one - see
 [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file). But a
-`.CAL` file that doesn't match the fish makes processing pause the survey when a file without
-`$DCAL` turns up, so check it here first.
+`.CAL` file that doesn't match the fish stops processing when a file without `$DCAL` turns up,
+so check it here first.
 
 **Shear probes** have nothing to ask - the probe doesn't store its calibration. Each shear slot
 shows its newest calibration date and age (the last dated line of

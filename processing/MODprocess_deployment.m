@@ -33,9 +33,10 @@ function summary = MODprocess_deployment(target, varargin)
 %     2. modraw -> L0 -> L1 (MODprocess_all_modraw_to_L0.m,
 %        MODprocess_all_L0_to_L1.m) - not for a run with L1_from. If the
 %        CTD calibration changes within the survey (another SN or
-%        calibration date, see MODprocess_all_modraw_to_L0.m), the survey
-%        stops after L0 ("paused: CTD calibration changed") until the .CAL
-%        file is fixed and the survey reprocessed from raw
+%        calibration date, see MODprocess_all_modraw_to_L0.m), the whole
+%        worker stops ("stopped: CTD calibration changed" in status.json,
+%        "stop" in control.json): fix the .CAL file, reset the survey
+%        (MODprocess_reset_survey.m) and restart the worker
 %     3. the cast table, processed/<run>/meta/casts.mat
 %        (MODprocess_L1_update_cast_table.m)
 %     4. 'by' 'file' (realtime): L1 -> L2, whole L1 files tiled into scans.
@@ -321,6 +322,20 @@ while true
         summary = [summary, s]; %#ok<AGROW>
         status.surveys = merge_survey_status(status.surveys, s);
         status.updated_utc = utc_now();
+        if ~isempty(s.stop_message)
+            % CTD calibration changed: ALL STOP - nothing more is processed
+            % (any survey) until the .CAL is fixed, the survey reset and the
+            % worker restarted
+            status.worker_state = 'stopped: CTD calibration changed';
+            status.warnings{end+1} = sprintf('%s: %s', s.survey, s.stop_message);
+            cruise_log(rt_dir, sprintf('%s: %s\nThe worker has stopped.', s.survey, s.stop_message));
+            if opts.watch
+                write_json(fullfile(rt_dir, 'control.json'), struct('command', 'stop'));
+            end
+            write_status(rt_dir, status);
+            stopped = true;
+            break
+        end
         write_status(rt_dir, status);
         % Caught up = nothing to do, and raw/ unchanged for long enough that
         % no newest-file redo can still be held back by regrow_min_s at any
@@ -328,10 +343,7 @@ while true
         % until raw/ changes. (A yml or calibration edit alone doesn't wake
         % it - only a change in raw/ does.)
         unchanged_s = (now - sig_seen(key).since) * 86400;
-        if strcmp(s.state, 'ok') && s.n_processed == 0 && unchanged_s > 2 * opts.regrow_min_s + s.pass_s ...
-                || startsWith(s.state, 'paused')
-            % paused (CTD calibration changed): not tried again until raw/
-            % changes or it's rerun by hand after the fix
+        if strcmp(s.state, 'ok') && s.n_processed == 0 && unchanged_s > 2 * opts.regrow_min_s + s.pass_s
             last_signature(key) = sig;
         elseif isKey(last_signature, key)
             remove(last_signature, key);
@@ -372,7 +384,9 @@ while true
 end
 
 if opts.watch
-    status.worker_state = 'stopped';
+    if ~startsWith(status.worker_state, 'stopped:')
+        status.worker_state = 'stopped';
+    end
     status.updated_utc = utc_now();
     write_status(rt_dir, status);
     cruise_log(rt_dir, 'Worker stopped');
@@ -384,7 +398,7 @@ function s = run_survey_pass(folder, opts, rt_dir)
 [~, survey] = fileparts(folder);
 s = struct('survey', survey, 'run', opts.run, 'state', 'ok', 'last_pass_utc', utc_now(), 'pass_s', NaN, ...
     'n_raw', 0, 'n_L0', 0, 'n_L1', 0, 'n_L2', 0, 'n_casts', 0, 'newest_raw_utc', '', 'lag_s', NaN, ...
-    'n_processed', 0, 'n_problems', 0, 'missing', {{}}, 'notes', {{}}, 'preflight', []);
+    'n_processed', 0, 'n_problems', 0, 'missing', {{}}, 'notes', {{}}, 'preflight', [], 'stop_message', '');
 meta_dir = fullfile(folder, 'meta');
 log_dir = fullfile(folder, 'processed', opts.run, 'meta', 'log');
 if ~isfolder(log_dir)
@@ -467,8 +481,10 @@ if ismember('L0', stages)
         current(end+1) = stage_problem('modraw_to_L0', ME);
         if strcmp(ME.identifier, 'MODprocess_all_modraw_to_L0:ctdCalibrationChanged')
             % not just a bad file: nothing after L0 is right until the .CAL
-            % file is fixed and the survey reprocessed from raw
-            s = finish(s, 'paused: CTD calibration changed', current, known, done, problems_file, rt_dir, t0);
+            % file is fixed and the survey reprocessed from raw - the worker
+            % stops (see the survey loop)
+            s.stop_message = ME.message;
+            s = finish(s, 'stopped: CTD calibration changed', current, known, done, problems_file, rt_dir, t0);
             return
         end
     end
