@@ -17,7 +17,7 @@ classdef MODvis_realtime_monitor < handle
     %   Top:    status - worker state, survey, vehicle, winch spool, file
     %           counts, casts, lag, problems, last update.
     %   Left:   4 colour sections of the grid, one column per cast (depth
-    %           vs time), with sigma0 contours. All 4 share the depth and
+    %           vs time; one cast spans its own start to end), with sigma0 contours (2+ casts). All 4 share the depth and
     %           time limits; each has its own variable (from
     %           grid.variables; epsilon and chi as log10), colormap and
     %           colour range.
@@ -429,7 +429,7 @@ classdef MODvis_realtime_monitor < handle
                 keep = arrayfun(@(x) isfield(app.Grid, x.name) && isnumeric(app.Grid.(x.name)) ...
                     && size(app.Grid.(x.name), 1) == numel(app.Grid.z) && size(app.Grid.(x.name), 2) > 0, v);
                 names = {v(keep).name};
-                names = names(~ismember(names, {'z', 'time', 'cast_start', 'cast_end', 'cast_complete', 'profile_number'}));
+                names = names(~ismember(names, {'z', 'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_complete', 'profile_number'}));
             end
             if isempty(names)
                 names = {'T'};
@@ -508,8 +508,8 @@ classdef MODvis_realtime_monitor < handle
                 return
             end
             cols = app.pickColumns();
-            if nnz(cols) < 2
-                title(ax, sprintf('%s: %d cast(s) in %s - need 2 for a section', name, nnz(cols), app.windowText()), ...
+            if nnz(cols) == 0
+                title(ax, sprintf('%s: no %s casts in %s', name, app.DirDrop.Value, app.windowText()), ...
                     'Interpreter', 'none', 'FontSize', app.FontSize + 1);
                 return
             end
@@ -518,9 +518,14 @@ classdef MODvis_realtime_monitor < handle
             idx = idx(order);
             [label, v] = app.displayed(name, g.(name)(:, idx));
             % one cell per cast and bin: edges halfway between cast times
-            % and at the bin edges, so no cast or bin is dropped
-            dt = diff(t);
-            t_edges = [t(1) - dt(1) / 2, t(1:end-1) + dt / 2, t(end) + dt(end) / 2];
+            % and at the bin edges, so no cast or bin is dropped; a lone
+            % cast spans its own start to end
+            if isscalar(t)
+                t_edges = [g.cast_start(idx), g.cast_end(idx)];
+            else
+                dt = diff(t);
+                t_edges = [t(1) - dt(1) / 2, t(1:end-1) + dt / 2, t(end) + dt(end) / 2];
+            end
             z_edges = [g.z - g.z_bin_m / 2; g.z(end) + g.z_bin_m / 2];
             h = pcolor(ax, t_edges, z_edges, [v, nan(size(v, 1), 1); nan(1, size(v, 2) + 1)]);
             h.EdgeColor = 'none';
@@ -528,7 +533,7 @@ classdef MODvis_realtime_monitor < handle
             hold(ax, 'on');
             if isfield(g, 'sigma0') && ~strcmp(name, 'sigma0')
                 s0 = g.sigma0(:, idx);
-                if any(isfinite(s0(:)))
+                if size(s0, 2) > 1 && any(isfinite(s0(:)))
                     [~, hc] = contour(ax, t, g.z, s0, 10, 'k', 'LineWidth', 0.5);
                     hc.HitTest = 'off';
                 end
@@ -552,6 +557,9 @@ classdef MODvis_realtime_monitor < handle
             tl = app.timeWindow();
             if isempty(tl)
                 tl = t_edges([1 end]);
+            end
+            if ~(diff(tl) > 0)
+                tl = tl(1) + [-1 1] / 1440; % a cast with no length: a minute each side
             end
             xlim(ax, tl);
             app.TimeLimits = tl;

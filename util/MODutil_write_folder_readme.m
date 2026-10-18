@@ -58,7 +58,7 @@ switch level
         steps = {'MODprocess_all_L1_to_L2.m pointed at profiles_L1/ (postprocessing).'};
         sections = {'spectral', 'ctd', 'profile_detection', 'chi', 'epsilon'};
     case 'grid'
-        what = {'grid.mat: one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. CTD = mean of every L1 CTD sample in the bin; turbulence = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans). grid.variables lists each field''s unit and description.'};
+        what = {'grid.mat: one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. CTD = mean of every L1 CTD sample in the bin; turbulence = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans; no epsilon_final without shear probes). Per cast: latitude/longitude = mean GPS fix during it. grid.variables lists each field''s unit and description.'};
         steps = {'MODprocess_grid.m, from the L1 and L2 files (by file) or profiles_L1/ and profiles_L2/ (by profile) - see grid.source. Only new or changed casts are rebinned.'};
         sections = {'grid', 'profile_detection'};
     otherwise

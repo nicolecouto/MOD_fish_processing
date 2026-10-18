@@ -18,15 +18,19 @@ function grid = MODprocess_grid(metadata, by)
 %       the L2 scans whose center is in the bin. A bin with no scan is NaN,
 %       and n_scans says how many scans each bin holds. Only casts in the
 %       profile_detection.profile_dir direction have scans.
-%   Only fields that exist are gridded: the manifest decides, so a CTD-only
-%   vehicle's grid has no turbulence fields and one with no fpo7 channels
-%   has no chi.
+%   Only fields that exist are gridded: the data decide, so a CTD-only
+%   vehicle's grid has no turbulence fields, one with no shear channels
+%   has no epsilon_final (L2's epsilon_final_source is empty) and one with
+%   no fpo7 channels has no chi.
+%   Position (latitude, longitude per cast) is the mean of the L1 GPS
+%   fixes during the cast, from the L1 files either way (by profile too).
 %
 %   Each call rebins only the casts that are new or changed - a cast whose
 %   start, end and source files (their times) are the same as when it was
-%   last binned keeps its column - and doesn't rewrite grid.mat when no
+%   last binned keeps its column (and the yml latitude the scans' depth
+%   uses: a change rebins every cast) - and doesn't rewrite grid.mat when no
 %   cast changed. A cast still in progress (cast_complete false) is
-%   rebinned every call until it ends. A different by, z_bin_m or latitude,
+%   rebinned every call until it ends. A different by or z_bin_m,
 %   or a grid made by another version of this function (grid_version),
 %   rebins every cast. Each source folder is listed once per call and each
 %   file loaded at most once (only the variables used).
@@ -40,13 +44,16 @@ function grid = MODprocess_grid(metadata, by)
 %              the L1 and L2 files a cast overlaps (time_index.mat), as
 %              realtime; or 'profile' - processed/<run>/profiles_L1/ and
 %              profiles_L2/ (MODprocess_all_extract_profiles.m, then
-%              MODprocess_all_L1_to_L2.m).
+%              MODprocess_all_L1_to_L2.m). Either way the GPS comes from
+%              the L1 files the cast overlaps (L1/ and L1_meta's
+%              time_index.mat).
 %
 % OUTPUTS
 %   grid - (call it something else, e.g. G: grid is Matlab's grid on/off)
 %          the struct saved in grid.mat (see setup/MODunits_L3.m for every
-%          field): z (bin centers, m), z_bin_m, latitude, then per cast (1 x ncast)
-%          time, cast_start, cast_end, cast_direction, cast_complete,
+%          field): z (bin centers, m), z_bin_m, then per cast
+%          (1 x ncast) time, latitude, longitude (mean GPS fix during the
+%          cast, NaN without one), cast_start, cast_end, cast_direction, cast_complete,
 %          profile_number, then nz x ncast fields, variables (the units
 %          and descriptions of the fields present), source ('file' or
 %          'profile'), provenance. An empty grid (no columns) if there are
@@ -83,7 +90,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 2; % 2: conductivity C added. A grid from another version rebins every cast.
+GRID_VERSION = 3; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -97,21 +104,24 @@ end
 saved = load(casts_file, 'casts');
 casts = saved.casts;
 
+% the L1 time index: which L1 files a cast overlaps (by file: its CTD and
+% scans; either way: its GPS, which profiles_L1 files don't carry)
 time_index = [];
-if strcmp(by, 'file')
-    ti_file = fullfile(metadata.paths.L1_meta, 'time_index.mat');
-    if ~isfile(ti_file)
-        error('MODprocess_grid:noTimeIndex', '%s does not exist yet - it is made with L1.', ti_file);
-    end
+ti_file = fullfile(metadata.paths.L1_meta, 'time_index.mat');
+if isfile(ti_file)
     time_index = load(ti_file);
+elseif strcmp(by, 'file')
+    error('MODprocess_grid:noTimeIndex', '%s does not exist yet - it is made with L1.', ti_file);
+end
+if strcmp(by, 'file')
     folders = {metadata.paths.L1, metadata.paths.L2};
 else
-    folders = {metadata.paths.profiles_L1, metadata.paths.profiles_L2};
+    folders = {metadata.paths.profiles_L1, metadata.paths.profiles_L2, metadata.paths.L1};
 end
 % each folder listed once per call, and each file loaded at most once
 dates = file_dates(folders);
 cache = containers.Map();
-if ~isempty(casts) && dates.Count == 0
+if ~isempty(casts) && ~any(startsWith(string(keys(dates)), string(folders(1:2))))
     % e.g. by 'profile' on a run that made L2 by file - don't replace its grid
     error('MODprocess_grid:noSources', ['No .mat files in %s or %s - nothing to grid by ''%s''. ' ...
         'by must match how this run made its L2 (''file'': L1/ and L2/, ''profile'': ' ...
@@ -128,7 +138,7 @@ if isfile(grid_file)
             grid_file, old.source, by);
     end
     if ~isfield(old, 'source') || ~strcmp(old.source, by) || ~isfield(old, 'z_bin_m') || old.z_bin_m ~= z_bin ...
-            || ~isfield(old, 'latitude') || ~isequal(old.latitude, lat) || ~isfield(old, 'source_stamp') ...
+            || ~isfield(old, 'source_stamp') ...
             || ~isfield(old, 'grid_version') || old.grid_version ~= GRID_VERSION
         old = []; % made another way - rebin everything
     end
@@ -140,9 +150,11 @@ all_sources = {};
 n_binned = 0;
 for iC = 1:numel(casts)
     c = casts(iC);
-    [L1_files, L2_files] = cast_sources(c, by, metadata, time_index, dates);
-    stamp = [c.dnum_end, double(c.complete), cellfun(@(f) dates(f), [L1_files, L2_files])];
-    all_sources = [all_sources, L1_files, L2_files]; %#ok<AGROW>
+    [L1_files, L2_files, gps_files] = cast_sources(c, by, metadata, time_index, dates);
+    sources = unique([L1_files, L2_files, gps_files], 'stable');
+    % lat is in the stamp (not saved on its own): the scans' depth uses it
+    stamp = [c.dnum_end, double(c.complete), lat, cellfun(@(f) dates(f), sources)];
+    all_sources = [all_sources, sources]; %#ok<AGROW>
     k = [];
     if ~isempty(old) && ~isempty(old.cast_start)
         k = find(old.cast_start == c.dnum_start, 1);
@@ -150,7 +162,7 @@ for iC = 1:numel(casts)
     if ~isempty(k) && isequal(old.source_stamp{k}, stamp)
         columns{iC} = column_from_grid(old, k);
     else
-        columns{iC} = bin_cast(c, L1_files, L2_files, z_bin, lat, cache);
+        columns{iC} = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache);
         n_binned = n_binned + 1;
     end
     columns{iC}.source_stamp = stamp;
@@ -161,7 +173,7 @@ if n_binned == 0 && ~isempty(old) && isequal(old.cast_start, [casts.dnum_start])
     fprintf(1, 'MODprocess_grid: %d casts, none changed - %s not rewritten\n', numel(casts), grid_file);
     return
 end
-grid = assemble(columns, casts, z_bin, lat, by);
+grid = assemble(columns, casts, z_bin, by);
 grid.grid_version = GRID_VERSION;
 grid.provenance = MODutil_provenance(unique(all_sources, 'stable'), metadata);
 grid.variables = variables_present(grid);
@@ -173,23 +185,26 @@ fprintf(1, 'MODprocess_grid: %d casts (%d binned), %d depth bins of %g m -> %s\n
     numel(casts), n_binned, numel(grid.z), z_bin, grid_file);
 end %end function
 
-%% The L1 (CTD) and L2 (scans) files that hold a cast
-function [L1_files, L2_files] = cast_sources(c, by, metadata, time_index, dates)
+%% The L1 (CTD) and L2 (scans) files that hold a cast, and the L1 files
+% that hold its GPS
+function [L1_files, L2_files, gps_files] = cast_sources(c, by, metadata, time_index, dates)
+L2_files = {};
+gps_files = {};
+if ~isempty(time_index) && isfield(time_index, 'filename') && ~isempty(time_index.filename)
+    overlap = time_index.dnum_start <= c.dnum_end & time_index.dnum_end >= c.dnum_start;
+    names = time_index.filename(overlap);
+    gps_files = existing(fullfile(metadata.paths.L1, names(:)'), dates);
+end
 if strcmp(by, 'profile')
     name = sprintf('Profile%04d.mat', c.profile_number);
     L1_files = existing({fullfile(metadata.paths.profiles_L1, name)}, dates);
     L2_files = existing({fullfile(metadata.paths.profiles_L2, name)}, dates);
     return
 end
-L1_files = {};
-L2_files = {};
-if isempty(time_index) || ~isfield(time_index, 'filename') || isempty(time_index.filename)
-    return
+L1_files = gps_files;
+if ~isempty(time_index) && isfield(time_index, 'filename') && ~isempty(time_index.filename)
+    L2_files = existing(fullfile(metadata.paths.L2, names(:)'), dates);
 end
-overlap = time_index.dnum_start <= c.dnum_end & time_index.dnum_end >= c.dnum_start;
-names = time_index.filename(overlap);
-L1_files = existing(fullfile(metadata.paths.L1, names(:)'), dates);
-L2_files = existing(fullfile(metadata.paths.L2, names(:)'), dates);
 end
 
 function files = existing(files, dates)
@@ -208,9 +223,28 @@ end
 end
 
 %% Bin one cast: one value per bin (1 = 0 to z_bin m) per field
-function col = bin_cast(c, L1_files, L2_files, z_bin, lat, cache)
+function col = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache)
 col = struct('fields', struct(), 'n_bins', 0);
 in_cast = @(t) t >= c.dnum_start & t <= c.dnum_end;
+
+% Position: the mean of the GPS fixes during the cast (NaN if none)
+fix = zeros(0, 3);
+for i = 1:numel(gps_files)
+    s = load_cached(cache, gps_files{i}, {'gps'});
+    if ~isfield(s, 'gps') || ~isstruct(s.gps) || ~all(isfield(s.gps, {'dnum', 'latitude', 'longitude'})) ...
+            || numel(s.gps.latitude) ~= numel(s.gps.dnum) || numel(s.gps.longitude) ~= numel(s.gps.dnum)
+        continue
+    end
+    keep = in_cast(s.gps.dnum(:)) & isfinite(s.gps.latitude(:)) & isfinite(s.gps.longitude(:));
+    fix = [fix; s.gps.dnum(keep), s.gps.latitude(keep), s.gps.longitude(keep)]; %#ok<AGROW>
+end
+[~, iu] = unique(fix(:, 1)); % the same fix from two L1 files is counted once
+col.latitude = mean(fix(iu, 2));
+col.longitude = mean(fix(iu, 3));
+if isempty(iu)
+    col.latitude = NaN;
+    col.longitude = NaN;
+end
 
 % CTD: every L1 sample in the cast
 ctd_names = {'P', 'T', 'C', 'SP', 'SR', 'CT', 'sigma0', 'dzdt'};
@@ -251,7 +285,7 @@ end
 scans = struct('dnum', [], 'pressure', []);
 turb = struct();
 for i = 1:numel(L2_files)
-    s = load_cached(cache, L2_files{i}, {'dnum', 'pressure', 'epsilon_final', 'chi_obs', 'chi_mle'});
+    s = load_cached(cache, L2_files{i}, {'dnum', 'pressure', 'epsilon_final', 'epsilon_final_source', 'chi_obs', 'chi_mle'});
     if ~isfield(s, 'dnum') || isempty(s.dnum) || ~isfield(s, 'pressure')
         continue
     end
@@ -322,7 +356,11 @@ end
 function v = scan_values(s)
 v = struct();
 n = numel(s.dnum);
-if isfield(s, 'epsilon_final') && numel(s.epsilon_final) == n
+% epsilon_final only where L2 computed it (L2 files made before
+% 2026-10-17 have an all-NaN epsilon_final and an empty
+% epsilon_final_source when there were no shear probes)
+if isfield(s, 'epsilon_final') && numel(s.epsilon_final) == n ...
+        && isfield(s, 'epsilon_final_source') && ~isempty(s.epsilon_final_source)
     v.epsilon_final = s.epsilon_final(:);
 end
 for kind = {'chi_obs', 'chi_mle'}
@@ -367,8 +405,9 @@ end
 
 %% A column taken back out of an earlier grid
 function col = column_from_grid(old, k)
-col = struct('fields', struct(), 'n_bins', 0, 'time', old.time(k));
-names = setdiff(fieldnames(old), [axis_fields(), {'z', 'z_bin_m', 'latitude', 'variables', 'source', ...
+col = struct('fields', struct(), 'n_bins', 0, 'time', old.time(k), 'latitude', old.latitude(k), ...
+    'longitude', old.longitude(k));
+names = setdiff(fieldnames(old), [axis_fields(), {'z', 'z_bin_m', 'variables', 'source', ...
     'provenance', 'source_stamp', 'grid_version'}]);
 for f = 1:numel(names)
     x = old.(names{f});
@@ -386,11 +425,11 @@ end
 end
 
 function names = axis_fields()
-names = {'time', 'cast_start', 'cast_end', 'cast_direction', 'cast_complete', 'profile_number'};
+names = {'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_direction', 'cast_complete', 'profile_number'};
 end
 
 %% Columns -> one grid
-function grid = assemble(columns, casts, z_bin, lat, by)
+function grid = assemble(columns, casts, z_bin, by)
 n = numel(columns);
 nz = 0;
 names = {};
@@ -400,8 +439,9 @@ for i = 1:n
 end
 grid.z = ((1:nz)' - 0.5) * z_bin;
 grid.z_bin_m = z_bin;
-grid.latitude = lat;
 grid.time = nan(1, n);
+grid.latitude = nan(1, n);
+grid.longitude = nan(1, n);
 grid.cast_start = [casts.dnum_start];
 grid.cast_end = [casts.dnum_end];
 grid.cast_direction = {casts.direction};
@@ -417,6 +457,8 @@ end
 grid.source_stamp = cell(1, n);
 for i = 1:n
     grid.time(i) = columns{i}.time;
+    grid.latitude(i) = columns{i}.latitude;
+    grid.longitude(i) = columns{i}.longitude;
     grid.source_stamp{i} = columns{i}.source_stamp;
     cn = fieldnames(columns{i}.fields);
     for f = 1:numel(cn)

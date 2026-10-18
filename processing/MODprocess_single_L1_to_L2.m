@@ -199,7 +199,11 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   mod_scan_calc_chi_obs.m's OUTPUTS. Same values as
 %                   spectra.k(:, spectra.(channel)_fc_index), just
 %                   pre-indexed for convenience.
-%     epsilon_final - the per-scan epsilon value actually fed to chi_mle
+%     epsilon_final - only when epsilon is computed (epsilon_channels
+%                   non-empty: a shear channel with a calibration, and CTD
+%                   T/S); a vehicle with no shear probes has no
+%                   epsilon_final or epsilon_final_source. The per-scan
+%                   epsilon value actually fed to chi_mle
 %                   below [W/kg], nbscan x 1 - mean, omitting NaN, across
 %                   this deployment's epsilon_channels of whichever
 %                   variant epsilon_final_source (below) selects. A
@@ -214,8 +218,7 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   unrecognized/invalid metadata value falls back to
 %                   'epsilon_co', same as it always has - this field makes
 %                   that fallback visible in the output instead of
-%                   silent), or '' if epsilon_channels was empty for this
-%                   whole call (epsilon never computed at all).
+%                   silent). Written with epsilon_final, only.
 %     chi_mle.(channel)    - Batchelor-spectrum MLE-fit thermal variance
 %                   dissipation rate [degC^2/s], nbscan x 1, one field per
 %                   fpo7 channel in chi_obs_channels (see chi_obs above) -
@@ -522,8 +525,10 @@ L2data.salinity = SP_all;
 L2data.SR = SR_all;
 L2data.nu = nu_all;
 L2data.ktemp = ktemp_all;
-L2data.epsilon_final = epsilon_all; % per-scan value fed to chi_mle below - see DESCRIPTION
-L2data.epsilon_final_source = epsilon_final_source_resolved; % which variant epsilon_final actually is - 'epsilon_mle', 'epsilon_co', or '' if epsilon was never computed at all
+if ~isempty(epsilon_channels) % no shear probes (or no CTD T/S): no epsilon_final at all
+    L2data.epsilon_final = epsilon_all; % per-scan value fed to chi_mle below - see DESCRIPTION
+    L2data.epsilon_final_source = epsilon_final_source_resolved; % which variant epsilon_final actually is - 'epsilon_mle' or 'epsilon_co'
+end
 for iC = 1:numel(chi_obs_channels)
     ch = chi_obs_channels{iC};
     L2data.chi_obs.(ch) = chi_obs_all.(ch);
@@ -672,8 +677,6 @@ L2data.salinity = [];
 L2data.SR = [];
 L2data.nu = [];
 L2data.ktemp = [];
-L2data.epsilon_final = [];
-L2data.epsilon_final_source = '';
 L2data.spectra = struct('f', []);
 L2data.chi_obs = struct();
 L2data.chi_obs_kc = struct();

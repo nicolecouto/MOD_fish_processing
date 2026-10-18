@@ -172,19 +172,24 @@ run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_
 - **Turbulence** (`epsilon_final`, `chi_obs_<ch>`, `chi_mle_<ch>`): the mean of the L2 scans whose
   center is in the bin. A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m
   bins and a scan every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts
-  have scans.
+  have scans. `epsilon_final` is gridded only when L2 computed it, so a vehicle without shear probes, like
+  the FCTD, has none (L2 doesn't write it then; an older L2 file's all-NaN one, with an empty
+  `epsilon_final_source`, is skipped).
+- **Position** (`latitude`, `longitude`, one per cast): the mean of the L1 GPS fixes during the
+  cast; NaN for a cast with none. Taken from the L1 files whether the grid is by file or by profile.
 
 `grid.mat` contains:
-- axes `z` (bin centers, m, positive down), `z_bin_m` and `latitude`; per cast `time`, `cast_start`,
-  `cast_end`, `cast_direction`, `cast_complete`, `profile_number`;
-- the CTD and turbulence fields above, only those that exist (the manifest decides);
+- axes `z` (bin centers, m, positive down) and `z_bin_m`; per cast `time`, `latitude`, `longitude`,
+  `cast_start`, `cast_end`, `cast_direction`, `cast_complete`, `profile_number`;
+- the CTD and turbulence fields above, only those that exist (the data decide);
 - `variables` (name, unit and description from `setup/MODunits_L3.m`), `source` (`'file'` or
   `'profile'`), `source_stamp` and `provenance`.
 
 A cast keeps its column while its start, end and source files (their times) don't change, so
 each call only rebins new or changed casts, and `grid.mat` isn't rewritten when none changed; a
 cast still in progress (`cast_complete` false) is rebinned every call until it ends. A different
-`by`, `z_bin_m` or `latitude` rebins every cast. `by` must match how the run made its L2: a `by`
+`by`, `z_bin_m` or yml `latitude` (the scans' depth uses it; it's part of each cast's stamp, not
+saved on its own), or a grid from another `grid_version`, rebins every cast. `by` must match how the run made its L2: a `by`
 with no files to read is refused, so it can't replace a run's grid with an empty one. Call the
 output something other than `grid` (e.g. `G`): `grid` is Matlab's `grid on`. Fluorometer channels and `alt_hab` come later (steps 8 and
 after).
@@ -667,3 +672,16 @@ Nicole: pressure and the twist count need the same x-limits. They're now stacked
 linked, and stretch to fill the width; the right column (kept square) has the last casts' T
 profiles, new C profiles and the T-S. The grid gets `C` (S/m) and a `grid_version` (2); a grid
 from before rebins every cast once.
+
+**2026-10-17 (night) - Grid: GPS position per cast, no empty epsilon_final; one-cast sections**
+(branch `main-fork`). Nicole, on the FCTD ocean test's grid: "Why is epsilon_final there ... We
+don't have shear probes on FCTD", "we need lat and lon in the grid", and choosing down or up in
+the monitor made the sections disappear. L2 wrote an all-NaN `epsilon_final` when there were no
+shear channels; it no longer writes it ("L2 should not write epsilon_final if there are not
+shear probes"), and the grid skips the all-NaN one in older L2 files. New per-cast
+`latitude`/`longitude` (mean GPS fix during the cast); the single latitude for depth is no
+longer saved ("Only gps lat/lon"); it's in each cast's source stamp instead, so changing it still
+rebins (at 2000 dbar, 0 vs 35 degrees moves a scan 3.4 m). `grid_version` 3, so existing grids rebin once. The sections
+needed 2 casts and the ocean test has one down and one up; a single cast is now drawn across its
+own start to end. Tested on sandbox copies of 8 ocean-test raw files: 2 casts at 35.4888 N,
+121.89 W, no `epsilon_final`, and the monitor draws all 4 sections for both, down and up.

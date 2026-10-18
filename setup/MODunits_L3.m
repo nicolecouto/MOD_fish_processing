@@ -25,10 +25,11 @@ function u = MODunits_L3()
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 % --- axes ---
-u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
+u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, metadata.PROCESS.latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
 u.z_bin_m = struct('unit', 'm', 'description', 'Depth bin size (grid.z_bin_m in the yml).');
-u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C). A grid from another version is rebinned from scratch.');
-u.latitude = struct('unit', 'degrees N', 'description', 'Latitude used for the scans'' depth (metadata.PROCESS.latitude). A change rebins every cast.');
+u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final). A grid from another version is rebinned from scratch.');
+u.latitude = struct('unit', 'degrees N', 'description', 'Mean of the L1 GPS fixes (gps.latitude) during the cast, 1 x ncast; NaN if the cast has none.');
+u.longitude = struct('unit', 'degrees E', 'description', 'Mean of the L1 GPS fixes (gps.longitude) during the cast, 1 x ncast; NaN if the cast has none. A plain mean, so wrong for a cast that crosses 180 deg.');
 u.time = struct('unit', 'MATLAB datenum', 'description', 'Mean time of the cast''s CTD samples, 1 x ncast (the middle of the cast if it has none).');
 u.cast_start = struct('unit', 'MATLAB datenum', 'description', 'Cast start time from the cast table (casts.mat dnum_start), 1 x ncast - what a column is keyed by.');
 u.cast_end = struct('unit', 'MATLAB datenum', 'description', 'Cast end time from the cast table (dnum_end), 1 x ncast.');

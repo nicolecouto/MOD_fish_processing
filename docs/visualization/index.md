@@ -162,7 +162,8 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 - **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
   missing parameters, last update (red when there are problems or missing parameters).
 - **Left:** 4 colour sections of the survey's grid (`processed/realtime/grid/grid.mat`), one
-  column per cast, depth vs time, with sigma0 contours. All 4 share the depth and time limits;
+  column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
+  there are 2 or more. All 4 share the depth and time limits;
   each has its own variable (any field in `grid.variables`; epsilon and chi as log10),
   colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
