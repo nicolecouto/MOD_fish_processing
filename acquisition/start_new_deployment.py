@@ -399,12 +399,18 @@ class StartNewDeployment:
             tk.Label(f, text=problem, fg='#b00020').pack(anchor='w', pady=(6, 0))
         elif rows:
             tk.Label(f, text='%s differs from the fish:' % path, fg='#b00020').pack(anchor='w', pady=(6, 2))
-            txt = tk.Text(f, width=72, height=min(len(rows) + 1, 25), font=('TkFixedFont', 11))
-            txt.insert('end', '%-20s %-16s %s\n' % ('', 'fish', 'file'))
-            for row in rows:
-                txt.insert('end', '%-20s %-16s %s\n' % row)
-            txt.config(state='disabled')
-            txt.pack(fill='both', expand=True)
+            # one label per cell, so the columns line up whatever the font;
+            # values right-aligned so the exponents line up
+            table = tk.Frame(f, bg='white', padx=8, pady=6)
+            table.pack(anchor='w', fill='x')
+            bold = ('TkDefaultFont', 12, 'bold')
+            for c, head in enumerate(('', 'fish', 'file (%s.CAL)' % fish['sn'])):
+                tk.Label(table, text=head, font=bold, bg='white').grid(row=0, column=c, sticky='w' if c == 0 else 'e',
+                                                                      padx=(0, 24))
+            for r, row in enumerate(rows, start=1):
+                for c, val in enumerate(row):
+                    tk.Label(table, text=val, bg='white', font=('Menlo', 12) if c else ('TkDefaultFont', 12)
+                             ).grid(row=r, column=c, sticky='w' if c == 0 else 'e', padx=(0, 24))
         else:
             tk.Label(f, text='%s matches the fish.' % path, fg='#1b6e20').pack(anchor='w', pady=(6, 0))
         extra = cc.offsets(fish)
