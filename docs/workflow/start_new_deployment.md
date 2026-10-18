@@ -72,9 +72,11 @@ every `.modraw` header, which is wrong whenever it wasn't updated after a factor
 Use it the first time a fish is used on a cruise, and after an SBE comes back from Sea-Bird.
 
 - **Quit `fctd_epsi` first** - it holds the serial ports. The fish must be powered and connected.
-- It sends `sbe.dcal` on the command port (as MODSOM_liveplot does) and reads the reply, a
-  `$DCAL` block, on the CTD data port, both at the CTD baud rate (Advanced: Serial ports). It
-  waits up to 5 s.
+- It types `sbe.dcal` on the command port the way a terminal does (one character at a time, then
+  Enter; sent all at once, the SOM garbles it) and reads the reply, a `$DCAL` block, on either
+  port, at the CTD baud rate (Advanced: Serial ports). It waits up to 15 s. If nothing comes, the
+  message shows what did come back on each port. `python3 acquisition/ctd_calibration.py
+  --listen` sends the same command and prints everything that comes back for 20 s.
 - It shows the fish's serial number and calibration dates, and either "matches the fish" or a
   table of what differs (serial number, the three calibration dates, and any coefficient that
   differs by more than 1 part in a million - `$DCAL` and `.CAL` round the last printed digit

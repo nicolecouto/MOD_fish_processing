@@ -161,7 +161,17 @@ def _in_git_repo(d):
         return False
 
 
-def read_dcal_from_fish(command_port, ctd_port, speed, timeout_s=5.0):
+def send_command(port, text):
+    """Type a command into the SOM the way a terminal does: one character at
+    a time, then a carriage return. Sent all at once (with CR LF), the SOM's
+    command line garbles it - it echoes fragments and doesn't answer."""
+    for c in text:
+        port.write(c.encode('ascii'))  # no flush(): it waits for the port to drain, forever if it's stuck
+        time.sleep(0.01)
+    port.write(b'\r')
+
+
+def read_dcal_from_fish(command_port, ctd_port, speed, timeout_s=15.0):
     """Ask the fish for its SBE calibration (sbe.dcal) and return the $DCAL
     block's text. Raises RuntimeError saying what went wrong."""
     try:
@@ -188,7 +198,7 @@ def read_dcal_from_fish(command_port, ctd_port, speed, timeout_s=5.0):
         for p in ports:
             p.reset_input_buffer()
         try:
-            cmd.write(b'sbe.dcal\r\n')  # no flush(): it waits for the port to drain, forever if it's stuck
+            send_command(cmd, 'sbe.dcal')
         except serial.SerialTimeoutException:
             raise RuntimeError("Couldn't send sbe.dcal on %s (the port didn't take it)" % command_port)
         got = {p.port: b'' for p in ports}
@@ -216,7 +226,7 @@ def describe_bytes(got, n=300):
     return '\n'.join(lines)
 
 
-def listen(command_port, ctd_port, speed, seconds=10.0):
+def listen(command_port, ctd_port, speed, seconds=20.0):
     """For finding out why Check CTD calibration fails: send sbe.dcal (the
     only command sent) and print everything that comes back on both ports
     for this many seconds."""
@@ -227,7 +237,7 @@ def listen(command_port, ctd_port, speed, seconds=10.0):
     try:
         for p in ports:
             p.reset_input_buffer()
-        ports[-1].write(b'sbe.dcal\r\n')
+        send_command(ports[-1], 'sbe.dcal')
         print('sent sbe.dcal on %s; listening %g s ...' % (ports[-1].port, seconds))
         got = {p.port: b'' for p in ports}
         t0 = time.time()
