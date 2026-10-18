@@ -26,9 +26,11 @@ classdef MODvis_realtime_monitor < handle
     %           half a section's width: left, pressure vs time over the
     %           cruise twist count (<processed_root>/twist/, every survey on
     %           the spool, restarting at each winch spool change), on the
-    %           same, linked time limits, over a map of the survey's GPS
-    %           track (meta/gps_time_series.mat) in the sections' time
-    %           window, the latest fix bigger and red, equal distances in x
+    %           same, linked time limits, over a map of the casts (v down,
+    %           ^ up, at the grid's position of each) and the GPS track
+    %           (meta/gps_time_series.mat) between the survey's first cast
+    %           start and last cast end, in the sections' time window and
+    %           casts choice, the latest fix bigger and red, equal distances in x
     %           and y (latitude or longitude added around a straight track
     %           so the map fills its box); right, the last 5
     %           casts' T profiles and C profiles offset like a waterfall,
@@ -843,9 +845,11 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function drawMap(app)
-            % the survey's GPS track (meta/gps_time_series.mat) in the
-            % sections' time window, the last fix bigger and red; equal
-            % distances in x and y (as n_axes_map.m), grid on
+            % the casts (the grid's position of each: v down, ^ up) and the
+            % GPS track (meta/gps_time_series.mat) between the survey's
+            % first cast start and last cast end, in the sections' time
+            % window; the last fix bigger and red; equal distances in x and
+            % y (as n_axes_map.m), grid on
             ax = app.MapAx;
             cla(ax);
             f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'gps_time_series.mat');
@@ -854,18 +858,31 @@ classdef MODvis_realtime_monitor < handle
                 title(ax, 'position: no GPS yet', 'FontSize', app.FontSize + 1);
                 return
             end
+            g = app.Grid;
+            if ~isfield(g, 'cast_start') || isempty(g.cast_start) || ~isfield(g, 'latitude')
+                title(ax, 'position: no casts in the grid yet', 'FontSize', app.FontSize + 1);
+                return
+            end
             tl = app.smallPlotWindow(gp.dnum);
-            keep = gp.dnum >= tl(1) & gp.dnum <= tl(2);
-            if ~any(keep)
-                title(ax, 'position: no GPS fixes in the sections'' time window', 'FontSize', app.FontSize + 1);
+            keep = gp.dnum >= tl(1) & gp.dnum <= tl(2) ...
+                & gp.dnum >= min(g.cast_start) & gp.dnum <= max(g.cast_end);
+            cols = app.pickColumns() & isfinite(g.latitude) & isfinite(g.longitude);
+            if ~any(keep) && ~any(cols)
+                title(ax, 'position: no casts or GPS fixes in the sections'' time window', 'FontSize', app.FontSize + 1);
                 return
             end
             lat = gp.latitude(keep);
             lon = gp.longitude(keep);
             t = gp.dnum(keep);
+            down = cols & strcmp(g.cast_direction, 'down');
+            up = cols & strcmp(g.cast_direction, 'up');
             plot(ax, lon, lat, '.', 'Color', [0 0.4470 0.7410], 'MarkerSize', 4);
             hold(ax, 'on');
-            plot(ax, lon(end), lat(end), 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0.85 0.1 0.1], 'MarkerEdgeColor', 'k');
+            plot(ax, g.longitude(down), g.latitude(down), 'v', 'MarkerSize', 7, 'MarkerFaceColor', 'k', 'MarkerEdgeColor', 'k');
+            plot(ax, g.longitude(up), g.latitude(up), '^', 'MarkerSize', 7, 'MarkerFaceColor', 'w', 'MarkerEdgeColor', 'k');
+            if ~isempty(t)
+                plot(ax, lon(end), lat(end), 'o', 'MarkerSize', 8, 'MarkerFaceColor', [0.85 0.1 0.1], 'MarkerEdgeColor', 'k');
+            end
             hold(ax, 'off');
             grid(ax, 'on');
             ax.XAxis.Exponent = 0;
@@ -874,11 +891,16 @@ classdef MODvis_realtime_monitor < handle
             ylabel(ax, 'latitude [deg N]');
             ns = 'NS';
             ew = 'EW';
-            title(ax, {'position (sections'' time window)', sprintf('red: %s UTC, %.4f %s, %.4f %s', ...
-                datestr(t(end), 'mm-dd HH:MM'), abs(lat(end)), ns(1 + (lat(end) < 0)), ...
-                abs(lon(end)), ew(1 + (lon(end) < 0)))}, ...
-                'FontSize', app.FontSize + 1, 'FontWeight', 'normal'); %#ok<DATST>
-            % limits: the track plus a margin, at least ~100 m each side
+            last = 'no GPS fixes between the casts';
+            if ~isempty(t)
+                last = sprintf('red: %s UTC, %.4f %s, %.4f %s', datestr(t(end), 'mm-dd HH:MM'), ...
+                    abs(lat(end)), ns(1 + (lat(end) < 0)), abs(lon(end)), ew(1 + (lon(end) < 0))); %#ok<DATST>
+            end
+            title(ax, {sprintf('position (sections'' window, casts: %s): v down, ^ up', app.DirDrop.Value), last}, ...
+                'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+            % limits: the track and casts plus a margin, at least ~100 m each side
+            lat = [lat(:); g.latitude(cols)'];
+            lon = [lon(:); g.longitude(cols)'];
             pad = @(v) max(0.05 * (max(v) - min(v)), 0.001);
             ylim(ax, [min(lat) - pad(lat), max(lat) + pad(lat)]);
             xlim(ax, [min(lon) - pad(lon), max(lon) + pad(lon)]);

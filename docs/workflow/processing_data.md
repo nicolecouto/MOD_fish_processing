@@ -431,8 +431,9 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
 - **Middle, 3 x 2:**
   - left: pressure vs time over the cruise twist count (all vehicles - one winch spool), on the
     same, linked time limits, with spool changes (dashed) and survey starts (dotted) marked; the
-    twist title gives the count now, the spool and when it went on; row 3: a map of the GPS
-    track over the sections' time window, the latest fix bigger and red (no bathymetry yet);
+    twist title gives the count now, the spool and when it went on; row 3: a map of the casts
+    (`v` down, `^` up, at the grid's positions) and the GPS track between the first and last cast,
+    over the sections' time window, the latest fix bigger and red (no bathymetry yet);
   - right, square: the last ~5 casts' T profiles and C profiles, offset like a waterfall, and
     their T-S, coloured by age, to catch conductivity problems.
 - **Bottom, streaming log**, with errors highlighted (click one for the full message).

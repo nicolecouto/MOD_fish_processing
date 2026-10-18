@@ -4,6 +4,14 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-18 - Monitor map: casts as v and ^, track only between the first and last cast (branch `main-fork`)
+
+Nicole: "The map should show the locations of the downcasts with v upcasts with ^ and all the other gps data in between, but no data outside the first and last v and ^ of the deployment."
+- `drawMap`: each cast at the grid's position (`grid.latitude/longitude`, so a ship Epsi downcast is its first fix), `v` black for down, `^` white for up; the casts are the sections' (time window and the "Casts" dropdown, `pickColumns`); casts without a position are left out. The GPS track is cut to the survey's first `cast_start` to last `cast_end` (all casts in the grid, not only the window's). The limits cover the casts too. Title: the window and casts choice, `v down, ^ up`, and the red last fix (or "no GPS fixes between the casts").
+- Docs: visualization/index.md, processing_data.md (Monitor app), the monitor's header.
+
+Tested in a scratchpad sandbox (left for Nicole to delete - it was the session's working directory), synthetic grid of 6 casts (down/up alternating, one with no position) and a GPS track running before the first and after the last cast: 3 v + 2 ^, the track from the first cast's start to the last cast's end; "down" only: 3 v; a 2 h window ending 01:06: the one downcast in it, the track from that cast's start (00:30, not the window's 23:06). `checkcode`: the existing `datetick` note only.
+
 ### 2026-10-18 - Monitor map fills its box (branch `main-fork`)
 
 Nicole: the map didn't cover the log, "but it is really narrow because we just did a straight line. If setting the axes makes it really narrow in one direction or the other add latitude or longitude around it so that there is more blank axes space."

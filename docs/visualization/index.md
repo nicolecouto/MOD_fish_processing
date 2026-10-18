@@ -172,8 +172,11 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 - **Middle,** 3 rows x 2 columns beside sections 1-3, then the log beside section 4. Left:
   pressure vs time over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
   survey on the winch spool, restarting at each spool change), on the same time limits and
-  linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the survey's
-  GPS track (`meta/gps_time_series.mat`) over the sections' time window, the latest fix a bigger
+  linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the casts (`v`
+  downcasts, `^` upcasts, at the grid's position of each - see
+  [the grid](../workflow/processing_data.md#the-grid)) and the GPS track (`meta/gps_time_series.mat`)
+  between the survey's first cast start and last cast end (nothing from before or after the
+  deployment), over the sections' time window and "Casts" choice, the latest fix a bigger
   red dot (its time and position in the title), equal distances in x and y, grid on; no
   bathymetry yet. Limits: the track plus a margin, then latitude or longitude added around it
   until the map fills its box (a straight track would otherwise be a thin sliver). The twist
