@@ -31,8 +31,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   call - cheap, since it only concatenates fields already computed
 %   per-file, and keeps the deployment-level twist count always current.
 %
-%   If this deployment has any CTD data (metadata.CTD.cal set, or an
-%   external-CTD vehicle with data), also builds/updates
+%   If any L1 file has CTD pressure (onboard SBE, or an external-CTD
+%   vehicle's file - the data decide, not the yml), also builds/updates
 %   meta/pressure_time_series.mat - the deployment-length pressure record,
 %   with a smoothed dPdt and an is_down (descending) classification per
 %   sample (MODprocess_L1_make_pressure_timeseries.m +
@@ -44,10 +44,9 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   profile's time range without loading every file's full contents - see
 %   PLAN.md Section 6.3.
 %
-%   If this deployment has a real onboard CTD specifically (metadata.CTD.cal
-%   non-empty - not just any has_ctd source, since an external-CTD vehicle
-%   like DeepSolo never has real temperature), also fits and persists each
-%   FP07 channel's in-situ volts->degC calibration
+%   If that CTD is the onboard one specifically (no external-CTD file -
+%   an external-CTD vehicle like DeepSolo never has real temperature),
+%   also fits and persists each FP07 channel's in-situ volts->degC calibration
 %   (MODprocess_L1_apply_fpo7_calibration.m -> metadata.AFE.(ch).volts_to_C),
 %   saved to meta/fpo7_calibration.mat with each probe's SN (and recorded in
 %   meta/metadata.mat via MODsetup_save_metadata.m). This is the calibration
@@ -99,7 +98,7 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   (only when this deployment has CTD data)
 %   MODprocess_L1_make_time_index.m (unconditional - see below)
 %   MODprocess_L1_apply_fpo7_calibration.m, MODsetup_save_metadata.m
-%   (only when this deployment has a real onboard CTD - metadata.CTD.cal)
+%   (only when the CTD data are from the onboard CTD)
 %   MODsetup_read_yaml.m (only to reread the yml after a prompted value is
 %   saved to it - MODsetup_validate_metadata.m's yamlUpdated)
 %   MODutil_needs_redo.m, MODutil_save_atomic.m, MODprocess_L1_update_file_cache.m,
@@ -247,14 +246,10 @@ save(fullfile(metadata.paths.L1_meta, 'time_index.mat'), '-struct', 'TimeIndex')
 MODprocess_L1_accumulate_twist_timeseries(L1_cache, metadata.paths.L1_meta);
 
 % Deployment-level pressure record + profiling-direction classification:
-% only meaningful if this deployment actually has CTD data (either an SBE
-% calibration was resolved for hardware in the raw stream, or this is an
-% external-CTD vehicle that had data to read - see the external_ctd_full
-% check above). MODprocess_L1_make_pressure_timeseries.m itself no-ops
-% gracefully (empty output) if no L1 file has ctd.P, so this check is a
-% cheap way to skip the work entirely for deployments with no CTD hardware
-% at all, rather than churning through every L1 file to discover that.
-has_ctd = (~isempty(metadata.CTD.cal)) || ~isempty(external_ctd_full);
+% only when some L1 file has CTD pressure (the data decide - onboard SBE
+% counts calibrated at L1, or an external-CTD vehicle's file sliced in).
+has_ctd = any(arrayfun(@(c) ~isempty(c.ctd_P), L1_cache));
+has_onboard_ctd = has_ctd && isempty(external_ctd_full);
 if has_ctd
     PressureTimeseries = MODprocess_L1_make_pressure_timeseries(L1_cache);
     if ~isempty(PressureTimeseries.dnum)
@@ -273,12 +268,12 @@ if has_ctd
         save(fullfile(metadata.paths.L1_meta, 'pressure_time_series.mat'), '-struct', 'PressureTimeseries');
 
         % FP07 in-situ volts->degC calibration: needs real CTD temperature,
-        % which only a real onboard CTD provides (metadata.CTD.cal) - an
-        % external-CTD vehicle like DeepSolo (P-only fallrise data) never
-        % qualifies here even though it passed the has_ctd check above.
+        % which only the onboard CTD provides - an external-CTD vehicle
+        % like DeepSolo (P-only fallrise data) never qualifies here even
+        % though it passed the has_ctd check above.
         % Gated on PressureTimeseries.dnum being non-empty too since the
         % fit needs is_down, just computed above.
-        if ~isempty(metadata.CTD.cal) && fpo7_refit_due(metadata.paths.L1_meta, numel(L1_cache), opts.fpo7_refit_new_files)
+        if has_onboard_ctd && fpo7_refit_due(metadata.paths.L1_meta, numel(L1_cache), opts.fpo7_refit_new_files)
             % Refit from scratch: the fit loaded by MODsetup_add_derived_metadata
             % is set aside, so a channel that can't be refit isn't saved again
             % as if it were new (save_fpo7_calibration keeps it, with its old time)

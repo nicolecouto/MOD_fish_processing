@@ -16,7 +16,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %              counts are converted directly. data.epsi_conversion is
 %              updated to match.
 %     ctd    - raw hex -> P/T/C/SP (SBE49 only - SBE41 arrives from L0
-%              already in physical units), plus derived dPdt, z, dzdt
+%              already in physical units) with L0_data.ctd_cal (the
+%              file's $DCAL, else the .CAL file; ctd.cal_source says
+%              which), plus derived dPdt, z, dzdt
 %              (always) and SP, SR, CT, sigma0 (only when T/C are actually
 %              present - see process_ctd_fields below). For vehicles with
 %              no $SB49/$SB41 blocks at all (DeepSolo, Wirewalker),
@@ -44,7 +46,6 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %               Uses: metadata.PROCESS.channels, metadata.PROCESS.latitude,
 %                     metadata.AFE.(channel).full_range/.ADCconf/.type
 %                     (any missing -> standard EFE, see mod_efe_conversion.m),
-%                     metadata.CTD.cal,
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
 %                     .alt_probe_dist_from_crashguard_in
 %   external_ctd - (optional) struct with dnum/P always, and T/C/(S) only
@@ -114,7 +115,11 @@ if ~isempty(data.ctd)
     if isfield(data, 'gps')
         gps = data.gps;
     end
-    data.ctd = process_ctd_fields(data.ctd, gps, metadata);
+    cal = [];
+    if isfield(data, 'ctd_cal')
+        cal = data.ctd_cal;
+    end
+    data.ctd = process_ctd_fields(data.ctd, gps, metadata, cal);
 elseif ~isempty(external_ctd)
     % DeepSolo/Wirewalker: no $SB49/$SB41 blocks in L0_data, so data.ctd
     % is empty here. external_ctd arrives already in physical units
@@ -128,7 +133,7 @@ elseif ~isempty(external_ctd)
     if isfield(data, 'gps')
         gps = data.gps;
     end
-    data.ctd = process_ctd_fields(external_ctd, gps, metadata);
+    data.ctd = process_ctd_fields(external_ctd, gps, metadata, []);
 end
 
 %% Altimeter / ISA500: raw distance -> height above bottom
@@ -194,7 +199,7 @@ end
 % allow - see the T/C guard below). "process" rather than "calibrate"
 % because for SBE41/external-CTD sources, which arrive already in physical
 % units, this function does no calibration at all - only derivation.
-function ctd = process_ctd_fields(ctd, gps, metadata)
+function ctd = process_ctd_fields(ctd, gps, metadata, cal)
 
 % External CTD chunks (DeepSolo/Wirewalker - see MODprocess_read_external_ctd.m)
 % arrive with only dnum, not time_s. time_s is just dnum in seconds on
@@ -207,24 +212,29 @@ if ~isfield(ctd, 'time_s')
 end
 
 if isfield(ctd, 'T_raw')
-    % SBE49 "eng" format - counts need the SBE calibration polynomials.
-    % SBE41 "PTS" format arrives from L0 with P/T/S/C already ASCII-parsed,
-    % so this block is skipped for it.
-    cal = metadata.CTD.cal;
+    % SBE49 "eng" format - counts need the SBE calibration polynomials,
+    % from the L0 file's ctd_cal (its $DCAL, else the .CAL file - see
+    % MODprocess_all_modraw_to_L0.m). SBE41 "PTS" format arrives from L0
+    % with P/T/S/C already ASCII-parsed, so this block is skipped for it.
+    if isempty(cal)
+        error('MODprocess_single_L0_to_L1:noCtdCalibration', ['This L0 file has SBE49 counts but no ' ...
+            'ctd_cal - redo it with MODprocess_all_modraw_to_L0.m.']);
+    end
 
     mv = (ctd.T_raw - 524288)/1.6e7;
     r = (mv*2.295e10 + 9.216e8)./(6.144e4 - mv*5.3e5);
     ctd.T = cal.ta0 + cal.ta1*log(r) + cal.ta2*log(r).^2 + cal.ta3*log(r).^3;
-    ctd.T = 1./ctd.T - 273.15;
+    ctd.T = 1./ctd.T - 273.15 + cal.toffset;
 
     y = ctd.PT_raw/13107;
     t = cal.ptempa0 + cal.ptempa1*y + cal.ptempa2*y.^2;
     x = ctd.P_raw - cal.ptca0 - cal.ptca1*t - cal.ptca2*t.^2;
     n = x.*cal.ptcb0./(cal.ptcb0 + cal.ptcb1*t + cal.ptcb2*t.^2);
-    ctd.P = (cal.pa0 + cal.pa1*n + cal.pa2*n.^2 - 14.7)*0.689476;
+    ctd.P = (cal.pa0 + cal.pa1*n + cal.pa2*n.^2 - 14.7)*0.689476 + cal.poffset;
 
     f = ctd.C_raw/256/1000;
-    ctd.C = (cal.g + cal.h*f.^2 + cal.i*f.^3 + cal.j*f.^4)./(1 + cal.tcor.*ctd.T + cal.pcor.*ctd.P);
+    ctd.C = cal.cslope*(cal.g + cal.h*f.^2 + cal.i*f.^3 + cal.j*f.^4)./(1 + cal.tcor.*ctd.T + cal.pcor.*ctd.P);
+    ctd.cal_source = cal.source;
 end
 
 if isfield(ctd, 'T') && isfield(ctd, 'C')

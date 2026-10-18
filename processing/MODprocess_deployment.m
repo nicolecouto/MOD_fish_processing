@@ -31,7 +31,11 @@ function summary = MODprocess_deployment(target, varargin)
 %        waits ("waiting for parameters") until they're added. Nothing
 %        prompts unless 'ask' is true.
 %     2. modraw -> L0 -> L1 (MODprocess_all_modraw_to_L0.m,
-%        MODprocess_all_L0_to_L1.m) - not for a run with L1_from
+%        MODprocess_all_L0_to_L1.m) - not for a run with L1_from. If the
+%        CTD calibration changes within the survey (another SN or
+%        calibration date, see MODprocess_all_modraw_to_L0.m), the survey
+%        stops after L0 ("paused: CTD calibration changed") until the .CAL
+%        file is fixed and the survey reprocessed from raw
 %     3. the cast table, processed/<run>/meta/casts.mat
 %        (MODprocess_L1_update_cast_table.m)
 %     4. 'by' 'file' (realtime): L1 -> L2, whole L1 files tiled into scans.
@@ -324,7 +328,10 @@ while true
         % until raw/ changes. (A yml or calibration edit alone doesn't wake
         % it - only a change in raw/ does.)
         unchanged_s = (now - sig_seen(key).since) * 86400;
-        if strcmp(s.state, 'ok') && s.n_processed == 0 && unchanged_s > 2 * opts.regrow_min_s + s.pass_s
+        if strcmp(s.state, 'ok') && s.n_processed == 0 && unchanged_s > 2 * opts.regrow_min_s + s.pass_s ...
+                || startsWith(s.state, 'paused')
+            % paused (CTD calibration changed): not tried again until raw/
+            % changes or it's rerun by hand after the fix
             last_signature(key) = sig;
         elseif isKey(last_signature, key)
             remove(last_signature, key);
@@ -458,6 +465,12 @@ if ismember('L0', stages)
         s.n_processed = s.n_processed + numel(d);
     catch ME
         current(end+1) = stage_problem('modraw_to_L0', ME);
+        if strcmp(ME.identifier, 'MODprocess_all_modraw_to_L0:ctdCalibrationChanged')
+            % not just a bad file: nothing after L0 is right until the .CAL
+            % file is fixed and the survey reprocessed from raw
+            s = finish(s, 'paused: CTD calibration changed', current, known, done, problems_file, rt_dir, t0);
+            return
+        end
     end
     if stop_requested(rt_dir, opts.watch)
         s = finish(s, 'stopped mid-pass', current, known, done, problems_file, rt_dir, t0);

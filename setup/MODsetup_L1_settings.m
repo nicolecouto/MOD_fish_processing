@@ -17,7 +17,8 @@ function settings = MODsetup_L1_settings(metadata)
 %   Keep this list in step with what L0 -> L1 reads: a field added there
 %   and not here would let a run reuse an L1 made with a different value.
 %   Spectral settings (fft_length, ...) are not here - L1 files don't
-%   depend on them.
+%   depend on them. Nor is the SBE calibration: it comes from the shared
+%   L0 (ctd_cal), the same for every run of a survey.
 %
 % INPUTS
 %   metadata - from MODsetup_read_yaml.m, or a saved metadata.mat
@@ -41,7 +42,6 @@ settings.AFE = afe_from_yml(get_field(metadata, {'AFE'})); % channel types, SNs,
 settings.channels = get_field(metadata, {'PROCESS', 'channels'});
 settings.latitude = get_field(metadata, {'PROCESS', 'latitude'});
 settings.epsi_gap_factor = get_field(metadata, {'PROCESS', 'epsi_gap_factor'});
-settings.CTD_cal = get_field(metadata, {'CTD', 'cal'});
 settings.GEOMETRY = get_field(metadata, {'GEOMETRY'}); % altimeter
 % profiling direction is detected at L1 (mod_L1_detect_profiling_direction.m)
 settings.lowpass_sec = get_field(metadata, {'PROFILES', 'lowpass_sec'});

@@ -6,6 +6,9 @@ click Create Setup. That writes the Setup file ./fctd_epsi reads (after
 backing up the old one), dev1_setup.yml for MOD_fish_processing,
 and a row in the cruise deployment log. See mod_setup_file.py for the rules
 the Setup file has to follow, and docs/workflow/start_new_deployment.md for setup.
+Check CTD calibration (next to CTD SN) asks the fish for its SBE calibration
+and compares it with SBE/<SN>.CAL - see ctd_calibration.py. Shear slots show
+their newest calibration date.
 
 Run:  python3 start_new_deployment.py      (or double-click
       "Start New Deployment.command")
@@ -27,6 +30,7 @@ from tkinter import messagebox, ttk
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import mod_setup_file as msf  # noqa: E402
+import ctd_calibration as cc  # noqa: E402
 
 # Settings from config.yml (deck hardware and paths), shown under Advanced,
 # grouped. kind: 'port' = serial port dropdown, 'flag' = checkbox, 'entry' = text.
@@ -76,6 +80,7 @@ class StartNewDeployment:
         self.vars = {}
         self.sn_boxes = []
         self.name_labels = []
+        self.cal_labels = []
         self.loading = False
         self.loaded_vehicle = None
 
@@ -245,8 +250,11 @@ class StartNewDeployment:
         ttk.Label(ins, text='Pressure case').grid(row=0, column=0, sticky='w', **pad)
         ttk.Entry(ins, textvariable=self.var('fish_pc'), width=14).grid(row=0, column=1, sticky='w', **pad)
         ttk.Label(ins, text='CTD SN').grid(row=0, column=2, sticky='e', **pad)
-        self.ctd_box = ttk.Combobox(ins, textvariable=self.var('ctd_sn'), width=10)
-        self.ctd_box.grid(row=0, column=3, sticky='w', **pad)
+        ctd = ttk.Frame(ins)
+        ctd.grid(row=0, column=3, sticky='w', **pad)
+        self.ctd_box = ttk.Combobox(ctd, textvariable=self.var('ctd_sn'), width=10)
+        self.ctd_box.pack(side='left')
+        ttk.Button(ctd, text='Check CTD calibration', command=self.check_ctd_calibration).pack(side='left', padx=(6, 0))
         ttk.Label(ins, text='Profiling').grid(row=0, column=4, sticky='e', **pad)
         ttk.Combobox(ins, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up'],
                      state='readonly', width=6).grid(row=0, column=5, sticky='w', **pad)
@@ -258,6 +266,8 @@ class StartNewDeployment:
         ttk.Label(ins, text='Sensor', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=1, sticky='w', **pad)
         ttk.Label(ins, text='Name', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=2, sticky='w', **pad)
         ttk.Label(ins, text='Serial number', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=3, sticky='w', **pad)
+        ttk.Label(ins, text='Calibrated', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=4, columnspan=2,
+                                                                                  sticky='w', **pad)
         for i in range(1, 5):
             r = i + 1
             ttk.Label(ins, text='Slot %d (%s)' % (i, msf.BOARD_SLOT_NAMES[i - 1])).grid(
@@ -271,6 +281,9 @@ class StartNewDeployment:
             sn = ttk.Combobox(ins, textvariable=self.var('ch%d_sn' % i), width=16)
             sn.grid(row=r, column=3, sticky='w', **pad)
             self.sn_boxes.append(sn)
+            cl = tk.Label(ins, text='', anchor='w')
+            cl.grid(row=r, column=4, columnspan=3, sticky='w', **pad)
+            self.cal_labels.append(cl)
         ttk.Label(ins, text='Slots 5-7 are always the accelerometers a1-a3.',
                   foreground='#777').grid(row=6, column=0, columnspan=4, sticky='w', **pad)
         chk = ttk.Frame(ins)
@@ -341,6 +354,93 @@ class StartNewDeployment:
         ttk.Button(load, text='Load current Setup', command=self.load_current_setup).pack(side='left')
         ttk.Label(load, text="Fill this form from the Setup that's there now. Doesn't write or save anything.",
                   foreground='#777', wraplength=520).pack(side='left', padx=8)
+
+    def check_ctd_calibration(self):
+        """Ask the fish for its SBE calibration ($DCAL) and compare it with
+        SBE/<SN>.CAL in the calibrations folder; offer to rewrite the file
+        from the fish when they differ."""
+        v = self.values()
+        sbe_dir = msf.calibration_paths(v.get('calibrations_root', ''))['ctd_cal_path']
+        self.root.config(cursor='watch')
+        self.root.update()
+        try:
+            fish = cc.parse(cc.read_dcal_from_fish(v.get('command_port'), v.get('ctd_port'), v.get('speed')))
+        except (RuntimeError, ValueError) as err:
+            messagebox.showerror('Check CTD calibration', "Couldn't get the calibration from the fish:\n\n%s" % err)
+            return
+        finally:
+            self.root.config(cursor='')
+        path = os.path.join(sbe_dir, fish['sn'] + '.CAL')
+        disk, problem = None, ''
+        if not os.path.isfile(path):
+            problem = 'There is no %s.' % path
+        else:
+            try:
+                disk = cc.read_cal_file(path)
+            except (OSError, ValueError) as err:
+                problem = "Can't read %s: %s" % (path, err)
+        rows = cc.compare(fish, disk) if disk else []
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title('Check CTD calibration')
+        dlg.transient(self.root)
+        f = ttk.Frame(dlg, padding=10)
+        f.pack(fill='both', expand=True)
+        dates = ', '.join('%s %s' % (k, fish[d].strftime('%d-%b-%y'))
+                          for k, d in (('T', 'temp_date'), ('C', 'cond_date'), ('P', 'pres_date')))
+        ttk.Label(f, text='The SBE on the fish: SN %s, calibrated %s' % (fish['sn'], dates),
+                  font=('TkDefaultFont', 13, 'bold')).pack(anchor='w')
+        form_sn = v.get('ctd_sn', '')
+        form_sn = '%04d' % int(form_sn) if form_sn.isdigit() else form_sn
+        if form_sn and form_sn != fish['sn']:
+            tk.Label(f, text='The form says CTD SN %s - the fish has %s.' % (v['ctd_sn'], fish['sn']),
+                     fg='#b00020').pack(anchor='w', pady=(6, 0))
+        if problem:
+            tk.Label(f, text=problem, fg='#b00020').pack(anchor='w', pady=(6, 0))
+        elif rows:
+            tk.Label(f, text='%s differs from the fish:' % path, fg='#b00020').pack(anchor='w', pady=(6, 2))
+            txt = tk.Text(f, width=72, height=min(len(rows) + 1, 25), font=('TkFixedFont', 11))
+            txt.insert('end', '%-20s %-16s %s\n' % ('', 'fish', 'file'))
+            for row in rows:
+                txt.insert('end', '%-20s %-16s %s\n' % row)
+            txt.config(state='disabled')
+            txt.pack(fill='both', expand=True)
+        else:
+            tk.Label(f, text='%s matches the fish.' % path, fg='#1b6e20').pack(anchor='w', pady=(6, 0))
+        extra = cc.offsets(fish)
+        if extra:
+            tk.Label(f, text='The fish also has %s - a .CAL file has no place for these; processing takes '
+                             "them from the raw files' $DCAL." % ', '.join('%s = %s' % e for e in extra),
+                     fg='#a05a00', wraplength=560, justify='left').pack(anchor='w', pady=(6, 0))
+        b = ttk.Frame(dlg, padding=8)
+        b.pack(fill='x')
+        ttk.Button(b, text='Close', command=dlg.destroy).pack(side='right')
+        if (problem and not disk and os.path.isdir(sbe_dir)) or rows:
+            ttk.Button(b, text='Write %s.CAL from the fish' % fish['sn'],
+                       command=lambda: self.write_ctd_calibration(dlg, fish, sbe_dir)).pack(side='right', padx=8)
+        if form_sn != fish['sn']:
+            ttk.Button(b, text='Use CTD SN %s' % fish['sn'],
+                       command=lambda: self.vars['ctd_sn'].set(fish['sn'])).pack(side='right', padx=8)
+        dlg.wait_visibility()
+        dlg.grab_set()
+
+    def write_ctd_calibration(self, dlg, fish, sbe_dir):
+        try:
+            path, backup = cc.write_cal_file(fish, sbe_dir)
+        except OSError as err:
+            messagebox.showerror('Check CTD calibration', 'Nothing was written:\n\n%s' % err, parent=dlg)
+            return
+        dlg.destroy()
+        lines = ['Wrote %s from the fish.' % path, '']
+        if backup:
+            lines.append('The old file is kept as %s.' % os.path.basename(backup))
+        else:
+            lines += ['Commit it in MOD_fish_calibrations so the change is kept:',
+                      '  git -C %s commit -am "%s.CAL from the fish (calibrated %s)"'
+                      % (os.path.dirname(sbe_dir), fish['sn'], fish['temp_date'].strftime('%d-%b-%y'))]
+        lines += ['', 'Restart ./fctd_epsi so the .modraw headers get it too (it reads the file when it starts).']
+        messagebox.showinfo('Check CTD calibration', '\n'.join(lines))
+        self.refresh()
 
     def on_mode(self):
         """Lab test: prefill cruise, experiment and profiling direction (still
@@ -451,6 +551,13 @@ class StartNewDeployment:
             sns = msf.list_probe_sns(cal_dirs.get(t))
             sns = [s for s in history.get(t, []) if s not in sns] + sns
             self.sn_boxes[i].config(values=sns, state='disabled' if t == 'none' else 'normal')
+            age = msf.shear_cal_age(v, i + 1)
+            if age:
+                when, years, old = age
+                self.cal_labels[i].config(text='%s (%.1f years ago)' % (when.strftime('%d-%b-%Y'), years),
+                                          fg='#a05a00' if old else '#555')
+            else:
+                self.cal_labels[i].config(text='')
         self.spool_entry.config(state='normal' if v.get('on_winch_spool') else 'disabled')
         for k, e in self.extra_sn_entries.items():
             e.config(state='normal' if v.get(k) else 'disabled')

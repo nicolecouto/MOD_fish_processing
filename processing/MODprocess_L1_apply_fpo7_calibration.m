@@ -65,9 +65,8 @@ function metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, Press
 %              a warning is printed, not an error.
 %
 % CALLED BY
-%   MODprocess_all_L0_to_L1.m (only when metadata.CTD.cal is non-empty -
-%   i.e. a real onboard CTD with temperature, not DeepSolo's P-only
-%   external CTD)
+%   MODprocess_all_L0_to_L1.m (only when the L1 CTD data are from the
+%   onboard CTD - real temperature, not DeepSolo's P-only external CTD)
 %
 % CALLS
 %   (none)

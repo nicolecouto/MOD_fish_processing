@@ -58,6 +58,7 @@ so trying something new never overwrites what's there:
     dev1_setup.yml           ship record (Start New Deployment), never edited
     meta_data_realtime.yml   one yml per run: meta_data_<run>.yml
     meta_data_nfft512.yml
+    ctd_calibration.mat      the survey's SBE calibration (first L0 file; see SBE calibration)
   raw/                       hard links to RAW_full_cruise/ (real files) - shared by every run
   L0/                        shared by every run (L0 makes no choices; L1 re-applies the manifest)
   processed/
@@ -77,8 +78,9 @@ so trying something new never overwrites what's there:
 - **Reusing another run's L1** (`L1_from`): L1 doesn't depend on spectral settings, so a run that
   only changes, say, `fft_length` can use realtime's L1 instead of making its own. It's allowed only
   when everything L0 → L1 reads is the same in both runs (`MODsetup_L1_settings.m`: instrument
-  manifest, AFE channels and probe calibrations, CTD calibration, latitude, altimeter geometry,
-  gap factors and the profiling-direction smoothing); otherwise preflight refuses and lists what
+  manifest, AFE channels and probe calibrations, latitude, altimeter geometry, gap factors and the
+  profiling-direction smoothing - the SBE calibration is in the shared L0, so it's the same for
+  every run); otherwise preflight refuses and lists what
   differs. Such a run skips L0 and L1.
 - **A run's yml is `dev1_setup.yml` + one cruise yml,** rebuilt every time (see
   [Metadata](#metadata)) - edit those two, not the run yml. To try other values (e.g. another
@@ -357,6 +359,12 @@ Nothing stops the worker except **Stop**:
   shows "waiting for parameters" (with the list) until they're added to `cruise_meta_data.yml`
   or `meta_data_realtime.yml`; a survey with no raw files yet shows "waiting for raw files". The
   parameters checked are the ones the stages need (see [Metadata](#metadata)).
+- A survey whose CTD calibration changes partway (another SBE serial number or calibration date
+  than its first file - e.g. an out-of-date `SBE/<SN>.CAL` used for a file without `$DCAL`, then
+  a newer `$DCAL`) shows "paused: CTD calibration changed": nothing after L0 is made for it, and
+  the cruise log and `problems.json` say both calibrations and the fix (update the `.CAL`, delete
+  the survey's `L0/`, `processed/` and `meta/ctd_calibration.mat`, rerun). It isn't tried again
+  until its `raw/` changes; other surveys keep going. See [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file).
 - **Stop** (`{"command": "stop"}` in `control.json`) finishes the current stage and exits; the
   survey shows "stopped mid-pass" and is picked up where it left off next time. **pause** keeps
   the worker alive without processing.
@@ -685,3 +693,10 @@ rebins (at 2000 dbar, 0 vs 35 degrees moves a scan 3.4 m). `grid_version` 3, so 
 needed 2 casts and the ocean test has one down and one up; a single cast is now drawn across its
 own start to end. Tested on sandbox copies of 8 ocean-test raw files: 2 casts at 35.4888 N,
 121.89 W, no `epsilon_final`, and the monitor draws all 4 sections for both, down and up.
+
+**2026-10-18 - CTD calibration from the fish** (branch `main-fork`). L0 takes each raw file's
+`$DCAL` (the SBE's own calibration), and `SBE/<SN>.CAL` only for a file without one; the yml
+read no longer loads a calibration. A calibration change within a survey pauses that survey
+after L0 ("paused: CTD calibration changed"). L0 files made before this are redone once, so
+every survey's L0 and L1 are remade on the first pass. See
+[SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file).

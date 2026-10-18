@@ -6,9 +6,8 @@ function metadata = MODsetup_read_yaml(setup_yml)
 % DESCRIPTION
 %   Reads a deployment's yml and returns a metadata struct with paths
 %   derived fresh on every call (never saved - see paths below), the AFE
-%   channel manifest, CTD calibration coefficients, and altimeter
-%   geometry. Resolves what the L0->L1 step actually uses for computation
-%   (metadata.PROCESS.*, metadata.AFE.*, metadata.CTD.cal,
+%   channel manifest and altimeter geometry. Resolves what the L0->L1 step
+%   actually uses for computation (metadata.PROCESS.*, metadata.AFE.*,
 %   metadata.GEOMETRY.*) plus a few identifying CTD fields
 %   (metadata.CTD.name/.SN/.sample_per_record) kept for the deployment
 %   record even though L0->L1 doesn't read them - grows as later pipeline
@@ -296,16 +295,18 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     sample_rate below, which share the
 %                                     same ctd: block but land under
 %                                     PROCESS.* instead)
-%     CTD.SN, .cal                 - only set when setup.yml's
+%     CTD.SN                       - only set when setup.yml's
 %                                     instrument_manifest.ctd.sn is
-%                                     present and non-empty. SN is always
+%                                     present and non-empty. Always
 %                                     reformatted to 4 digits, zero-padded
 %                                     (537 -> '0537') to match SBE .CAL
 %                                     naming, regardless of how setup.yml
 %                                     wrote it (537, '537', or '0537' all
-%                                     work). .cal is SBE calibration
-%                                     coefficients, read from
-%                                     calibrations_root/SBE/<SN>.CAL
+%                                     work). No calibration is read here:
+%                                     L0 takes each raw file's $DCAL (what
+%                                     the SBE reports), else
+%                                     calibrations_root/SBE/<SN>.CAL - see
+%                                     MODprocess_all_modraw_to_L0.m
 %     manifest.ctd_som_integrated  - only set when setup.yml's
 %                                     instrument_manifest.ctd.som_integrated
 %                                     is present. True when this
@@ -349,7 +350,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 % CALLS
 %   toolbox/YAMLMatlab_0.4.3/ReadYaml.m
 %   MODsetup_save_metadata.m, MODsetup_metadata_field_registry.m
-%   (local subfunctions: read_sbe_cal, read_probe_cal, probe_cal_subdir,
+%   (local subfunctions: read_probe_cal, probe_cal_subdir,
 %    lookup_altimeter_geometry, field_ignoring_case, hash_file)
 %
 % NOTES
@@ -590,10 +591,8 @@ if has_manifest && isfield(yml.instrument_manifest, 'ctd') && isfield(yml.instru
         SN = str2double(SN);
     end
     metadata.CTD.SN = sprintf('%04d', SN);
-    cal_file = fullfile(yml.calibrations_root, 'SBE', [metadata.CTD.SN '.CAL']);
-    metadata.CTD.cal = read_sbe_cal(cal_file);
-else
-    metadata.CTD.cal = [];
+elseif ~isfield(metadata, 'CTD')
+    metadata.CTD = struct();
 end
 
 %% Altimeter geometry - optional: only deployments with alt/isap hardware
@@ -645,47 +644,6 @@ fclose(fid);
 md = java.security.MessageDigest.getInstance('SHA-256');
 md.update(bytes);
 h = sprintf('%02x', typecast(md.digest(), 'uint8'));
-end
-
-%% Read an SBE .CAL file into a calibration coefficient struct
-function SBEcal = read_sbe_cal(filename)
-fid = fopen(filename);
-if fid < 0
-    error('MODsetup_read_yaml:calFileNotFound', 'CTD calibration file not found: %s', filename);
-end
-
-line = fgetl(fid);
-SBEcal.SN = line(strfind(line,'=')+1:end);
-
-line = fgetl(fid); SBEcal.TempCal_date = line(strfind(line,'=')+1:end);
-line = fgetl(fid); SBEcal.ta0 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ta1 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ta2 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ta3 = str2double(line(strfind(line,'=')+1:end));
-
-line = fgetl(fid); SBEcal.CondCal_date = line(strfind(line,'=')+1:end);
-line = fgetl(fid); SBEcal.g = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.h = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.i = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.j = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.tcor = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.pcor = str2double(line(strfind(line,'=')+1:end));
-
-line = fgetl(fid); SBEcal.PresCal_date = line(strfind(line,'=')+1:end);
-line = fgetl(fid); SBEcal.pa0 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.pa1 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.pa2 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptca0 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptca1 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptca2 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptcb0 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptcb1 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptcb2 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptempa0 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptempa1 = str2double(line(strfind(line,'=')+1:end));
-line = fgetl(fid); SBEcal.ptempa2 = str2double(line(strfind(line,'=')+1:end));
-
-fclose(fid);
 end
 
 %% Look up shared altimeter geometry by platform (fish_flag, vehicle_name)

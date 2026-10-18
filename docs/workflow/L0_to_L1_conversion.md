@@ -11,9 +11,9 @@ Takes an L0 `.mat` file (raw counts/hex, no calibrations - see [L0: converting .
 - **alt**, **isap** - raw distance → height above bottom (`hab`)
 - **vnav** - attitude added: `tilt`, `spin`, `pitch`, `roll`, `yaw` [deg] (`mod_L1_add_vnav_attitude.m`, below), and the cable twist count as `data.twist`
 
-Every other field (`gps`, `seg`, `spec`, `avgspec`, `dissrate`, `apf`, `fluor`, `ttv`) passes through unchanged.
+Every other field (`gps`, `seg`, `spec`, `avgspec`, `dissrate`, `apf`, `fluor`, `ttv`, `ctd_cal`, `ctd_header_sn`, `ctd_cal_error`) passes through unchanged.
 
-Doing this requires a deployment configuration - which physical sensor is on which AFE channel, what its full-scale voltage range is, which CTD calibration coefficients apply - so this is also where a `setup.yml` file first enters the pipeline (see PLAN.md Section 2 for the metadata design).
+Doing this requires a deployment configuration - which physical sensor is on which AFE channel, what its full-scale voltage range is (the SBE calibration comes with each L0 file, `ctd_cal`) - so this is also where a `setup.yml` file first enters the pipeline (see PLAN.md Section 2 for the metadata design).
 
 Explicitly **not** done at this step (still open - see PLAN.md Section 6.2 and Section 7):
 - `MODsetup_read_yaml.m` looks up each shear probe's `Sv` into `metadata.AFE.(channel).cal`, but nothing yet *applies* it - shear channels stay as volts, not `1/s`. The physical-unit conversion (`Sv × volts / fall_speed`) needs a fall speed, normally `ctd.dzdt` - not resolved yet for deployments with no CTD
@@ -44,7 +44,7 @@ Reads a deployment's `setup.yml` and returns a `metadata` struct:
 | `AFE.(channel).cal` | Only set for `shear` type channels with an `SN` - `Sv`, the most recent row of `calibrations_root/SHEAR_PROBES/<SN>/Calibration_<SN>.txt`. `[]` if that file doesn't exist yet. **Not set at all for `fpo7`** - `dTdV`/`volts_to_C` isn't a fixed property of the probe you can look up; it's fit in-situ per deployment against real CTD temperature data. (This `MODsetup_read_yaml.m` step still can't answer it, same as ever - but see `AFE.(channel).volts_to_C` below, which now does, from a later step) |
 | `AFE.(channel).volts_to_C` | **Not set by `MODsetup_read_yaml.m`** - fit by `MODprocess_L1_apply_fpo7_calibration.m` (`[slope, intercept]`, `polyfit(volts, T, 1)` against real CTD T, gated on real onboard CTD - branch `chi_processing`), saved to `meta/fpo7_calibration.mat` with the probe SN, and added to metadata by `MODsetup_add_derived_metadata.m` (only for a channel that's still fpo7 with the same SN). Listed here since it lives in the same `metadata.AFE.(channel)` struct as the fields above; see [FP07 calibration and chi](L2_calc_chi.md) |
 | `CTD.name`, `.sample_per_record` | Only set when `setup.yml` has a `ctd:` block - deployments with no CTD don't need one |
-| `CTD.SN`, `.cal` | Only set when `instrument_manifest.ctd.sn` is present and non-empty. `.cal` is SBE calibration coefficients, read from `calibrations_root/SBE/<SN>.CAL` (the `MOD_fish_calibrations` repo) |
+| `CTD.SN` | Only set when `instrument_manifest.ctd.sn` is present and non-empty. No SBE calibration is read here: each L0 file carries its own (`ctd_cal` - the raw file's `$DCAL`, else `calibrations_root/SBE/<SN>.CAL`; see [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file)). `CTD.SN` is the last choice of SN for that `.CAL` file |
 | `GEOMETRY.alt_angle_deg`, `.alt_dist_from_crashguard_ft`, `.alt_probe_dist_from_crashguard_in` | From `setup.yml`'s own `altimeter.fctd`/`altimeter.epsi` block matching `fish_flag` if it has one, otherwise from the shared `setup/platform_instrument_geometry.yml` table by `fish_flag` (and `vehicle_name` for EPSI). Table keys match ignoring case, and a numbered unit with no entry of its own uses its family's (`MAKO1` → `Mako`). Left unset if neither has an entry - deployments with no `alt`/`isap` hardware don't need one |
 
 Also saves `metadata.mat` into `meta/` alongside `setup.yml` - a portable deployment record with `paths` stripped out, so it means the same thing on any machine. Re-derive `metadata.paths` by calling `MODsetup_read_yaml` again rather than trusting a stale `metadata.mat`.
@@ -146,7 +146,7 @@ Pure transformation - takes an L0 struct and a `metadata` struct, returns the sa
 The three conversion steps (`apply_setup_efe`, `process_ctd_fields`, `calibrate_altimeter_hab`) live as **local subfunctions inside this file**, not as separate `modProcess_L1_apply_*.m` files - nothing calls them standalone today. Split one out the moment something else needs to call it directly. (`process_ctd_fields` was named `calibrate_ctd` until the DeepSolo work below - renamed because for SBE41/external-CTD sources it does no calibration at all, only derivation of secondary fields.)
 
 Notes on the CTD conversion specifically:
-- SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then Practical Salinity via `gsw_SP_from_C`.
+- SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then Practical Salinity via `gsw_SP_from_C`. The coefficients are the L0 file's `ctd_cal` (its `$DCAL`, else the `.CAL` file - see [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file)), and `ctd.cal_source` says which. `TOFFSET` (added to T), `CSLOPE` (times C) and `POFFSET` (added to P, dbar) from `$DCAL` are applied; they're 0, 1 and 0 on every SBE so far, and a `.CAL` file has none.
 - SBE41 "PTS" format arrives from L0 already as ASCII-parsed P/T/SP (conductivity left `NaN`) - no calibration equations needed, only the derived fields below.
 - External CTD (DeepSolo/Wirewalker - see below) arrives the same way as SBE41: already physical units, only needs the derived fields - **except DeepSolo's fallrise pressure file, which has no T/C at all** (see below).
 - `dPdt`, `z` (depth), `dzdt` are computed unconditionally for all sources (they only need `P`, and `z` also needs latitude). `SR` (Reference Salinity), `CT` (Conservative Temperature), `sigma0` (potential density anomaly), and `SP` (Practical Salinity, if not already reported) are only computed **when both `T` and `C` are present** - `gsw_SR_from_SP`/`gsw_CT_from_t`/`gsw_sigma0`/`gsw_SP_from_C` genuinely can't run without them. DeepSolo's fallrise data (P-only) is the one case today that takes this branch and gets `dPdt`/`z`/`dzdt` but not `SP`/`SR`/`CT`/`sigma0` - this is expected, not a bug. See [Units and the sw_->gsw_ migration](../concepts/units_and_seawater.md) for why `SR` (not exact Absolute Salinity) is used throughout.
@@ -293,9 +293,9 @@ Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_ext
 
 At the end of every call, also calls `MODprocess_L1_accumulate_twist_timeseries` (it writes nothing when no L1 file has twist) once to re-chain every L1 file's twist field into `meta/twist_time_series.mat` - see "`MODprocess_L1_accumulate_twist_timeseries.m`" above. Cheap (just concatenates fields already computed per-file), so this keeps the deployment-level twist count always current without a separate manual step.
 
-Also, if this deployment has any CTD data, calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/pressure_time_series.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
+Also, if any L1 file has CTD pressure (the data decide, not the yml), calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/pressure_time_series.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
 
-**Update (branch `chi_processing`):** if this deployment specifically has a *real onboard* CTD (`metadata.CTD.cal` non-empty - stricter than the "any CTD data" check above, since that also covers DeepSolo's P-only external CTD), also calls `MODprocess_L1_apply_fpo7_calibration.m` right after `PressureTimeseries` is built, and saves the result (`metadata.AFE.(channel).volts_to_C`, with each probe's SN) to `meta/fpo7_calibration.mat` - also recorded in `meta/metadata.mat` via `MODsetup_save_metadata.m` - see [FP07 calibration and chi](L2_calc_chi.md).
+**Update (branch `chi_processing`):** if that CTD is the *onboard* one (SBE49 or SBE41; no external-CTD file - stricter than the "any CTD data" check above, since that also covers DeepSolo's P-only external CTD; until 2026-10-18 this was `metadata.CTD.cal` non-empty), also calls `MODprocess_L1_apply_fpo7_calibration.m` right after `PressureTimeseries` is built, and saves the result (`metadata.AFE.(channel).volts_to_C`, with each probe's SN) to `meta/fpo7_calibration.mat` - also recorded in `meta/metadata.mat` via `MODsetup_save_metadata.m` - see [FP07 calibration and chi](L2_calc_chi.md).
 
 If a needed parameter is missing and the operator saves the prompted value to the yml (`MODsetup_validate_metadata:yamlUpdated`), this function rereads the yml and retries, the same way `MODprocess_all_L1_to_L2` does. Run unattended (`matlab -batch`) it can't prompt, so check the yml first with `MODsetup_preflight` (see [Processing data](processing_data.md#metadata)).
 
@@ -329,6 +329,13 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-10-18 - SBE calibration from `$DCAL`** (branch `main-fork`). `MODsetup_read_yaml.m` no
+longer reads `SBE/<SN>.CAL` (`metadata.CTD.cal` is gone); `process_ctd_fields` uses the L0 file's
+`ctd_cal` (the raw file's `$DCAL`, else the `.CAL` file) and applies `$DCAL`'s TOFFSET, CSLOPE and
+POFFSET. The pressure time series and the FP07 refit are gated on the L1 data instead of
+`metadata.CTD.cal`. See [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file)
+for the rules and tests.
 
 **2026-10-17 (evening) - VectorNav attitude at L1** (branch `main-fork`). New
 `mod_L1_add_vnav_attitude.m` adds `vnav.tilt`, `vnav.spin` and fills `vnav.pitch`/`roll`/`yaw`

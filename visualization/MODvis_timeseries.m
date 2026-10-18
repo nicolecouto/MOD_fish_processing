@@ -598,7 +598,7 @@ classdef MODvis_timeseries < handle
 
             for k = 1:numel(f)
                 name = f{k};
-                if any(strcmp(name, {'raw_file_info', 'epsi_conversion'})); continue; end
+                if any(strcmp(name, {'raw_file_info', 'epsi_conversion', 'ctd_cal'})); continue; end
                 if isstruct(S.(name))
                     keep(k) = true;
                 end

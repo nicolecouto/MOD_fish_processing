@@ -64,6 +64,41 @@ written before the winch_spool or on_winch_spool column), it's set aside as
 `deployment_log_old_columns.csv` and a new log is started, so rows never end
 up under the wrong headers. The Create Setup message says when this happens.
 
+## Checking the calibrations
+
+**Check CTD calibration** (next to CTD SN) asks the fish which calibration its SBE has and
+compares it with `SBE/<SN>.CAL` in the calibrations folder - the file `fctd_epsi` copies into
+every `.modraw` header, which is wrong whenever it wasn't updated after a factory calibration.
+Use it the first time a fish is used on a cruise, and after an SBE comes back from Sea-Bird.
+
+- **Quit `fctd_epsi` first** - it holds the serial ports. The fish must be powered and connected.
+- It sends `sbe.dcal` on the command port (as MODSOM_liveplot does) and reads the reply, a
+  `$DCAL` block, on the CTD data port, both at the CTD baud rate (Advanced: Serial ports). It
+  waits up to 5 s.
+- It shows the fish's serial number and calibration dates, and either "matches the fish" or a
+  table of what differs (serial number, the three calibration dates, and any coefficient that
+  differs by more than 1 part in a million - `$DCAL` and `.CAL` round the last printed digit
+  differently, which doesn't count). TOFFSET/CSLOPE/POFFSET other than 0/1/0 are shown as a
+  note: a `.CAL` file can't hold them, and processing takes them from the raw files' `$DCAL`.
+- **Write <SN>.CAL from the fish** rewrites the file in Sea-Bird's `.CAL` layout (same keys and
+  order as the other files, CRLF), so `fctd_epsi` and processing read the fish's calibration. In
+  MOD_fish_calibrations (a git repo) the old file is in git, and the message gives the commit
+  command; outside a git repo the old file is kept as `<SN>.CAL.bak`. Restart `fctd_epsi`
+  afterwards (it reads the file when it starts).
+- If the form's CTD SN isn't the fish's, it says so and offers **Use CTD SN <fish's SN>**.
+- Needs pyserial (`python3 -m pip install pyserial`); without it, the message says so.
+
+Processing doesn't depend on this: it takes the calibration from each raw file's `$DCAL` (the
+fish's), and the `.CAL` file only for a raw file without one - see
+[SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file). But a
+`.CAL` file that doesn't match the fish makes processing pause the survey when a file without
+`$DCAL` turns up, so check it here first.
+
+**Shear probes** have nothing to ask - the probe doesn't store its calibration. Each shear slot
+shows its newest calibration date and age (the last dated line of
+`SHEAR_PROBES/<SN>/Calibration_<SN>.txt`), and the window warns when it's older than
+`shear_cal_max_age_years` in `config.yml` (2 years).
+
 **Advanced settings** (ports, network, CTD data, raw files, calibration
 paths, and where `dev1_setup.yml` and the deployment log go) default to
 `config.yml`. Changes there apply to that window only - edit `config.yml`
@@ -97,7 +132,8 @@ the window from the `Setup` again - it doesn't write or save anything.
    (`calibrations_root` in `config.yml`). Cal files are kept up to date there
    with `git pull`, separately from the code. `fctd_epsi` (DEV1) and processing
    (DEV3, over the network at the same path) read the same files:
-   - `SBE/<SN>.CAL` - CTD
+   - `SBE/<SN>.CAL` - CTD (`fctd_epsi` copies it into the `.modraw` header; processing uses
+     each raw file's `$DCAL`, and this only for a file without one)
    - `SHEAR_PROBES/<SN>/Calibration_<SN>.txt` - shear probes
    - `FPO7/<SN>/Calibration_<SN>.txt` - FP07 probes
    - `SHEAR/cap1nFres200Meg_5KohmInput.mat` - shear charge-amp response
@@ -195,6 +231,17 @@ metadata = MODsetup_read_yaml('/Volumes/DEV3_HD/.../Processed/<survey>/meta/meta
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-18 - Check CTD calibration; shear calibration dates** (branch `main-fork`). New
+`acquisition/ctd_calibration.py` (ask the fish with `sbe.dcal`, parse `$DCAL` and `.CAL`,
+compare, write a `.CAL`, shear probe dates), the button and the Calibrated column in the window,
+`shear_cal_max_age_years` in `config.yml`. The "no `<SN>.CAL`" warning no longer says processing
+stops (processing uses `$DCAL`). Tested without hardware: the parser on every `.CAL` file in
+MOD_fish_calibrations (eight of the ten written back byte for byte from what was read; `0674.CAL`
+differs only in having LF line endings, and `0133.CAL` is in `$DCAL` layout) and on `$DCAL` blocks from the 10-09, 10-17 and 10-18 raw files; a written
+`0237.CAL` re-read by `mod_L0_ctd_calibration.m` equals the fish's; the serial request against a
+fake fish on pseudo-terminals (separate ports, one port, a silent fish, a missing port); the
+window and its dialog built from a sandbox `config.yml`. It still needs a try on a real fish.
 
 **2026-10-17 - Board slot names; serial numbers for the digital fluorometer and altimeter**
 (branch `main-fork`). Slots are labelled Slot 1 (t1) ... Slot 4 (s2); "Separate fluorometer" is

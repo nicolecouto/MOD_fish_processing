@@ -7,7 +7,8 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file, metadata)
 %   Parses a single .modraw file into raw L0 data: regex-matches each
 %   $-tagged block type, decodes the shared header (sync/timestamp/length/
 %   checksum), and converts each block type's payload from raw bytes/hex
-%   into per-type structs of raw counts/volts. No calibrations applied.
+%   into per-type structs of raw counts/volts. No calibrations applied
+%   (the SBE's own $DCAL calibration is read and kept as ctd_cal, for L1).
 %
 %   The one exception is EFE data: its ADC counts are converted to volts
 %   (t1_volt, s1_volt, ...) or g (a1_g, ...) and given channel names here,
@@ -46,6 +47,13 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file, metadata)
 %               apf      - APEX float (APF0/1/2) data (intermediate vars in 'apf')
 %               fluor    - ECOP fluorometer data (intermediate vars in 'ecop')
 %               ttv      - TTV1 data (intermediate vars in 'ttv')
+%               ctd_cal  - SBE calibration from the file's $DCAL
+%                          (mod_L0_ctd_calibration.m), [] if none here
+%                          (MODprocess_all_modraw_to_L0.m then fills it
+%                          from calibrations_root/SBE/<SN>.CAL)
+%               ctd_header_sn - the header's CTD.SerialNum ('' if none)
+%               ctd_cal_error - why a $DCAL couldn't be read ('' if it
+%                          could, or there was none)
 %
 % CALLED BY
 %   MODprocess_all_modraw_to_L0.m
@@ -53,6 +61,7 @@ function [L0_data] = MODprocess_single_modraw_to_L0(modraw_file, metadata)
 % CALLS
 %   toolbox/correctNegativeTime.m
 %   mod_efe_counts_to_volts_g.m (EFE counts -> volts/g)
+%   mod_L0_ctd_calibration.m ($DCAL)
 %   (local subfunctions: convert_timestamp, FastCTD_ASCII_parseheader,
 %    FastCTD_ASCII_parseheadline)
 %
@@ -1911,6 +1920,32 @@ end %end loop if there is ttv data
 fprintf(['PROCESSED: ' repmat('%s ',1,length(processed_data_types)), ' | '], processed_data_types{:})
 fprintf(['MISSING: ' repmat('%s ',1,length(no_data_types)), '\n'], no_data_types{:})
 
+%% SBE calibration from $DCAL - what the SBE itself reports (the SOM's
+% sbe.dcal command). The calibration block copied into the file header
+% ("as in Fish calibration file") is never read: it's a copy of the
+% computer's .CAL file, wrong whenever that file wasn't updated.
+% A $DCAL that can't be read (e.g. garbled on the serial link) doesn't
+% stop the file: ctd_cal_error says why, and MODprocess_all_modraw_to_L0.m
+% uses the .CAL file if the file has SBE49 counts.
+ctd_cal = [];
+ctd_cal_error = '';
+if ~isempty(ind_dcal_start)
+    try
+        ctd_cal = mod_L0_ctd_calibration(str(ind_dcal_start(1):ind_dcal_stop(1)), '.modraw $DCAL');
+    catch ME
+        ctd_cal_error = ME.message;
+        fprintf('$DCAL unreadable: %s | ', ME.message);
+    end
+end
+% the header's CTD serial number (CTD.SerialNum='0387'), for finding the
+% .CAL file when a file has no $DCAL (MODprocess_all_modraw_to_L0.m)
+ctd_header_sn = regexp(str, 'CTD\.SerialNum\s*=\s*''?([^''\r\n]*)', 'tokens', 'once');
+if isempty(ctd_header_sn)
+    ctd_header_sn = '';
+else
+    ctd_header_sn = strtrim(ctd_header_sn{1});
+end
+
 % Combine all data
 L0_data.epsi     = epsi;
 L0_data.epsi_conversion = epsi_conversion;
@@ -1927,6 +1962,9 @@ L0_data.dissrate = dissrate;
 L0_data.apf      = apf;
 L0_data.fluor    = fluor;
 L0_data.ttv      = ttv;
+L0_data.ctd_cal  = ctd_cal;
+L0_data.ctd_cal_error = ctd_cal_error;
+L0_data.ctd_header_sn = ctd_header_sn;
 
 % Save Meta_Data in the process directory - NC 10/13/25 We shouldn't have
 % BIG Meta_Data because the individual Meta_Data inside the same deployment

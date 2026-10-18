@@ -4,12 +4,12 @@
 
 ## What this step does
 
-Reads a raw `.modraw` file and parses it into a MATLAB struct - **no calibrations applied, and no setup.yml needed.** The output is raw counts/volts, exactly as recorded, with a time axis, so it can be plotted immediately to sanity-check a deployment.
+Reads a raw `.modraw` file and parses it into a MATLAB struct - **no calibrations applied, and no setup.yml needed** (except for a raw file without `$DCAL`, which needs `calibrations_root` - see "SBE calibration" below). The output is raw counts/volts, exactly as recorded, with a time axis, so it can be plotted immediately to sanity-check a deployment.
 
 **The one exception is EFE (epsi) data**, which is converted from ADC counts to volts (`t1_volt`, `s1_volt`, ...) or g (`a1_g`, ...) and given channel names here. EFE boards are standard - the slot order, which slots are accelerometers, and each slot's full range and unipolar/bipolar config never change - so this uses the standard board config (`MODsetup_default_efe.m`) and needs no metadata. That's what lets EFE spectra be checked against ADC bit noise straight from L0 (`MODvis_spectra_L0.m`, see [Visualization](../visualization/index.md)). A metadata struct can optionally override names/config (e.g. a microconductivity probe in slot 4 named `c1`), but is never required. The conversion used is saved alongside as `epsi_conversion`, including plain-text instructions for recovering the exact counts (see "EFE channels: volts/g at L0" below).
 
 Explicitly **not** done at this step:
-- No Seabird CTD calibration coefficients applied (P/T/C stay as raw counts)
+- No Seabird CTD calibration coefficients applied (P/T/C stay as raw counts). The calibration itself is read and kept (`ctd_cal`, see "SBE calibration" below); L1 applies it.
 - No shear probe Sv calibration applied (shear channels stay in volts)
 - No FPO7 calibration (thermistor channels stay in volts)
 - No filtering, despiking, or QC
@@ -41,6 +41,9 @@ Returns `L0_data` with whichever of these fields are present in the file (missin
 | `dissrate`, `apf` | onboard-computed epsilon/chi (APEX float profile summaries) |
 | `fluor` | Tridente `bb`, `chla`, `fDOM` |
 | `ttv` | travel-time flow meter data |
+| `ctd_cal` | SBE calibration from the file's `$DCAL` (`mod_L0_ctd_calibration.m`: `SN`, three calibration dates, the coefficients, `source`, `text`), `[]` if the file has none |
+| `ctd_header_sn` | the header's `CTD.SerialNum` (`''` if none) - only used to find a `.CAL` file for a file without `$DCAL` |
+| `ctd_cal_error` | why the file's `$DCAL` couldn't be read (`''` if it could, or there was none) |
 
 CTD format is auto-detected per file: the function checks the length of the first `$SB49`/`$SB41` block against the known SBE49 (24-byte 'eng') and SBE41 (28-byte 'PTS') formats and picks whichever matches, so both CTD types parse correctly without needing a Meta_Data/calibration file to tell it which one is connected.
 
@@ -48,16 +51,16 @@ CTD format is auto-detected per file: the function checks the length of the firs
 
 ```matlab
 L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix)
-L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata)   % optional, passed through
+L0_files = MODprocess_all_modraw_to_L0(raw_dir, L0_dir, raw_file_suffix, metadata)   % optional: EFE names/config; calibrations_root/CTD.SN for a file without $DCAL
 ```
 
 Orchestrator: loops over every raw file in `raw_dir` and calls `MODprocess_single_modraw_to_L0` on each, saving one `.mat` per raw file into `L0_dir`. `L0_dir` is optional — defaults to a sibling `L0/` folder next to `raw_dir` (created if it doesn't exist).
 
 `raw_file_suffix` is optional too — if you don't pass it, it's auto-detected from `raw_dir` by `MODsetup_detect_raw_suffix.m` (see below). Pass it explicitly to skip detection or to force a specific type.
 
-All required inputs are plain paths - no metadata object, no `mod_class`, nothing else required. `metadata` is optional and only passed through for EFE names/config; files already converted aren't redone just because it changed (L1 re-applies setup.yml anyway). Each saved `.mat` file contains only the data-type fields from `MODprocess_single_modraw_to_L0` plus a small `raw_file_info` field (`bytes`, `filename`) used to detect whether the raw file has changed since it was last converted. Returns `L0_files`, a cell array of full paths to every `.mat` file in `L0_dir` after the call.
+All required inputs are plain paths - no metadata object, no `mod_class`, nothing else required. `metadata` is optional: it's passed through for EFE names/config, and gives `paths.calibrations_root` and `CTD.SN` for a raw file without `$DCAL` (without it, such a file fails); files already converted aren't redone just because it changed (L1 re-applies setup.yml anyway). Each saved `.mat` file contains only the data-type fields from `MODprocess_single_modraw_to_L0` plus a small `raw_file_info` field (`bytes`, `filename`) used to detect whether the raw file has changed since it was last converted. Returns `L0_files`, a cell array of full paths to every `.mat` file in `L0_dir` after the call.
 
-Skips re-converting a file if its `.mat` already exists and the raw file hasn't grown since (checked by byte size) — except the most recent file, which is always reconverted in case it's still being written to (useful for real-time/at-sea processing). With `'newest_min_redo_s', s` (the realtime worker passes it) the newest file is reconverted only when it has grown, at most once per `s` seconds; `'continue_on_error', true` returns failing files in a second output (`problems`) instead of stopping - same options as the L0 → L1 and L1 → L2 drivers (see [L0 → L1](L0_to_L1_conversion.md)).
+Skips re-converting a file if its `.mat` already exists and the raw file hasn't grown since (checked by byte size; an L0 file made before `ctd_cal` existed is redone once) - except the most recent file, which is always reconverted in case it's still being written to (useful for real-time/at-sea processing). With `'newest_min_redo_s', s` (the realtime worker passes it) the newest file is reconverted only when it has grown, at most once per `s` seconds; `'continue_on_error', true` returns failing files in a second output (`problems`) instead of stopping - same options as the L0 → L1 and L1 → L2 drivers (see [L0 → L1](L0_to_L1_conversion.md)).
 
 ### EFE channels: volts/g at L0
 
@@ -106,6 +109,7 @@ Errors instead of guessing wrong if `raw_dir` has no candidate files (e.g. you p
 
 ```matlab
 addpath('/path/to/MOD_fish_processing/processing');
+addpath('/path/to/MOD_fish_processing/processing/L0');  % mod_L0_ctd_calibration
 addpath('/path/to/MOD_fish_processing/setup');    % for MODsetup_detect_raw_suffix
 addpath('/path/to/MOD_fish_processing/util');     % for MODutil_short_path
 
@@ -113,6 +117,7 @@ data_root  = '/path/to/your/deployment';   % must contain a raw/ subfolder
 modraw_dir = fullfile(data_root, 'raw');
 
 L0_files = MODprocess_all_modraw_to_L0(modraw_dir);  % L0/ created automatically next to raw/
+% pass metadata (MODsetup_read_yaml) as the 4th input if some raw files have no $DCAL
 
 % Visualize
 app = MODvis_timeseries(fileparts(L0_files{1}));  % from MOD_fish_processing/visualization
@@ -130,6 +135,25 @@ disp(L0_data.epsi_conversion.README)                       % how to get the EFE 
 app = MODvis_spectra_L0(fileparts(L0_files{1}));           % newest file in the L0 folder
 ```
 
+## SBE calibration: `$DCAL`, else the `.CAL` file
+
+The SBE49 counts are converted at L1 with the calibration L0 keeps in each file's `ctd_cal`:
+
+1. **The file's own `$DCAL`** - what the SBE itself reports (`ctd_cal.source = '.modraw $DCAL'`). Current firmware writes it in every file with a `$SOM3` header.
+2. **No `$DCAL`, but SBE49 counts:** `calibrations_root/SBE/<SN>.CAL` (`source = 'calibrations folder: <path>'`), filled in by `MODprocess_all_modraw_to_L0.m`. SN: the one already recorded for this survey (it came from the fish), else the header's `CTD.SerialNum`, else the yml's `instrument_manifest.ctd.sn`. Needs `metadata` (for `calibrations_root`); a missing `.CAL` file stops that file with an error naming it. A `.CAL` file has no `TOFFSET`/`CSLOPE`/`POFFSET`, so those come from the survey's `$DCAL`. A `$DCAL` that can't be read (`ctd_cal_error` says why) counts as none.
+3. Neither (no CTD data): `ctd_cal = []`.
+
+The calibration block in the `.modraw` header ("as in Fish calibration file") is **never read**: it's a copy of the computer's `.CAL` file and is wrong whenever that file wasn't updated. See [the `$DCAL` tag](modraw_tag_format.md#dcal-sbe-calibration-coefficients).
+
+**One calibration per survey.** The first one seen is recorded in `ctd_calibration.mat` in the `meta/` folder next to `L0/` (`<survey>/meta`), with `cal` and `file` (the raw file it came from). Every later file's is compared with it: serial number, the three calibration dates, and every coefficient, to 1 part in a million (`$DCAL` and `.CAL` often differ in the last printed digit, which doesn't count). If one differs - e.g. the first file had no `$DCAL` and used an out-of-date `.CAL`, and the next file's `$DCAL` is newer - L0 stops for that survey with `MODprocess_all_modraw_to_L0:ctdCalibrationChanged` (even with `'continue_on_error'`). The message gives both calibrations and the fix:
+
+1. Update `calibrations_root/SBE/<SN>.CAL` to match the fish (Start New Deployment's **Check CTD calibration** can write it - see [Start New Deployment](start_new_deployment.md)).
+2. Reprocess from raw: delete the survey's `L0/`, `processed/` and `meta/ctd_calibration.mat`, and run `MODprocess_deployment(survey_folder)`.
+
+The realtime worker shows that survey as "paused: CTD calibration changed", makes nothing after L0 for it, and doesn't try it again until its `raw/` changes (or it's rerun by hand after the fix); other surveys keep going.
+
+A header serial number that differs from the `$DCAL` one (the setup named the wrong CTD) is a warning; the `$DCAL` one is used.
+
 ## Known limitations / things to check visually
 
 - **Flatlined channels are possible and not necessarily a bug.** In one bench-test file, `epsi.channel1` and `channel2` (now `t1_volt`/`t2_volt`) came back pegged at the ADC's max value (2^24 counts, 2.5 V) for the entire record - channels 3-7 varied normally. This turned out to be consistent with those probes being disconnected/unpowered during that particular bench test, not a parsing error. Always eyeball a new file in MODvis_timeseries before trusting it.
@@ -146,3 +170,5 @@ Adapted from `mod_som_read_epsi_files_v4.m` in the old `MOD_fish_lib` monolith, 
 - Tested against the full real dataset in `mod_fish_lib/data_for_reorg/` (epsi_mako_w_fluor, epsi_minnow, epsi_on_wirewalker, fctd_w_ucond_fluor — several hundred files total) — see `SESSION_LOG.md` for results.
 
 **2026-09-29 (branch `main-fork`) - EFE counts → volts/g moved to L0, with the standard EFE board as the default.** Prompted by wanting to look at EFE spectra against ADC bit noise as quickly as possible (the MODSOM_liveplot use case) without first writing a setup.yml. Nicole's decision: EFE boards are standard, so L0 is the one exception to "don't move forward without metadata". `MODprocess_single_modraw_to_L0.m` now converts `channel1..7` to `t1_volt`...`a3_g` using `MODsetup_default_efe.m` (optionally overridden by a metadata argument), and saves the conversion as `epsi_conversion` with a plain-text `README` and a per-channel `how_to_recover_counts`. The counts ↔ volts/g math moved out of `MODprocess_single_L0_to_L1.m`'s `convert_efe_channels` into `mod_efe_conversion.m` / `mod_efe_counts_to_volts_g.m` / `mod_efe_volts_g_to_counts.m`, and the accelerometer offset/factor constants moved from here and from L1 into `MODsetup_default_efe.m`. Noted along the way: the accelerometers are 1.8 V full range, not 2.5 V. Tested in a scratchpad sandbox copy of `epsi_mako/blt2021_0715` (3 files) and `epsi_deepsolo/26_0720_ljc` (1 file): counts recovered from the new L0 equal the old L0's raw counts exactly on all 7 channels, and the new L1 epsi fields equal the existing L1 exactly for volts and to within 4e-16 g for accelerometers.
+
+**2026-10-18 (branch `main-fork`) - SBE calibration from `$DCAL`.** Nicole: the calibration printed in the `.modraw` header comes from the computer's `.CAL` file and is wrong when that file isn't updated, so never read it; use `$DCAL`, which comes from the SBE, and the `.CAL` file only for a file without one; a calibration change within a survey pauses processing until the `.CAL` is fixed and the survey reprocessed from raw. New `mod_L0_ctd_calibration.m` (both layouts, by name, replacing `MODsetup_read_yaml.m`'s line-order `read_sbe_cal`); L0 gains `ctd_cal`/`ctd_header_sn`; `MODprocess_all_modraw_to_L0.m` adds the `.CAL` fallback, `meta/ctd_calibration.mat` and the pause. Found while testing (share copies, read-only): the Mako2 SBE 0237 reports a Dec 2025 calibration, but `SBE/0237.CAL` is from Dec 2023; the 2026-10-09 pier test's header says CTD 0537 but its `$DCAL` says 0674. Tested in a scratchpad sandbox: the 2026-10-17 ocean test's L1 T and C equal the old `.CAL`-based L1 (to 2e-10), P to 0.0006 dbar (last-digit rounding of PTCA0); the pier test's second file (no `$DCAL`) uses 0674.CAL with a serial-number warning; an older date in that `.CAL` pauses the survey with no L1; an L0 file without `ctd_cal` is redone.

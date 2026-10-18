@@ -19,7 +19,7 @@ Two more blocks are metadata, read once per file (not repeating data records):
 | Tag | What it is | Format |
 |---|---|---|
 | `SOM3` | Mission/hardware setup - mission & vehicle name, firmware rev, git id, serial numbers, per-sensor config sub-modules (`CALENDAR`, `EFE`, `SBE49`/`SBE41`, `SDIO`, `VOLT`, `ALTI`) | Fixed-layout binary struct |
-| `DCAL` | SBE49 calibration coefficients, dumped straight from the CTD's own `.cal` file | Plain-text `name=value`, one per line |
+| `DCAL` | SBE49 calibration coefficients, as the SBE itself reports them | Plain text in the SBE's own layout: `SERIAL NO.`, a line per sensor with its calibration date, then `NAME = value` lines (see below) |
 
 ---
 
@@ -51,7 +51,7 @@ This shared layout is built once into a `tag` struct in `mod_som_read_epsi_files
 | Tag | Sensor / data | Sample rate | Records per block | DATA payload structure |
 |---|---|---|---|---|
 | `EFE4` | Shear probes, FP07 thermistors, accelerometers (raw ADC) | 320 Hz (7-ch epsi) or 160 Hz (3-ch FCTD) | 80 | Repeating elements: 8-byte little-endian timestamp + 3 bytes/channel x (7 or 3 channels), 24-bit big-endian ADC counts per channel |
-| `SB49` | SBE49 CTD | 16 Hz | `Meta_Data.CTD.sample_per_record` | Repeating records: 16 hex-char timestamp + 24 ASCII-hex chars = `T_raw`(6) `C_raw`(6) `P_raw`(6) `PT_raw`(4), raw engineering counts (needs `$DCAL` or a `.cal` file to convert to T/C/P) |
+| `SB49` | SBE49 CTD | 16 Hz | `Meta_Data.CTD.sample_per_record` | Repeating records: 16 hex-char timestamp + 24 ASCII-hex chars = `T_raw`(6) `C_raw`(6) `P_raw`(6) `PT_raw`(4), raw engineering counts (needs `$DCAL`, or the SN's `.CAL` file, to convert to T/C/P) |
 | `SB41` | SBE41 CTD (e.g. APEX float) | 1 Hz | `Meta_Data.CTD.sample_per_record` | Repeating records: 16 hex-char timestamp + 28 ASCII chars = comma-separated `P,T,S` decimal text (already engineering units, no cal needed; `C` is not transmitted, comes back `NaN`) |
 | `ALTI` | MOD altimeter board | on demand, 1 value/block | 1 | **Exception:** the "hex length" field isn't a length - it holds the raw distance reading as ASCII text (units of 10 µs of round-trip time), converted via `x * 1e-5 s * 1500 m/s` sound speed. DATA payload after the header is empty/unused. |
 | `ISAP` | ISA500 altimeter board | on demand, 1 value/block | 1 | Similar exception to `ALTI` - distance comes back directly in meters as ASCII text, read from a slightly nonstandard offset past the normal header (treat it as "everything after the header, as text") |
@@ -95,7 +95,7 @@ One record, x `Meta_Data.CTD.sample_per_record` per block, all ASCII/hex text (`
 | `P_raw` | 6 chars | ASCII hex |
 | `PT_raw` | 4 chars | ASCII hex |
 
-40 ASCII characters per record. `T_raw`/`C_raw`/`P_raw`/`PT_raw` are raw engineering counts - converted to physical units via `$DCAL` coefficients (or the SN-matched `.cal` file when `use_file_headers` is off).
+40 ASCII characters per record. `T_raw`/`C_raw`/`P_raw`/`PT_raw` are raw engineering counts - converted to physical units at L1 with the file's `$DCAL` coefficients, or `calibrations_root/SBE/<SN>.CAL` for a file without `$DCAL` (see [modraw to L0](modraw_to_L0_conversion.md)).
 
 ### `SB41` DATA field (`sbe.data.format = 'PTS'`)
 
@@ -337,7 +337,23 @@ Followed by named, self-length-prefixed sub-modules (`CALENDAR`, `EFE`, `SBE49`/
 
 ### `$DCAL` - SBE calibration coefficients
 
-Not a repeating data record either - plain-text lines of `name=value`, one coefficient per line, parsed by `get_CalSBE_v2.m`. It's the CTD manufacturer's own calibration sheet (temperature: `ta0`-`ta3`, `toffset`; conductivity: `g`,`h`,`i`,`j`,`pcor`,`tcor`,`cslope`; pressure coefficients follow), copied verbatim into the file header at the start of a deployment so raw `SB49` engineering counts can be converted to physical units without a separate `.cal` file.
+Not a repeating data record either. It's what the SBE49 itself reports (the SOM asks it with `sbe.dcal`), in the SBE's own layout:
+
+```
+  SERIAL NO. 0387
+temperature:  03-mar-25
+    TA0 = 8.436138e-04
+    ...
+    TOFFSET = 0.000000e+00
+conductivity:  03-mar-25
+    G = -9.791146e-01  H, I, J, CPCOR, CTCOR, CSLOPE
+pressure S/N = 2774628, range = 2900 psia:  06-feb-25
+    PA0 = -3.111278e+00  PA1, PA2, PTCA0-2, PTCB0-2, PTEMPA0-2, POFFSET
+```
+
+`mod_L0_ctd_calibration.m` reads it (by name) into `L0.ctd_cal`. Current firmware writes it in every file that has a `$SOM3` header; older firmware (the 2026-10-09 Mako pier test) only in the first file of a deployment.
+
+**Not the same as the calibration in the file header.** The ASCII header fctd_epsi writes at the top of every `.modraw` has a block headed `%1. FISH_CTD SBD 49 FASTCAT (as in Fish calibration file)`. That is a copy of the computer's `SBE/<SN>.CAL`, so it's wrong whenever that file wasn't updated after a factory calibration. Nothing in this repo reads it. `$DCAL` comes from the SBE, so it's always the calibration the instrument really has.
 
 ---
 
@@ -365,3 +381,5 @@ Not a repeating data record either - plain-text lines of `name=value`, one coeff
 ## History
 
 Derived by reading `mod_som_read_epsi_files_v4.m` in `MOD_fish_lib` (the header-offset struct at lines 104-139, and each tag's per-block parsing loop) rather than from a firmware spec document - no such document was available. Byte offsets and field names are transcribed directly from the parsing code; a couple of details (the `ALTI`/`ISAP` "hex length field is actually the reading" quirk, and the exact `ISAP` data offset) are called out as quirks rather than presented as clean spec because the code itself treats them inconsistently with the rest of the frame family.
+
+**2026-10-18 - `$DCAL` read at L0** (branch `main-fork`). `$DCAL` was located but never parsed; it's now read into `L0.ctd_cal` and used for the SBE49 conversion. The `$DCAL` section now shows the real layout (the earlier `name=value` description was wrong), and notes that the header's "as in Fish calibration file" block is never read.

@@ -41,6 +41,8 @@ import glob
 import os
 import re
 
+import ctd_calibration
+
 MAX_SETUP_BYTES = 2000      # fctd_epsi.c str4Setupfile[2124], minus margin
 NAME_MAX = 31               # char[32] fields in ctd.h / pcode.h
 PATH_MAX = 255              # char[256] calibration paths in ctd.h
@@ -428,11 +430,17 @@ def validate(values, config=None):
         warnings.append('No %s in the calibrations folder - processing would compute epsilon without '
                         'the shear charge-amp correction (copy it from MOD_fish_calibrations)'
                         % SHEAR_CHARGEAMP_FILE)
-    # fctd_epsi and processing (MODsetup_read_yaml.m) both read <root>/SBE/<SN>.CAL
+    # fctd_epsi copies <root>/SBE/<SN>.CAL into the .modraw header; processing
+    # uses the SBE's own $DCAL, and the .CAL file only for a file without one
     ctd_dir, ctd_sn = v.get('ctd_cal_path', ''), v.get('ctd_sn', '')
     if ctd_dir and ctd_sn and os.path.isdir(ctd_dir) and not os.path.isfile(os.path.join(ctd_dir, ctd_sn + '.CAL')):
-        warnings.append('CTD %s: no %s/%s.CAL - fctd_epsi records no CTD calibration and processing stops'
-                        % (ctd_sn, ctd_dir, ctd_sn))
+        warnings.append('CTD %s: no %s/%s.CAL - fctd_epsi records no CTD calibration (Check CTD calibration '
+                        'can write it from the fish)' % (ctd_sn, ctd_dir, ctd_sn))
+    for i in range(1, 5):
+        age = shear_cal_age(values, i, config)
+        if age and age[2]:
+            warnings.append('Slot %d (%s): shear probe %s was last calibrated %s, %.1f years ago'
+                            % (i, names[i - 1], v['ch%d_sn' % i], age[0].strftime('%d-%b-%Y'), age[1]))
     if config:
         setup_dir = config.get('setup_dir', '')
         if setup_dir and os.path.exists(os.path.join(setup_dir, '.Setup.swp')):
@@ -753,6 +761,27 @@ def write_all(values, config, write_yml=True):
 # --------------------------------------------------------------------------
 # Lists for dropdowns
 # --------------------------------------------------------------------------
+def shear_cal_age(values, slot, config=None):
+    """(date, age in years, older than shear_cal_max_age_years) of the shear
+    probe in this slot's newest calibration, or None (not a shear probe, no
+    file, or no date in it). The limit is from config (config.yml), default 2."""
+    if values.get('ch%d_type' % slot) != 'shear':
+        return None
+    sn = str(values.get('ch%d_sn' % slot, '')).strip()
+    d = calibration_paths(values.get('calibrations_root', ''))['shear_cal_path']
+    if not sn or not d:
+        return None
+    when = ctd_calibration.shear_cal_date(os.path.join(d, sn, 'Calibration_%s.txt' % sn))
+    if when is None:
+        return None
+    try:
+        limit = float((config or values).get('shear_cal_max_age_years', 2))
+    except (TypeError, ValueError):
+        limit = 2.0
+    years = (datetime.date.today() - when).days / 365.25
+    return when, years, years > limit
+
+
 def list_probe_sns(d):
     """Probe serial numbers = the subfolders of a calibration folder."""
     if not d or not os.path.isdir(d):

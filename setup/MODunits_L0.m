@@ -61,6 +61,9 @@ u.dissrate = struct('unit', 'raw', 'description', 'Onboard dissipation-rate esti
 u.apf = struct('unit', 'raw', 'description', 'APEX float (APF0/1/2) telemetry data - passes through L1 unchanged.');
 u.fluor = struct('unit', 'raw', 'description', 'ECOP fluorometer raw data - passes through L1 unchanged.');
 u.ttv = struct('unit', 'raw', 'description', 'TTV1 data - passes through L1 unchanged.');
+u.ctd_cal = struct('unit', 'n/a (SBE calibration coefficients)', 'description', 'SBE49 calibration used at L1 (mod_L0_ctd_calibration.m): SN, TempCal_date/CondCal_date/PresCal_date, the coefficients, .source (''.modraw $DCAL'' = what the SBE reported in this raw file; ''calibrations folder: <path>'' = SBE/<SN>.CAL, for a file without $DCAL) and .text. [] when the file has neither $DCAL nor SBE49 counts. Never from the calibration copied into the .modraw header.');
+u.ctd_cal_error = struct('unit', 'n/a (text)', 'description', 'Why the file''s $DCAL couldn''t be read ('''' if it could, or there was none) - such a file gets SBE/<SN>.CAL if it has SBE49 counts.');
+u.ctd_header_sn = struct('unit', 'n/a (text)', 'description', 'The .modraw header''s CTD.SerialNum ('''' if none) - used only to find SBE/<SN>.CAL for a file without $DCAL.');
 
 u.provenance = struct('unit', 'n/a (record)', 'description', 'What this file was made from (MODutil_provenance.m): the raw file (.files, raw/<name>.modraw), the yml (.yml) and its SHA-256 when read (.yml_sha256), .run, .survey, .made_utc and the code commit (.code). Paths are relative to the survey folder.');
 end %end function

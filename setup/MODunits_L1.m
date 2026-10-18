@@ -49,6 +49,7 @@ u.ctd_sigma0 = struct('unit', 'kg/m^3', 'description', 'Potential density anomal
 u.ctd_z = struct('unit', 'm, positive down', 'description', 'Depth from pressure, -gsw_z_from_p(ctd.P, lat) - negated because gsw_z_from_p''s own convention is height (negative down) and this repo''s z/dzdt convention is positive down.');
 u.ctd_dPdt = struct('unit', 'dbar/s', 'description', 'Finite-difference pressure rate, diff(ctd.P)./diff(ctd.time_s).');
 u.ctd_dzdt = struct('unit', 'm/s, positive during descent', 'description', 'Finite-difference depth rate (fall speed), diff(ctd.z)./diff(ctd.time_s) - this is the "w" fed to L2 spectral calculations.');
+u.ctd_cal_source = struct('unit', 'n/a (text)', 'description', 'Where the SBE49 calibration came from: ''.modraw $DCAL'' (what the SBE reported) or ''calibrations folder: <path>'' (SBE/<SN>.CAL) - L0''s ctd_cal.source. SBE49 only.');
 
 % --- alt / isap (altimeters) ---
 u.alt_hab = struct('unit', 'm', 'description', 'MOD altimeter height above bottom, from raw distance + GEOMETRY calibration (calibrate_altimeter_hab).');

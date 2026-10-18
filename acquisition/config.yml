@@ -22,7 +22,7 @@ latitude: 35
 # the MOD_fish_calibrations repo next to the software on DEV1, so cal files
 # are updated there (git pull) separately from the code. DEV3 reads it over
 # the network at the same /Volumes/DEV1_HD path. It holds
-#   SBE/<SN>.CAL                          CTD
+#   SBE/<SN>.CAL                          CTD (processing: only for a raw file without $DCAL)
 #   SHEAR_PROBES/<SN>/Calibration_<SN>.txt shear probes (slots 3-4 in fctd_epsi)
 #   FPO7/<SN>/Calibration_<SN>.txt         FP07 probes (slots 1-2 in fctd_epsi)
 #   SHEAR/cap1nFres200Meg_5KohmInput.mat   shear charge-amp response (processing only)
@@ -30,6 +30,8 @@ latitude: 35
 # records N/A for any probe file it can't find); dev1_setup.yml gets
 # calibrations_root: <folder> for processing.
 calibrations_root: /Volumes/DEV1_HD/Users/Shared/Software_current_cruise/MOD_fish_calibrations
+# Warn when a shear probe's newest calibration (last dated line of its Calibration_<SN>.txt) is older than this
+shear_cal_max_age_years: 2
 # Serial ports
 command_port: /dev/tty.usbserial-FTU7BXC3
 ctd_port: /dev/tty.usbserial-AV0K4NN9

@@ -4,6 +4,7 @@ Data processing pipeline and field commands for MOD profiling fish
 
 acquisition
     start_new_deployment.py - Start New Deployment window (Python/tkinter) for the acquisition Mac: writes the Setup file fctd_epsi reads, the deployment's meta/dev1_setup.yml, and a row in the cruise deployment log - see docs/workflow/start_new_deployment.md
+    ctd_calibration.py - Check CTD calibration (in that window): asks the fish for its SBE calibration ($DCAL, sbe.dcal), compares it with SBE/<SN>.CAL and can rewrite that file; shear probe calibration dates
     check_software/check_ship_setup.sh - read-only check of a ship computer (DEV1/DEV3): branch and remotes, up to date with GitHub, config.yml folders, MOD_fish_calibrations files, cruise_meta_data.yml, python3/tkinter and matlab
 
 setup
@@ -27,6 +28,7 @@ processing
     MODprocess_grid.m - the grid: one column per cast (down and up) in depth bins of grid.z_bin_m - CTD = mean of the L1 samples in each bin, epsilon/chi = mean of the scans whose center is in it (processed/<run>/grid/grid.mat)
     MODprocess_find_spool_swaps.m - winch spool changes for the cruise twist count, from the dev1_setup.yml files and spool_swap_log.csv together
     MODprocess_cruise_twist.m - the cruise twist count: every survey on the winch spool joined at 1 s, restarting at each spool change (Processed/twist/), run by the worker
+    L0/mod_L0_ctd_calibration.m - SBE calibration from a $DCAL block (what the SBE reports, used for each raw file) or a .CAL file (for a raw file without $DCAL); never the copy in the .modraw header
 
 util
     MODutil_simulate_acquisition.m - replays a real deployment's raw files into a test folder, growing each file the way fctd_epsi does, to test realtime processing
