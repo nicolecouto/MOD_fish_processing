@@ -191,16 +191,52 @@ def read_dcal_from_fish(command_port, ctd_port, speed, timeout_s=5.0):
             cmd.write(b'sbe.dcal\r\n')  # no flush(): it waits for the port to drain, forever if it's stuck
         except serial.SerialTimeoutException:
             raise RuntimeError("Couldn't send sbe.dcal on %s (the port didn't take it)" % command_port)
-        got = b''
+        got = {p.port: b'' for p in ports}
         t0 = time.time()
         while time.time() - t0 < timeout_s:
             for p in ports:
-                got += p.read(4096)
-            m = DCAL_RE.search(got)
-            if m:
-                return m.group(0).decode('ascii', errors='replace')
-        raise RuntimeError('No $DCAL from the fish within %g s (is the fish powered and connected? %d bytes '
-                           'came back)' % (timeout_s, len(got)))
+                got[p.port] += p.read(4096)
+                m = DCAL_RE.search(got[p.port])
+                if m:
+                    return m.group(0).decode('ascii', errors='replace')
+        raise RuntimeError('No $DCAL from the fish within %g s after sending sbe.dcal on %s. What came back:\n%s'
+                           % (timeout_s, command_port, describe_bytes(got)))
+    finally:
+        for p in ports:
+            p.close()
+
+
+def describe_bytes(got, n=300):
+    """Per port: how many bytes came back, and the start of them (printable)."""
+    lines = []
+    for port, b in got.items():
+        text = b[:n].decode('ascii', errors='replace')
+        text = text.replace('\r', '\\r').replace('\n', '\\n\n    ')
+        lines.append('  %s: %d bytes%s' % (port, len(b), ('\n    ' + text) if b else ' (nothing)'))
+    return '\n'.join(lines)
+
+
+def listen(command_port, ctd_port, speed, seconds=10.0):
+    """For finding out why Check CTD calibration fails: send sbe.dcal (the
+    only command sent) and print everything that comes back on both ports
+    for this many seconds."""
+    import serial
+    ports = [serial.Serial(ctd_port, int(speed), timeout=0.1, write_timeout=2, exclusive=True)]
+    if command_port != ctd_port:
+        ports.append(serial.Serial(command_port, int(speed), timeout=0.1, write_timeout=2, exclusive=True))
+    try:
+        for p in ports:
+            p.reset_input_buffer()
+        ports[-1].write(b'sbe.dcal\r\n')
+        print('sent sbe.dcal on %s; listening %g s ...' % (ports[-1].port, seconds))
+        got = {p.port: b'' for p in ports}
+        t0 = time.time()
+        while time.time() - t0 < seconds:
+            for p in ports:
+                got[p.port] += p.read(4096)
+        for port, b in got.items():
+            print('\n=== %s: %d bytes%s' % (port, len(b), ', has a $DCAL block' if DCAL_RE.search(b) else ''))
+            print(b[:3000].decode('ascii', errors='replace').replace('\r', ''))
     finally:
         for p in ports:
             p.close()
@@ -222,3 +258,15 @@ def shear_cal_date(cal_file):
             except ValueError:
                 continue
     return None
+
+
+if __name__ == '__main__':
+    # python3 ctd_calibration.py --listen   (ports and baud rate from config.yml)
+    import sys
+    if '--listen' not in sys.argv:
+        print(__doc__)
+        sys.exit(0)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mod_setup_file
+    cfg = mod_setup_file.read_flat_yaml(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.yml'))
+    listen(cfg.get('command_port'), cfg.get('ctd_port'), cfg.get('speed'))
