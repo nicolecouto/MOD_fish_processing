@@ -46,14 +46,27 @@ An L2 file holds scans only; the raw channels come from the L1 file with the sam
 `L2/` folder or a processing run's folder, it finds that L1 with `MODutil_level_folders.m`: the
 run's own `L1/`, the `L1_from` run's `L1/`, or `profiles_L1/` for `profiles_L2/`.
 
+- **File list:** a file with no scans is marked `(0 scans)`. This happens on deck, in a direction
+  `profile_dir` doesn't trust, below `speedLim_scan_m_s`, or when the file is too short. The viewer
+  opens on the first file that has scans. Selecting a 0-scan file still plots its L1 in the rows
+  and says why there are no scans. A folder with no L2 yet says so and names the step that makes it.
+- **Row 1, pressure:** the L1 pressure at full rate as dots, with the L2 scan pressures on top as
+  circles. Click either to pick the nearest scan.
+- **Spectrum panels:** frequency and wavenumber are always log-log. Only the epsi channels are
+  shown; L2's CTD spectra (`P_f`, `T_f`, `C_f` on `f_ctd`) aren't.
+
 ![Example MODvis_spectra.m window, ASTRAL Profile100 scan 159](../concepts/images/MODvis_spectra_example.png)
 
 The frequency-spectrum panel's y-axis is in V²/Hz for the t/s channels and g²/Hz for the
 accelerometers. Reference lines on it:
 
-- **Noise floors** (legacy `Profile*.mat` only): FPO7 bench noise, shifted per channel, and modeled
+- **Noise floors**: FPO7 bench noise, shifted per channel, and modeled
   - see [From raw volts to a trustworthy wavenumber spectrum](../concepts/spectral_filtering_and_noise_floors.md#4-where-the-noise-floor-comes-in).
-  Shaded up to 3x (the cutoff search's `SN_min`).
+  Shaded up to 3x (the cutoff search's `SN_min`). For L2 the bench noise is
+  `FPO7/FPO7_benchnoise.mat` under the run's `paths.calibrations_root` (from `meta/metadata.mat`),
+  or a `MOD_fish_calibrations` clone next to this repo when that path isn't mounted. The fc/kc
+  cutoffs and the Batchelor/Panchev overlays come from L2's `chi_obs_kc`, `t*_fc_index` and
+  `epsilon_obs_kc`, renamed to the legacy names on load.
 - **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits,
   each drawn solid at Δ²/12/(Fs/2) and dashed at Δ²/(Fs/2), plus the accelerometer sensor noise
   at (20e-6)² g²/Hz - see

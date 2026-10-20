@@ -8,7 +8,12 @@ classdef MODvis_spectra < handle
     %     Fs_epsi, N_epsi. Raw per-channel context (rows 2-3) is pulled
     %     from the L1 file with the same name (MODutil_level_folders.m:
     %     the run's L1/, the run.L1_from run's L1/, or profiles_L1/ for
-    %     profiles_L2/). Pick an L2 folder or a processed/<run>/ folder.
+    %     profiles_L2/). Pick an L2 folder or a processed/<run>/ folder
+    %     (one with no L2 yet says so). Files with no scans (on deck, the
+    %     direction profile_dir doesn't trust, too slow) are marked
+    %     "(0 scans)" in the list, the first file with scans opens first,
+    %     and a 0-scan file still shows its L1 time series. L2's CTD
+    %     spectra (P_f/T_f/C_f on f_ctd) aren't shown.
     %   - Legacy MOD_fish_lib/EPSILOMETER Profile*.mat (e.g.
     %     data_for_reorg/epsi_mako/astral/profiles/*.mat): Profile.dnum/.pr/
     %     .f, Profile.Pt_volt_f/.Ps_volt_f/.Pa_g_f (each a struct keyed by
@@ -17,7 +22,9 @@ classdef MODvis_spectra < handle
     %     raw per-channel context (rows 2-3) comes straight from the same
     %     file's own Profile.epsi, no sibling file needed.
     % Pick a file, and:
-    %   - Row 1 always shows pressure (per-scan) for context.
+    %   - Row 1 shows pressure for context: the L1 file's full-rate
+    %     ctd.P as dots, each scan's pressure as a circle (per-scan only,
+    %     when there is no L1 ctd).
     %   - Rows 2-3 each show up to 2 raw channels (t1/t2/s1/s2/a1/a2/a3
     %     volt/g, restricted to whichever channels this file actually has
     %     spectra for) on their own left/right y-axes (yyaxis). Y-limits are
@@ -31,8 +38,13 @@ classdef MODvis_spectra < handle
     %     channels, toggle on/off via checkboxes) in the bottom axes,
     %     with flat ADC bit-noise and accelerometer noise reference lines
     %     (BitNoiseOrder - bit noise uses the ADC LSB of whichever
-    %     channel is picked in the "Bit noise" dropdown) and, for legacy
-    %     files, FPO7 noise floors.
+    %     channel is picked in the "Bit noise" dropdown), FPO7 noise
+    %     floors (L2: the run's FPO7_benchnoise.mat, found through
+    %     processed/<run>/meta/metadata.mat's calibrations_root or a
+    %     MOD_fish_calibrations clone next to this repo), the fc/kc
+    %     cutoffs and the Batchelor/Panchev overlays (L2's chi_obs, *_kc,
+    %     *_fc_index and epsilon fields mapped by normalizeL2). The
+    %     frequency and wavenumber panels are always loglog.
 
     properties
         Fig matlab.ui.Figure
@@ -49,6 +61,8 @@ classdef MODvis_spectra < handle
         CurrentFile string = ""
 
         L1Dir string = ""
+        NoiseCoefs = []                    % FP07 bench noise (n0-n3) for this folder's run, or []
+        NoiseNote string = ""              % where NoiseCoefs came from, or why it's missing
         CurrentL1Data struct = struct()    % matching L1 file (epsi.dnum, epsi.(channel), ...)
 
         NRows double = 3   % 1 = pressure/CTD temperature, 2-3 = selectable L1 channels
@@ -59,6 +73,8 @@ classdef MODvis_spectra < handle
         TopAxes
         TopLine        % axis-1 (left) line handle per row
         TopLine2       % axis-2 (right) line handle per row (rows 2-3 only)
+        TopScans       % L2 scan pressures as circles, over the L1 pressure (per row, axis 1)
+        TopScans2      % same, on axis 2
         ShadePatch     % shaded-scan patch handle per row
 
         FieldADrop     % axis 1 (left, required)
@@ -451,6 +467,8 @@ classdef MODvis_spectra < handle
             app.TopAxes = gobjects(app.NRows,1);
             app.TopLine = gobjects(app.NRows,1);
             app.TopLine2 = gobjects(app.NRows,1);
+            app.TopScans = gobjects(app.NRows,1);
+            app.TopScans2 = gobjects(app.NRows,1);
             app.ShadePatch = gobjects(app.NRows,1);
             app.FieldADrop = gobjects(app.NRows,1);
             app.FieldBDrop = gobjects(app.NRows,1);
@@ -545,6 +563,7 @@ classdef MODvis_spectra < handle
             % panel's.
             app.SpecAxes.FontSize = app.AxesTickFontSize;
             grid(app.SpecAxes,'on');
+            app.setLogLog(app.SpecAxes);
             xlabel(app.SpecAxes,'Frequency [Hz]');
             ylabel(app.SpecAxes,'PSD [V^2/Hz, g^2/Hz]');
 
@@ -552,6 +571,7 @@ classdef MODvis_spectra < handle
             app.WavAxes.Layout.Row = 2; app.WavAxes.Layout.Column = 1;
             app.WavAxes.FontSize = app.AxesTickFontSize;
             grid(app.WavAxes,'on');
+            app.setLogLog(app.WavAxes);
             xlabel(app.WavAxes,'Wavenumber [cpm]');
             ylabel(app.WavAxes,'Power spectral density');
 
@@ -800,6 +820,7 @@ classdef MODvis_spectra < handle
             app.L1Dir = string(L1_dir);
             app.Folder = folder;
             app.FolderLbl.Text = folder;
+            [app.NoiseCoefs, app.NoiseNote] = app.loadBenchNoise(folder);
 
             d = dir(fullfile(folder,"*.mat"));
             names = sort(string({d.name})');
@@ -807,15 +828,38 @@ classdef MODvis_spectra < handle
 
             if isempty(names)
                 app.FileList.Items = {};
+                app.FileList.ItemsData = {};
                 app.CurrentData = struct();
                 app.CurrentFile = "";
                 app.Fig.Name = "Spectra Explorer (no files)";
                 app.clearAll();
+                if L2_dir == "" && L1_dir ~= ""
+                    msg = "No L2 here yet - make it with MODprocess_all_L1_to_L2 (its L1: " + L1_dir + ")";
+                else
+                    msg = "No .mat files in " + folder;
+                end
+                app.FolderLbl.Text = folder + " - " + msg;
+                app.SpecTitle.Text = msg;
                 return;
             end
 
-            app.FileList.Items = cellstr(names);
-            app.FileList.Value = app.FileList.Items{1};
+            % Scans per file from the file's header (no load); a file with
+            % 0 scans is marked and not opened first. -1 = no top-level
+            % dnum (a legacy Profile file) - not marked.
+            nscan = -ones(numel(names), 1);
+            for i = 1:numel(names)
+                w = whos('-file', fullfile(folder, names(i)), 'dnum');
+                if ~isempty(w)
+                    nscan(i) = prod(w.size);
+                end
+            end
+            labels = names;
+            labels(nscan == 0) = names(nscan == 0) + " (0 scans)";
+            app.FileList.Items = cellstr(labels);
+            app.FileList.ItemsData = cellstr(names);
+            first = find(nscan ~= 0, 1);
+            if isempty(first); first = 1; end
+            app.FileList.Value = app.FileList.ItemsData{first};
             app.onFileSelected();
         end
 
@@ -872,7 +916,7 @@ classdef MODvis_spectra < handle
                     app.CurrentL1Data = struct('epsi', S.Profile.epsi);
                 end
             else
-                app.CurrentData = S;
+                app.CurrentData = app.normalizeL2(S);
                 % Matching L1 file (same filename, sibling L1 folder) -
                 % source of the raw per-channel timeseries for rows 2-3.
                 if app.L1Dir ~= ""
@@ -888,16 +932,28 @@ classdef MODvis_spectra < handle
             end
             app.updateBitNoiseConversion();
 
-            if ~isfield(app.CurrentData,'dnum') || isempty(app.CurrentData.dnum)
-                app.GlobalDnum = [];
+            % A file with no scans (on deck, the direction profile_dir
+            % doesn't trust, too slow, or too short) still shows its L1
+            % time series, so you can see why.
+            app.GlobalDnum = [];
+            if isfield(app.CurrentData,'dnum')
+                app.GlobalDnum = app.CurrentData.dnum(:);
+            end
+            tl = app.GlobalDnum;
+            if isempty(tl)
+                for sub = {'ctd','epsi'}
+                    if isfield(app.CurrentL1Data, sub{1}) && isfield(app.CurrentL1Data.(sub{1}), 'dnum')
+                        tl = [tl; app.CurrentL1Data.(sub{1}).dnum(:)]; %#ok<AGROW>
+                    end
+                end
+            end
+            if isempty(tl)
                 app.clearAll();
-                app.SpecTitle.Text = 'No scans in this file (no data in the profile_dir direction, or file too short)';
+                app.SpecTitle.Text = 'No scans in this file, and no L1 file with the same name';
                 return;
             end
-
-            app.GlobalDnum = app.CurrentData.dnum(:);
-            app.ProfileTmin = min(app.GlobalDnum);
-            app.ProfileTmax = max(app.GlobalDnum);
+            app.ProfileTmin = min(tl);
+            app.ProfileTmax = max(tl);
 
             if app.ProfileTmax > app.ProfileTmin
                 app.TopAxes(1).XLim = [app.ProfileTmin, app.ProfileTmax]; % propagates via linkaxes
@@ -938,6 +994,9 @@ classdef MODvis_spectra < handle
             if has_l1_epsi
                 l1_fields = string(fieldnames(app.CurrentL1Data.epsi));
                 channels = raw_channels(ismember(raw_channels, l1_fields));
+                if isempty(app.GlobalDnum) % no scans: every L1 channel
+                    channels = l1_fields(~ismember(l1_fields, ["dnum", "time_s"]));
+                end
             else
                 channels = strings(0,1);
             end
@@ -962,10 +1021,9 @@ classdef MODvis_spectra < handle
                 app.ChannelCheck.(ch).Visible = any(strcmp(l2_channels, ch));
             end
 
-            % Noise-floor checkboxes - only legacy Profile files carry
-            % this data (normalizeLegacyProfile); new-format L2/profile
-            % files have no physUnits/wavenumber fields, so these stay
-            % hidden for them.
+            % Noise-floor checkboxes - shown when there's a bench noise
+            % floor: a legacy Profile's own (normalizeLegacyProfile), or
+            % for L2 the run's FPO7_benchnoise.mat (loadBenchNoise).
             pu = struct('noise_coefs', []);
             if isfield(app.CurrentData, 'physUnits')
                 pu = app.CurrentData.physUnits;
@@ -1009,7 +1067,13 @@ classdef MODvis_spectra < handle
             % Re-select the scan at the closest depth to the one that was
             % selected in the previous profile, so a selection survives
             % moving between profiles instead of always being dropped.
-            if ~isempty(prevPressure) && isfield(app.CurrentData,'pressure') ...
+            if isempty(app.GlobalDnum)
+                cla(app.SpecAxes);
+                cla(app.WavAxes);
+                title(app.WavAxes, '');
+                app.SpecTitle.Text = ['No scans in this file (on deck, a direction profile_dir ' ...
+                    'doesn''t trust, slower than speedLim_scan_m_s, or too short) - its L1 is shown above'];
+            elseif ~isempty(prevPressure) && isfield(app.CurrentData,'pressure') ...
                     && ~isempty(app.CurrentData.pressure)
                 [~, idx] = min(abs(app.CurrentData.pressure(:) - prevPressure));
                 app.SelectedScanIdx = idx;
@@ -1037,10 +1101,16 @@ classdef MODvis_spectra < handle
             end
             if strlength(lastVal) > 0 && any(strcmp(dropdown.Items, char(lastVal)))
                 dropdown.Value = char(lastVal);
+                value = string(lastVal);
             else
                 dropdown.Value = dropdown.Items{1};
+                % Not in this file (e.g. no scans): keep remembering it
+                % for the next file that has it
+                value = string(lastVal);
+                if strlength(value) == 0
+                    value = string(dropdown.Value);
+                end
             end
-            value = string(dropdown.Value);
         end
 
         function tf = getChannelOnOr(app, ch, default)
@@ -1258,17 +1328,31 @@ classdef MODvis_spectra < handle
             end
         end
 
+        function setLogLog(~, ax)
+            % Both spectrum panels are always loglog - set when built and
+            % after every cla, not only once a plot finishes, so an empty
+            % panel or one left by an error isn't linear. Log scales turn
+            % on minor gridlines by themselves; keep only the decade lines.
+            set(ax, 'XScale','log', 'YScale','log', 'XMinorGrid','off', 'YMinorGrid','off');
+        end
+
         function channels = getChannelList(app)
             channels = strings(0,1);
-            if ~isfield(app.CurrentData,'spectra') || ~isstruct(app.CurrentData.spectra)
+            if ~isfield(app.CurrentData,'spectra') || ~isstruct(app.CurrentData.spectra) ...
+                    || ~isfield(app.CurrentData.spectra,'f')
                 return
             end
-            present = fieldnames(app.CurrentData.spectra);
-            % 'f'/'k' are shared axes, not channels; any *_k field is
+            % Frequency spectra on spectra.f only: [scans x numel(f)]. L2
+            % also holds the CTD spectra (P_f/T_f/C_f on their own f_ctd),
+            % f_ctd and *_fc_index - not shown here. Any *_k field is
             % wavenumber-domain (t1_Tg_k, s1_shear_k, ...) and belongs to
             % the wavenumber panel instead - see getWavChannelList.
+            nf = numel(app.CurrentData.spectra.f);
+            nscan = numel(app.CurrentData.dnum);
+            present = fieldnames(app.CurrentData.spectra);
             present = present(~ismember(present, {'f','k'}));
             present = present(~endsWith(present, '_k'));
+            present = present(cellfun(@(c) isequal(size(app.CurrentData.spectra.(c)), [nscan nf]), present));
             ordered = app.ChannelOrder(ismember(app.ChannelOrder, present));
             rest = setdiff(present, ordered, 'stable');
             channels = string([ordered(:); rest(:)]);
@@ -1287,6 +1371,75 @@ classdef MODvis_spectra < handle
             present = fieldnames(app.CurrentData.spectra);
             present = present(endsWith(present, '_k') & ~strcmp(present, 'k'));
             channels = string(present(:));
+        end
+
+        function [coefs, note] = loadBenchNoise(~, L2_dir)
+            % FP07 bench noise floor, the same file L2 used
+            % (MODprocess_single_L1_to_L2.m): <calibrations_root>/FPO7/
+            % FPO7_benchnoise.mat, calibrations_root from the run's
+            % meta/metadata.mat (processed/<run>/L2 -> processed/<run>/meta).
+            % Off the ship that path (DEV1's) usually isn't mounted, so a
+            % MOD_fish_calibrations clone next to this repo is tried next.
+            coefs = [];
+            roots = {};
+            meta_file = fullfile(fileparts(char(L2_dir)), 'meta', 'metadata.mat');
+            if isfile(meta_file)
+                try
+                    m = load(meta_file, 'paths');
+                    roots{end+1} = m.paths.calibrations_root;
+                catch
+                end
+            end
+            repo = fileparts(fileparts(mfilename('fullpath')));
+            roots{end+1} = fullfile(fileparts(repo), 'MOD_fish_calibrations');
+            for i = 1:numel(roots)
+                f = fullfile(char(roots{i}), 'FPO7', 'FPO7_benchnoise.mat');
+                if isfile(f)
+                    coefs = load(f, 'n0', 'n1', 'n2', 'n3');
+                    note = "FP07 bench noise: " + f;
+                    return
+                end
+            end
+            note = "No FP07 bench noise found (tried " + strjoin(string(roots), ", ") + ")";
+        end
+
+        function S = normalizeL2(app, S)
+            % This repo's L2 under the names the noise-floor, cutoff and
+            % Batchelor/Panchev overlays read (the names
+            % normalizeLegacyProfile gives a legacy Profile):
+            %   chi_obs -> chi, epsilon_obs_coh_corr -> epsilonCo,
+            %   epsilon_mle -> epsilonMle, nu -> kvis,
+            %   chi_obs_kc -> t1_kc/t2_kc, spectra.t*_fc_index -> t*_fc [Hz],
+            %   epsilon_obs_kc -> s1_kc/s2_kc, s*_fc = s*_kc x |w| [Hz],
+            %   FP07 bench noise (loadBenchNoise) -> physUnits.noise_coefs.
+            % A field the file doesn't have is left out.
+            S.physUnits = struct('noise_coefs', app.NoiseCoefs);
+            if isfield(S, 'chi_obs'); S.chi = S.chi_obs; end
+            if isfield(S, 'epsilon_obs_coh_corr'); S.epsilonCo = S.epsilon_obs_coh_corr; end
+            if isfield(S, 'epsilon_mle'); S.epsilonMle = S.epsilon_mle; end
+            if isfield(S, 'nu'); S.kvis = S.nu; end
+            for ch = {'t1','t2'}
+                c = ch{1};
+                if isfield(S, 'chi_obs_kc') && isfield(S.chi_obs_kc, c)
+                    S.([c '_kc']) = S.chi_obs_kc.(c)(:);
+                end
+                if isfield(S, 'spectra') && isfield(S.spectra, [c '_fc_index']) && isfield(S.spectra, 'f')
+                    ix = S.spectra.([c '_fc_index'])(:);
+                    fc = nan(size(ix));
+                    ok = isfinite(ix) & ix >= 1 & ix <= numel(S.spectra.f);
+                    fc(ok) = S.spectra.f(ix(ok));
+                    S.([c '_fc']) = fc;
+                end
+            end
+            for ch = {'s1','s2'}
+                c = ch{1};
+                if isfield(S, 'epsilon_obs_kc') && isfield(S.epsilon_obs_kc, c)
+                    S.([c '_kc']) = S.epsilon_obs_kc.(c)(:);
+                    if isfield(S, 'w') && numel(S.w) == numel(S.([c '_kc']))
+                        S.([c '_fc']) = S.([c '_kc']) .* abs(S.w(:));
+                    end
+                end
+            end
         end
 
         function S2 = normalizeLegacyProfile(app, Profile)
@@ -1496,7 +1649,7 @@ classdef MODvis_spectra < handle
         end
 
         function plotRow(app, rowIdx)
-            if isempty(fieldnames(app.CurrentData)) || isempty(app.GlobalDnum)
+            if isempty(fieldnames(app.CurrentData))
                 return
             end
 
@@ -1516,6 +1669,8 @@ classdef MODvis_spectra < handle
             % survive any redraw).
             if isgraphics(app.TopLine(rowIdx)); delete(app.TopLine(rowIdx)); end
             if isgraphics(app.TopLine2(rowIdx)); delete(app.TopLine2(rowIdx)); end
+            if isgraphics(app.TopScans(rowIdx)); delete(app.TopScans(rowIdx)); end
+            if isgraphics(app.TopScans2(rowIdx)); delete(app.TopScans2(rowIdx)); end
             cla(ax);
 
             % ----- Axis 1 (left) -----
@@ -1617,6 +1772,21 @@ classdef MODvis_spectra < handle
                 app.TopLine2(rowIdx) = h;
             end
 
+            % Pressure from L1 (dots): the L2 scans' pressures on top as circles
+            if key == "pressure" && app.pressureFromL1() && isfield(app.CurrentData,'pressure') ...
+                    && ~isempty(app.GlobalDnum)
+                hold(ax,'on');
+                hs = plot(ax, app.GlobalDnum, app.CurrentData.pressure(:), 'o', 'Color', clr, ...
+                    'MarkerSize', 5, 'LineWidth', 1);
+                hold(ax,'off');
+                hs.ButtonDownFcn = @(src,evt) app.onTimeseriesClicked(src,evt);
+                if isPrimary
+                    app.TopScans(rowIdx) = hs;
+                else
+                    app.TopScans2(rowIdx) = hs;
+                end
+            end
+
             if isPrimary
                 app.Axis1Color{rowIdx} = clr;
                 ax.YAxis(1).Color = clr;
@@ -1681,7 +1851,10 @@ classdef MODvis_spectra < handle
                 return
             end
             if key == "pressure"
-                if isfield(app.CurrentData,'pressure') && isfield(app.CurrentData,'dnum')
+                if app.pressureFromL1() % full rate; plotOneSignal adds the scans as circles
+                    dnum = app.CurrentL1Data.ctd.dnum(:);
+                    y = app.CurrentL1Data.ctd.P(:);
+                elseif isfield(app.CurrentData,'pressure') && isfield(app.CurrentData,'dnum')
                     dnum = app.CurrentData.dnum(:);
                     y = app.CurrentData.pressure(:);
                 end
@@ -1722,6 +1895,12 @@ classdef MODvis_spectra < handle
                 dnum = app.CurrentL1Data.epsi.dnum(:);
                 y = app.CurrentL1Data.epsi.(key)(:);
             end
+        end
+
+        function tf = pressureFromL1(app)
+            tf = isfield(app.CurrentL1Data,'ctd') && isstruct(app.CurrentL1Data.ctd) ...
+                && isfield(app.CurrentL1Data.ctd,'P') && isfield(app.CurrentL1Data.ctd,'dnum') ...
+                && ~isempty(app.CurrentL1Data.ctd.P);
         end
 
         function reg = row1FieldRegistry(~)
@@ -2245,6 +2424,18 @@ classdef MODvis_spectra < handle
             hold(ax,'off');
             hNew.ButtonDownFcn = bdf;
             app.TopLine(rowIdx) = hNew;
+
+            % L2 scan circles (pressure) go back on top of the line
+            hs = app.TopScans(rowIdx);
+            if isgraphics(hs)
+                hold(ax,'on');
+                hsNew = plot(ax, hs.XData, hs.YData, 'LineStyle', 'none', 'Marker', hs.Marker, ...
+                    'Color', hs.Color, 'LineWidth', hs.LineWidth, 'MarkerSize', hs.MarkerSize);
+                hold(ax,'off');
+                hsNew.ButtonDownFcn = hs.ButtonDownFcn;
+                delete(hs);
+                app.TopScans(rowIdx) = hsNew;
+            end
         end
 
         function [t0, t1] = scanWindow(app, idx)
@@ -2266,6 +2457,7 @@ classdef MODvis_spectra < handle
             keep = f > 0; % f=0 can't be shown on a log axis
 
             cla(app.SpecAxes);
+            app.setLogLog(app.SpecAxes);
             hold(app.SpecAxes,'on');
             app.SpecLines = struct();
             app.SpecShade = struct();
@@ -2368,12 +2560,7 @@ classdef MODvis_spectra < handle
 
             hold(app.SpecAxes,'off');
             grid(app.SpecAxes,'on');
-            set(app.SpecAxes,'XScale','log','YScale','log');
-            % Switching XScale/YScale to log auto-enables minor gridlines
-            % here (2/3/4/.../9-per-decade) even though MinorGrid was never
-            % turned on explicitly - force them back off so only the major
-            % decade lines (10^-1, 10^0, 10^1, ...) show.
-            set(app.SpecAxes,'XMinorGrid','off','YMinorGrid','off');
+            app.setLogLog(app.SpecAxes);
             xlabel(app.SpecAxes,'Frequency [Hz]');
             ylabel(app.SpecAxes,'PSD [V^2/Hz, g^2/Hz]');
 
@@ -2387,13 +2574,16 @@ classdef MODvis_spectra < handle
                 app.SpecYMaxField.Value = yl(2);
             end
 
-            dnum_str = datestr(app.GlobalDnum(idx), 'yyyy-mm-dd HH:MM:SS'); %#ok<DATST>
+            dnum_str = 'no time'; % a legacy Profile can have NaN dnum at its ends
+            if isfinite(app.GlobalDnum(idx))
+                dnum_str = datestr(app.GlobalDnum(idx), 'yyyy-mm-dd HH:MM:SS'); %#ok<DATST>
+            end
 
             scanlen_s = NaN;
             if isfield(app.CurrentData,'N_epsi') && isfield(app.CurrentData,'Fs_epsi')
                 scanlen_s = app.CurrentData.N_epsi / app.CurrentData.Fs_epsi;
             end
-            nfft = app.getFieldOr(app.CurrentData, 'nfft', NaN);
+            nfft = app.getFieldOr(app.CurrentData, 'nfft', app.getFieldOr(app.CurrentData, 'fft_length', NaN));
             dof  = app.getFieldOr(app.CurrentData, 'dof', NaN);
 
             p_str = '';
@@ -2401,7 +2591,7 @@ classdef MODvis_spectra < handle
                 p_str = sprintf(', P=%.1f dbar', app.CurrentData.pressure(idx));
             end
 
-            app.SpecTitle.Text = sprintf('Scan %d/%d @ %s | length %.2f s (nfft=%d, dof=%d)%s', ...
+            app.SpecTitle.Text = sprintf('Scan %d/%d @ %s | length %.2f s (nfft=%d, dof=%g)%s', ...
                 idx, numel(app.GlobalDnum), dnum_str, scanlen_s, nfft, dof, p_str);
         end
 
@@ -2684,6 +2874,7 @@ classdef MODvis_spectra < handle
             % wavenumbers (tg_kc/sh_kc) are drawn as vertical lines the
             % same way as the observed channels.
             cla(app.WavAxes);
+            app.setLogLog(app.WavAxes);
             app.WavLines = struct();
             app.WavTheoryLines = struct();
 
@@ -2781,10 +2972,7 @@ classdef MODvis_spectra < handle
 
             hold(app.WavAxes,'off');
             grid(app.WavAxes,'on');
-            set(app.WavAxes,'XScale','log','YScale','log');
-            % See plotSpectrum's matching comment - log XScale/YScale
-            % auto-enables minor gridlines here too; force back off.
-            set(app.WavAxes,'XMinorGrid','off','YMinorGrid','off');
+            app.setLogLog(app.WavAxes);
             xlabel(app.WavAxes,'Wavenumber [cpm]');
             ylabel(app.WavAxes,'Power spectral density');
 

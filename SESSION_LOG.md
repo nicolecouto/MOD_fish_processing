@@ -4,6 +4,22 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-20 - MODvis_spectra with scans-only L2 (branch `main-fork`)
+
+Nicole: "how should the MODvis_spectra GUI work now that L1 and L2 are separate? Does it work now? It doesn't seem to if I go to the latest L2 directory", and "the frequency and wavenumber spectra both need to be loglog ... What about all the cutoff values and temperature noise floors I had check boxes for?" Her choices: CTD spectra left out; 0-scan files marked, open the first with scans; row 1 = L1 pressure as dots with L2 scan pressure as circles; say clearly when there's no L2.
+- Clicking a scan crashed in `plotSpectrum`. L2's `spectra` also holds `P_f`/`T_f`/`C_f` (on `f_ctd`), `f_ctd` and `t*_fc_index`, and `getChannelList` took them for epsi channels. Now only fields of size [scans x numel(f)] are channels. The crash also skipped the log scaling at the end of the plot functions; both panels are now set log-log when built and after every `cla`.
+- File list: `whos` counts each file's scans (no load). Empty files are marked `(0 scans)`, and the viewer opens on the first file with scans. A 0-scan file plots its L1 in the rows and says why it has no scans. No L2 yet: says so, with the L1 folder.
+- Row 1 pressure: L1 `ctd.P` dots plus L2 scan circles, both clickable.
+- Noise floors, fc/kc cutoffs and the Batchelor/Panchev overlays had worked only for legacy Profile files. `normalizeL2` maps L2's names onto the legacy ones (chi_obs -> chi, epsilon_obs_coh_corr -> epsilonCo, epsilon_mle -> epsilonMle, nu -> kvis, chi_obs_kc -> t*_kc, f(t*_fc_index) -> t*_fc, epsilon_obs_kc -> s*_kc). `loadBenchNoise` reads FPO7_benchnoise.mat under the run's `calibrations_root`, or a `MOD_fish_calibrations` clone next to the repo.
+- The title's `nfft` falls back to `fft_length`. The title no longer errors on a legacy file with a NaN dnum.
+- Docs: visualization/index.md, the viewer's header.
+
+Tested read-only on the RR2609 mako2_test2 realtime L2 (10 files):
+- It opens on 174526; 4 files are marked 0 scans. Scan counts 74/97/39/24/36/7 match the circles.
+- Both panels are log-log on open, after every file and scan, and on 0-scan files.
+- Noise floors, cutoffs and overlays plot.
+- The `post1` run says there's no L2. The legacy ASTRAL `profiles` folder still loads and plots.
+
 ### 2026-10-19 - Cruise yml: fields up top, descriptions at the bottom (branch `main-fork`)
 
 Nicole: "it's easier to use a yml file if it's just the fields and not so much commenting text. So can you move the comments describing each field to the bottom of the file? Use indentation and hyphens to make each field stand out." Her choices: the cruise template only, one-line section headings kept, run ymls get the descriptions at their bottom too.
