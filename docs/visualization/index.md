@@ -186,7 +186,8 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
   there are 2 or more ("sigma0 contours": on/off, and the interval in kg/m^3; empty = 10
   levels; shown in the first section's title). All 4 share the depth and time limits;
-  each has its own variable (any field in `grid.variables`; epsilon and chi as log10),
+  each has its own variable (any field in `grid.variables`; epsilon and chi as log10, not their
+  cutoffs; sections start as sigma0, temperature, salinity_practical and epsilon_final),
   colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
   and turbo. Click one to pick a time: the L1/L2 file holding it is shown.

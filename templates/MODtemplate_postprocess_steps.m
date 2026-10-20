@@ -59,8 +59,8 @@ profiles_L2_files = MODprocess_all_L1_to_L2(metadata.paths.profiles_L1, metadata
 % L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L2);
 
 %% 7. Grid (processed/<run>/grid/grid.mat: one column per cast, in depth bins of
-% grid.z_bin_m: CTD = mean of the L1 samples in each bin, turbulence = mean of the
-% scans whose center is in it). 'profile' reads profiles_L1/ and profiles_L2/ (and L1/ for GPS);
+% grid.z_bin_m: CTD = mean of the L1 samples in each bin, every L2 value = mean of the
+% scans whose center is in it; long-form names, e.g. temperature, salinity_practical). 'profile' reads profiles_L1/ and profiles_L2/ (and L1/ for GPS);
 % with L2 by file above, use 'file'.
 gridded = MODprocess_grid(metadata, 'profile');   % not 'grid': that's Matlab's grid on/off
 

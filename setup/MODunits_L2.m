@@ -52,7 +52,7 @@ u.epsilon_obs_coh_corr_kc = struct('unit', 'cpm', 'description', 'Cutoff wavenum
 u.epsilon_mle = struct('unit', 'W/kg', 'description', 'Nasmyth-spectrum MLE-fit epsilon, seeded from epsilon_obs_coh_corr. Same pattern.');
 u.fom = struct('unit', 'dimensionless', 'description', 'Figure of merit (MAD-based log-ratio of observed vs. model spectrum) for the direct-integration epsilon fit. Same pattern - lower is a better fit.');
 u.fom_mle = struct('unit', 'dimensionless', 'description', 'Figure of merit for the MLE epsilon fit. Same pattern.');
-u.coherence_sum = struct('unit', 'dimensionless (0-1, magnitude-squared coherence)', 'description', 'Band-integrated shear-vs-accelerometer coherence, a contamination diagnostic - not consumed by the epsilon calculation itself (which uses the full per-frequency coherence vector). Same pattern.');
+u.coherence_sum = struct('unit', 'Hz (magnitude-squared coherence integrated over frequency)', 'description', 'Band-integrated shear-vs-accelerometer coherence over coherence_fmin_hz to coherence_fmax_hz, a contamination diagnostic - not consumed by the epsilon calculation itself (which uses the full per-frequency coherence vector). Same pattern.');
 
 % --- spectra (shared axes + per-channel patterns) ---
 u.spectra_f = struct('unit', 'Hz', 'description', 'Frequency vector, shared across all scans and channels, 1 x nfreq.');

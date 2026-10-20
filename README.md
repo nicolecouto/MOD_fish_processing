@@ -25,7 +25,7 @@ launchers (repo folder, double-click on DEV3)
 
 processing
     MODprocess_deployment.m - the one driver: realtime worker (MODprocess_deployment(processed_root, 'watch', true), or double-click "Start Realtime Processing.command") and one-pass/postprocessing runs (MODprocess_deployment(survey_folder, 'run', name, ...)): one yml per run (survey/meta/meta_data_<run>.yml) and one output folder (survey/processed/<run>/); see docs/workflow/processing_data.md
-    MODprocess_grid.m - the grid: one column per cast (down and up) in depth bins of grid.z_bin_m - CTD = mean of the L1 samples in each bin, epsilon/chi = mean of the scans whose center is in it (processed/<run>/grid/grid.mat)
+    MODprocess_grid.m - the grid: one column per cast (down and up) in depth bins of grid.z_bin_m - long-form names (temperature, salinity_practical, ...) - CTD, attitude and height above bottom = mean of the L1 samples in each bin, every L2 per-scan value (all forms of epsilon and chi) = mean of the scans whose center is in it (processed/<run>/grid/grid.mat)
     MODprocess_find_spool_swaps.m - winch spool changes for the cruise twist count, from the dev1_setup.yml files and spool_swap_log.csv together
     MODprocess_cruise_twist.m - the cruise twist count: every survey on the winch spool joined at 1 s, restarting at each spool change (Processed/twist/), run by the worker
     MODprocess_reset_survey.m - deletes a survey's L0/, processed/ and meta/ctd_calibration.mat (asks first) so it's reprocessed from raw, e.g. after its CTD calibration changed and the worker stopped

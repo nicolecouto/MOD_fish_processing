@@ -57,6 +57,7 @@ depth-from-pressure).
 call (`toolbox/seawater/ktemp.m`'s density/heat-capacity terms, and anywhere else a GSW
 Absolute-Salinity-family input is needed). This avoids adding new longitude plumbing for a
 correction that's negligible for this repo's deployments.
+In the grid (`MODprocess_grid.m`) it is `salinity_reference`, next to `salinity_practical`.
 
 ### How negligible, exactly - measured, not assumed
 

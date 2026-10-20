@@ -20,7 +20,7 @@ classdef MODvis_realtime_monitor < handle
     %           vs time; one cast spans its own start to end), with sigma0 contours (2+ casts; on/off and the interval in
     %           the controls). All 4 share the depth and
     %           time limits; each has its own variable (from
-    %           grid.variables; epsilon and chi as log10), colormap and
+    %           grid.variables; epsilon and chi as log10, not their cutoffs), colormap and
     %           colour range.
     %   Middle, 3 rows x 2 columns of small plots beside sections 1-3,
     %           half a section's width: left, pressure vs time over the
@@ -104,7 +104,7 @@ classdef MODvis_realtime_monitor < handle
     end
 
     properties (Constant)
-        DefaultVars = {'sigma0', 'T', 'SP', 'epsilon_final'}
+        DefaultVars = {'sigma0', 'temperature', 'salinity_practical', 'epsilon_final'}
         DefaultCmaps = {'dense', 'thermal', 'haline', 'turbo'}
         % parula and turbo are Matlab's; the rest are cmocean's (toolbox/cmocean)
         Colormaps = {'parula', 'turbo', 'thermal', 'haline', 'dense', 'deep', 'algae', 'matter', ...
@@ -443,7 +443,7 @@ classdef MODvis_realtime_monitor < handle
                     app.GridStamp = NaN; % being written - next refresh
                 end
             end
-            names = {'T'};
+            names = {'temperature'};
             if isfield(app.Grid, 'variables') && ~isempty(app.Grid.variables)
                 v = app.Grid.variables;
                 keep = arrayfun(@(x) isfield(app.Grid, x.name) && isnumeric(app.Grid.(x.name)) ...
@@ -452,7 +452,7 @@ classdef MODvis_realtime_monitor < handle
                 names = names(~ismember(names, {'z', 'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_complete', 'profile_number'}));
             end
             if isempty(names)
-                names = {'T'};
+                names = {'temperature'};
             end
             for i = 1:app.NSections
                 current = app.VarDrop(i).Value;
@@ -658,7 +658,7 @@ classdef MODvis_realtime_monitor < handle
                     unit = app.Grid.variables(k).unit;
                 end
             end
-            if startsWith(name, {'epsilon', 'chi'})
+            if startsWith(name, {'epsilon', 'chi'}) && ~contains(name, '_kc')
                 v(v <= 0) = NaN;
                 v = log10(v);
                 label = sprintf('log10 %s [%s]', name, unit);
@@ -739,17 +739,17 @@ classdef MODvis_realtime_monitor < handle
             cla(ax);
             g = app.Grid;
             [idx, colors, labels] = app.lastCasts();
-            if ~isfield(g, 'SP') || ~isfield(g, 'T') || isempty(idx)
+            if ~isfield(g, 'salinity_practical') || ~isfield(g, 'temperature') || isempty(idx)
                 title(ax, 'T-S: no grid yet', 'FontSize', app.FontSize + 1);
                 return
             end
             hold(ax, 'on');
             for i = 1:numel(idx)
-                plot(ax, g.SP(:, idx(i)), g.T(:, idx(i)), '.-', 'Color', colors(i, :), 'MarkerSize', 4);
+                plot(ax, g.salinity_practical(:, idx(i)), g.temperature(:, idx(i)), '.-', 'Color', colors(i, :), 'MarkerSize', 4);
             end
             hold(ax, 'off');
-            xlabel(ax, 'SP [psu]');
-            ylabel(ax, 'T [degC]');
+            xlabel(ax, 'salinity\_practical [psu]');
+            ylabel(ax, 'temperature [degC]');
             legend(ax, labels, 'Location', 'best', 'FontSize', app.FontSize);
             title(ax, sprintf('T-S, last %d casts (oldest dark, newest yellow)', numel(idx)), ...
                 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
@@ -757,8 +757,8 @@ classdef MODvis_realtime_monitor < handle
 
         function drawWaterfall(app)
             % the last casts' T and C profiles, each offset from the last
-            app.drawProfiles(app.WaterfallAx, 'T', 'degC', app.OffsetField.Value, 0.01);
-            app.drawProfiles(app.CondAx, 'C', 'S/m', app.CondOffsetField.Value, 0.001);
+            app.drawProfiles(app.WaterfallAx, 'temperature', 'degC', app.OffsetField.Value, 0.01);
+            app.drawProfiles(app.CondAx, 'conductivity', 'S/m', app.CondOffsetField.Value, 0.001);
         end
 
         function drawProfiles(app, ax, name, unit, offset, min_offset)

@@ -167,16 +167,43 @@ switch only changes what goes in and where the result goes. `'from'` and `'until
 
 `MODprocess_grid(metadata, by)` writes `processed/<run>/grid/grid.mat`: one column per cast in the
 run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_m` meters
-(Nicole's choices, 2026-10-16). Every value is a bin mean, and nothing is interpolated:
+(Nicole's choices, 2026-10-16). Every value is a bin mean. Names are long-form (2026-10-20), and
+L2's per-channel values are `<L2 name>_<channel>`:
 
-- **CTD** (`T`, `C`, `SP`, `SR`, `CT`, `sigma0`, `w`, `P`): the mean of every L1 CTD sample in the bin,
-  at the CTD's full rate (like the old FCTD grid).
-- **Turbulence** (`epsilon_final`, `chi_obs_<ch>`, `chi_mle_<ch>`): the mean of the L2 scans whose
-  center is in the bin. A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m
-  bins and a scan every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts
-  have scans. `epsilon_final` is gridded only when L2 computed it, so a vehicle without shear probes, like
-  the FCTD, has none (L2 doesn't write it then; an older L2 file's all-NaN one, with an empty
-  `epsilon_final_source`, is skipped).
+- **CTD**: the mean of every L1 CTD sample in the bin, at the CTD's full rate (like the old FCTD grid).
+
+    | Grid field | L1 |
+    |---|---|
+    | `pressure` | `ctd.P` |
+    | `temperature` | `ctd.T` |
+    | `conductivity` | `ctd.C` |
+    | `salinity_practical` | `ctd.SP` |
+    | `salinity_reference` | `ctd.SR` (used in place of Absolute Salinity - [why](../concepts/units_and_seawater.md)) |
+    | `temperature_conservative` | `ctd.CT` |
+    | `sigma0` | `ctd.sigma0` |
+    | `fall_speed` | `ctd.dzdt` |
+
+- **Attitude and height above bottom**: `pitch`, `tilt` and `roll` from L1 `vnav`, and
+  `height_above_bottom` from `isap.hab` (or `alt.hab` without an isap). Each sample is put at the CTD
+  depth at its time, then binned. `roll` is a circular mean, because it wraps at +-180. Altimeter
+  samples pegged at the maximum range are left out: with no bottom in range, the ISA500 reads a
+  flat 120 m. A maximum that repeats exactly counts as pegged, since a real range varies, so a bin
+  with no bottom in range is NaN. yaw and spin are headings and aren't gridded.
+- **Scans**: the mean of the L2 scans whose center is in the bin: `viscosity_kinematic` (`nu`),
+  `diffusivity_thermal_molecular` (`ktemp`), `epsilon_final`, and, per channel, every form of epsilon and chi:
+  `epsilon_obs_<ch>`, `epsilon_obs_coh_corr_<ch>`, `epsilon_mle_<ch>`, their cutoffs
+  `epsilon_obs_kc_<ch>` and `epsilon_obs_coh_corr_kc_<ch>`, `fom_<ch>`, `fom_mle_<ch>`,
+  `coherence_sum_<ch>`, `chi_obs_<ch>`, `chi_mle_<ch>` and `chi_obs_kc_<ch>`. Per cast,
+  `epsilon_final_source` says which epsilon `epsilon_final` is.
+  - A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m bins and a scan
+    every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts have scans.
+  - `epsilon_final` is gridded only when L2 computed it, so a vehicle without shear probes, like
+    the FCTD, has none. L2 doesn't write it then, and an older L2 file's all-NaN one (with an empty
+    `epsilon_final_source`) is skipped.
+  - L2's scan-center CTD values (`pressure`, `w`, `temperature`, `salinity`, `SR`) aren't gridded.
+    Each is the L1 CTD interpolated at one scan's center. L2 needs them for that scan's `nu`, `ktemp`
+    and wavenumbers, but the CTD bin means above use every sample. They are also the background
+    stratification for diffusivities, which can be computed from the binned epsilon and chi.
 - **Position** (`latitude`, `longitude`, one per cast), from the L1 GPS fixes during the cast:
 
     | Cast | Position | Why |
@@ -195,8 +222,9 @@ run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_
 
 `grid.mat` contains:
 - axes `z` (bin centers, m, positive down) and `z_bin_m`; per cast `time`, `latitude`, `longitude`,
-  `cast_start`, `cast_end`, `cast_direction`, `cast_complete`, `profile_number`;
-- the CTD and turbulence fields above, only those that exist (the data decide);
+  `cast_start`, `cast_end`, `cast_direction`, `cast_complete`, `profile_number`,
+  `epsilon_final_source`;
+- the fields above, only those that exist (the data decide);
 - `variables` (name, unit and description from `setup/MODunits_L3.m`), `source` (`'file'` or
   `'profile'`), `source_stamp` and `provenance`.
 
@@ -206,8 +234,7 @@ cast still in progress (`cast_complete` false) is rebinned every call until it e
 `by`, `z_bin_m` or yml `latitude` (the scans' depth uses it; it's part of each cast's stamp, not
 saved on its own), or a grid from another `grid_version`, rebins every cast. `by` must match how the run made its L2: a `by`
 with no files to read is refused, so it can't replace a run's grid with an empty one. Call the
-output something other than `grid` (e.g. `G`): `grid` is Matlab's `grid on`. Fluorometer channels and `alt_hab` come later (steps 8 and
-after).
+output something other than `grid` (e.g. `G`): `grid` is Matlab's `grid on`. Fluorometer channels come later (steps 8 and after).
 
 Tested on a sandbox copy of 8 canyonhead raw files (2026-10-16): 20 casts, 107 bins of 1 m, by
 file and by profile; a CTD bin and a scan bin matched their direct means; the steps template's
@@ -736,3 +763,18 @@ so existing grids rebin once.
 Nicole: easier to use "if it's just the fields". The template lists only sections (one heading
 line each) and `key: value` lines; each field's description is in a "Field descriptions" block at
 the bottom. Run ymls get that block last too; values saved to a run yml later go above it.
+
+**2026-10-20 - Grid: long-form names, every L2 per-scan value, attitude and height above bottom**
+(branch `main-fork`). Nicole: "grid should have more things in it - basically everything from L2
+that you can put into cast format. Let's also keep the long-form variable names ... Keep all the
+different forms of epsilon and chi."
+- The CTD fields are renamed: `P`, `T`, `C`, `SP`, `SR`, `CT` and `w` became `pressure`,
+  `temperature`, `conductivity`, `salinity_practical`, `salinity_reference`,
+  `temperature_conservative` and `fall_speed`. `sigma0` keeps its name.
+- New fields: every L2 per-channel epsilon and chi with their cutoffs, fom and coherence_sum;
+  `viscosity_kinematic`, `diffusivity_thermal_molecular` and per-cast `epsilon_final_source`; and
+  `pitch`, `tilt`, `roll` (a circular mean) and `height_above_bottom` (without the samples pegged at
+  the maximum range).
+- L2's scan-center CTD copies are left out.
+- `grid_version` is now 5, so every grid rebins once. The monitor's defaults and its T-S and
+  waterfall plots use the new names.

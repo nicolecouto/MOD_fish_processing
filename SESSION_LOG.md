@@ -4,6 +4,23 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-20 - Grid: long-form names, every L2 per-scan value, attitude and height above bottom (branch `main-fork`)
+
+Nicole: "grid should have more things in it - basically everything from L2 that you can put into cast format. Let's also keep the long-form variable names as much as possible in the grid: salinity_absolute and salinity_practical, temperature, etc. Keep all the different forms of epsilon and chi." Then "I meant salinity_reference and salinity_practical". Her choices: also attitude (pitch, roll, tilt) and height above bottom; L2's scan-center CTD copies left out (they are literal interpolations at one scan's center); no N^2, dT/dz or diffusivities yet.
+- `MODprocess_grid`:
+  - CTD renamed (`pressure`, `temperature`, `conductivity`, `salinity_practical`, `salinity_reference`, `temperature_conservative`, `fall_speed`; `sigma0` kept).
+  - New: `pitch`/`tilt`/`roll` from vnav and `height_above_bottom` (isap, else alt). Each sample is put at the CTD depth at its time. `roll` is a circular mean. Altimeter samples at a repeated maximum `dst` (the ISA500's 120 m when no bottom is in range) are left out; without that, the mako2 test grid had 116.7 m in every bin.
+  - From L2: `viscosity_kinematic`, `diffusivity_thermal_molecular`, and every per-channel struct as `<name>_<ch>` (`epsilon_obs`, `epsilon_obs_coh_corr`, `epsilon_mle`, their `_kc`, `fom`, `fom_mle`, `coherence_sum`, `chi_obs`, `chi_obs_kc`, `chi_mle`). Per-cast `epsilon_final_source`.
+  - `grid_version` 5.
+- `MODunits_L3` rewritten for the new names. `coherence_sum` is in Hz (integrated coherence), not 0-1; corrected in `MODunits_L2` too.
+- `MODvis_realtime_monitor`: default sections sigma0/temperature/salinity_practical/epsilon_final; T-S and waterfall use the new names; `*_kc_*` fields are not log10'd.
+- Docs: processing_data.md (The grid, History), visualization/index.md, units_and_seawater.md, README, the grid `_README.txt` text, the steps template comment.
+
+Tested in a scratchpad sandbox (deleted) on a copy of the RR2609 mako2_test2 realtime run (3 casts):
+- A v4 grid from the committed code, then the new code: every old field is identical under its new name (`isequaln`), and all 38 fields have a `variables` entry. epsilon_mle_s1 has a median of 8e-10 W/kg; viscosity_kinematic 1.36e-6 m^2/s.
+- A second call: "none changed". Roll mean of 179/-179/178/-178 = 180.
+- In the monitor, the defaults load, and epsilon_mle_s1, chi_obs_t1, roll, height_above_bottom and the T-S plot draw.
+
 ### 2026-10-20 - MODvis_spectra with scans-only L2 (branch `main-fork`)
 
 Nicole: "how should the MODvis_spectra GUI work now that L1 and L2 are separate? Does it work now? It doesn't seem to if I go to the latest L2 directory", and "the frequency and wavenumber spectra both need to be loglog ... What about all the cutoff values and temperature noise floors I had check boxes for?" Her choices: CTD spectra left out; 0-scan files marked, open the first with scans; row 1 = L1 pressure as dots with L2 scan pressure as circles; say clearly when there's no L2.

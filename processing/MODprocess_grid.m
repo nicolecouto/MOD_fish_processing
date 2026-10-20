@@ -10,17 +10,31 @@ function grid = MODprocess_grid(metadata, by)
 %   down and up casts both, one row per depth bin of grid.z_bin_m meters.
 %   Saves processed/<run>/grid/grid.mat.
 %
-%   Two kinds of value, binned the same way (the mean of what falls in the
-%   bin, nothing interpolated):
-%     - CTD (T, SP, SR, CT, sigma0, w, P): the mean of every L1 CTD sample
-%       in the bin, at the CTD's full rate.
-%     - Turbulence (epsilon_final, chi_obs_<ch>, chi_mle_<ch>): the mean of
-%       the L2 scans whose center is in the bin. A bin with no scan is NaN,
-%       and n_scans says how many scans each bin holds. Only casts in the
-%       profile_detection.profile_dir direction have scans.
+%   Field names are long-form (temperature, salinity_practical, ...); L2's
+%   per-channel values are <L2 name>_<channel> (epsilon_mle_s1, chi_obs_t2).
+%   Three kinds of value, binned the same way (the mean of what falls in
+%   the bin):
+%     - CTD (pressure, temperature, conductivity, salinity_practical,
+%       salinity_reference, temperature_conservative, sigma0, fall_speed):
+%       the mean of every L1 CTD sample in the bin, at the CTD's full rate.
+%     - Other L1 records (pitch, tilt, roll from vnav; height_above_bottom
+%       from isap, or alt without one, leaving out samples pegged at the
+%       altimeter's maximum range): the mean of the samples in the bin,
+%       each at the CTD depth at its time (interpolated). roll is a
+%       circular mean (it wraps at +-180 deg); yaw and spin are headings
+%       and are left out.
+%     - Scans (viscosity_kinematic, diffusivity_thermal_molecular,
+%       epsilon_final, every form of epsilon and chi per channel with their
+%       cutoffs, fom and coherence_sum): the mean of the L2 scans whose
+%       center is in the bin. A bin with no scan is NaN, and n_scans says
+%       how many scans each bin holds. Only casts in the
+%       profile_detection.profile_dir direction have scans. L2's
+%       scan-center CTD values (pressure, w, temperature, salinity, SR) are
+%       left out: they are the L1 CTD interpolated at each scan center, and
+%       the L1 bin means above use every sample.
 %   Only fields that exist are gridded: the data decide, so a CTD-only
 %   vehicle's grid has no turbulence fields, one with no shear channels
-%   has no epsilon_final (L2's epsilon_final_source is empty) and one with
+%   has no epsilon (L2's epsilon_final_source is empty) and one with
 %   no fpo7 channels has no chi.
 %   Position (latitude, longitude per cast) is from the L1 GPS fixes
 %   during the cast, from the L1 files either way (by profile too): the
@@ -59,7 +73,8 @@ function grid = MODprocess_grid(metadata, by)
 %          field): z (bin centers, m), z_bin_m, then per cast
 %          (1 x ncast) time, latitude, longitude (first or mean GPS fix
 %          during the cast, see above; NaN without one), cast_start, cast_end, cast_direction, cast_complete,
-%          profile_number, then nz x ncast fields, variables (the units
+%          profile_number, epsilon_final_source (cellstr, '' for a cast
+%          without epsilon), then nz x ncast fields, variables (the units
 %          and descriptions of the fields present), source ('file' or
 %          'profile'), provenance. An empty grid (no columns) if there are
 %          no casts yet.
@@ -95,7 +110,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 4; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship. A grid from another version rebins every cast.
+GRID_VERSION = 5; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -233,7 +248,7 @@ end
 
 %% Bin one cast: one value per bin (1 = 0 to z_bin m) per field
 function col = bin_cast(c, L1_files, L2_files, gps_files, z_bin, lat, cache, first_fix)
-col = struct('fields', struct(), 'n_bins', 0);
+col = struct('fields', struct(), 'n_bins', 0, 'epsilon_final_source', '');
 in_cast = @(t) t >= c.dnum_start & t <= c.dnum_end;
 
 % Position: the first GPS fix during the cast (first_fix) or their mean
@@ -261,10 +276,22 @@ end
 
 % CTD: every L1 sample in the cast
 ctd_names = {'P', 'T', 'C', 'SP', 'SR', 'CT', 'sigma0', 'dzdt'};
-grid_names = {'P', 'T', 'C', 'SP', 'SR', 'CT', 'sigma0', 'w'};
+grid_names = {'pressure', 'temperature', 'conductivity', 'salinity_practical', 'salinity_reference', ...
+    'temperature_conservative', 'sigma0', 'fall_speed'};
 ctd = struct('dnum', [], 'z', []);
+% other L1 records: [dnum, value] of each sample in the cast
+extra = struct('pitch', zeros(0, 2), 'tilt', zeros(0, 2), 'roll', zeros(0, 2), ...
+    'height_above_bottom', zeros(0, 2));
 for i = 1:numel(L1_files)
-    s = load_cached(cache, L1_files{i}, {'ctd'});
+    s = load_cached(cache, L1_files{i}, {'ctd', 'vnav', 'isap', 'alt'});
+    for name = {'pitch', 'tilt', 'roll'}
+        extra.(name{1}) = [extra.(name{1}); samples_in_cast(s, 'vnav', name{1}, in_cast)];
+    end
+    hab = altimeter_in_cast(s, 'isap', in_cast);
+    if isempty(hab)
+        hab = altimeter_in_cast(s, 'alt', in_cast);
+    end
+    extra.height_above_bottom = [extra.height_above_bottom; hab];
     if ~isfield(s, 'ctd') || ~isfield(s.ctd, 'dnum') || ~isfield(s.ctd, 'z') || isempty(s.ctd.dnum)
         continue
     end
@@ -294,11 +321,33 @@ for f = 1:numel(ctd_names)
     end
 end
 
+% Other L1 records, each sample at the CTD depth at its time
+if numel(ctd.dnum) > 1
+    for name = fieldnames(extra)'
+        x = extra.(name{1});
+        if isempty(x)
+            continue
+        end
+        [~, ie] = unique(x(:, 1)); % the same sample from two L1 files is counted once
+        x = x(ie, :);
+        b = bin_number(interp1(ctd.dnum, ctd.z, x(:, 1)), z_bin);
+        if strcmp(name{1}, 'roll')
+            m = atan2d(bin_mean(b, sind(x(:, 2))), bin_mean(b, cosd(x(:, 2))));
+        else
+            m = bin_mean(b, x(:, 2));
+        end
+        if ~isempty(m)
+            col.fields.(name{1}) = m;
+        end
+    end
+end
+
 % Turbulence: the scans whose center is in the cast
 scans = struct('dnum', [], 'pressure', []);
 turb = struct();
 for i = 1:numel(L2_files)
-    s = load_cached(cache, L2_files{i}, {'dnum', 'pressure', 'epsilon_final', 'epsilon_final_source', 'chi_obs', 'chi_mle'});
+    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', 'epsilon_final', ...
+        'epsilon_final_source'}, channel_kinds()]);
     if ~isfield(s, 'dnum') || isempty(s.dnum) || ~isfield(s, 'pressure')
         continue
     end
@@ -309,7 +358,10 @@ for i = 1:numel(L2_files)
     n_before = numel(scans.dnum);
     scans.dnum = [scans.dnum; s.dnum(keep)];
     scans.pressure = [scans.pressure; s.pressure(keep)];
-    values = scan_values(s);
+    [values, source] = scan_values(s);
+    if isempty(col.epsilon_final_source)
+        col.epsilon_final_source = source;
+    end
     names = fieldnames(values);
     for f = 1:numel(names)
         if ~isfield(turb, names{f})
@@ -365,9 +417,50 @@ elseif isnumeric(s) && isvector(s)
 end
 end
 
-%% Per-scan turbulence values from an L2 file, as nscan x 1 columns
-function v = scan_values(s)
+%% [dnum, value] of an L1 record's samples in the cast (none if the file
+% doesn't have it, or it's all NaN)
+function x = samples_in_cast(s, rec, name, in_cast)
+x = zeros(0, 2);
+if ~isfield(s, rec) || ~isstruct(s.(rec)) || ~all(isfield(s.(rec), {'dnum', name})) ...
+        || numel(s.(rec).(name)) ~= numel(s.(rec).dnum)
+    return
+end
+t = s.(rec).dnum(:);
+y = s.(rec).(name)(:);
+keep = in_cast(t) & isfinite(y);
+x = [t(keep), y(keep)];
+end
+
+%% [dnum, hab] of an altimeter's samples in the cast, without the ones
+% pegged at its maximum range (no bottom in range: dst sits at one flat
+% value, e.g. 120 m for the ISA500 - MODunits_L1.m); a real range varies
+% from sample to sample, so a maximum seen more than once is a peg
+function x = altimeter_in_cast(s, rec, in_cast)
+x = samples_in_cast(s, rec, 'hab', in_cast);
+if isempty(x) || ~isfield(s.(rec), 'dst') || numel(s.(rec).dst) ~= numel(s.(rec).dnum)
+    return
+end
+dst = s.(rec).dst(:);
+peg = max(dst);
+if nnz(dst == peg) > 1
+    [~, k] = ismember(x(:, 1), s.(rec).dnum(:));
+    x = x(dst(k) ~= peg, :);
+end
+end
+
+%% L2's per-channel structs (one field per channel), each gridded as
+% <kind>_<channel>; longest first, so variables_present matches
+% epsilon_obs_coh_corr_kc before epsilon_obs
+function kinds = channel_kinds()
+kinds = {'epsilon_obs_coh_corr_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_kc', 'epsilon_obs', ...
+    'epsilon_mle', 'fom_mle', 'fom', 'coherence_sum', 'chi_obs_kc', 'chi_obs', 'chi_mle'};
+end
+
+%% Per-scan values from an L2 file, as nscan x 1 columns, and its
+% epsilon_final_source ('' without epsilon)
+function [v, source] = scan_values(s)
 v = struct();
+source = '';
 n = numel(s.dnum);
 % epsilon_final only where L2 computed it (L2 files made before
 % 2026-10-17 have an all-NaN epsilon_final and an empty
@@ -375,8 +468,16 @@ n = numel(s.dnum);
 if isfield(s, 'epsilon_final') && numel(s.epsilon_final) == n ...
         && isfield(s, 'epsilon_final_source') && ~isempty(s.epsilon_final_source)
     v.epsilon_final = s.epsilon_final(:);
+    source = char(s.epsilon_final_source);
 end
-for kind = {'chi_obs', 'chi_mle'}
+% molecular properties at the scans (ktemp is all NaN without chi)
+long = struct('nu', 'viscosity_kinematic', 'ktemp', 'diffusivity_thermal_molecular');
+for name = fieldnames(long)'
+    if isfield(s, name{1}) && numel(s.(name{1})) == n && any(isfinite(s.(name{1})))
+        v.(long.(name{1})) = s.(name{1})(:);
+    end
+end
+for kind = channel_kinds()
     if isfield(s, kind{1}) && isstruct(s.(kind{1}))
         channels = fieldnames(s.(kind{1}));
         for k = 1:numel(channels)
@@ -419,7 +520,7 @@ end
 %% A column taken back out of an earlier grid
 function col = column_from_grid(old, k)
 col = struct('fields', struct(), 'n_bins', 0, 'time', old.time(k), 'latitude', old.latitude(k), ...
-    'longitude', old.longitude(k));
+    'longitude', old.longitude(k), 'epsilon_final_source', old.epsilon_final_source{k});
 names = setdiff(fieldnames(old), [axis_fields(), {'z', 'z_bin_m', 'variables', 'source', ...
     'provenance', 'source_stamp', 'grid_version'}]);
 for f = 1:numel(names)
@@ -438,7 +539,8 @@ end
 end
 
 function names = axis_fields()
-names = {'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_direction', 'cast_complete', 'profile_number'};
+names = {'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_direction', 'cast_complete', ...
+    'profile_number', 'epsilon_final_source'};
 end
 
 %% Columns -> one grid
@@ -460,6 +562,7 @@ grid.cast_end = [casts.dnum_end];
 grid.cast_direction = {casts.direction};
 grid.cast_complete = [casts.complete];
 grid.profile_number = [casts.profile_number];
+grid.epsilon_final_source = repmat({''}, 1, n);
 for f = 1:numel(names)
     fill = NaN;
     if strcmp(names{f}, 'n_scans')
@@ -472,6 +575,7 @@ for i = 1:n
     grid.time(i) = columns{i}.time;
     grid.latitude(i) = columns{i}.latitude;
     grid.longitude(i) = columns{i}.longitude;
+    grid.epsilon_final_source{i} = columns{i}.epsilon_final_source;
     grid.source_stamp{i} = columns{i}.source_stamp;
     cn = fieldnames(columns{i}.fields);
     for f = 1:numel(cn)
@@ -492,7 +596,7 @@ v = struct('name', {}, 'unit', {}, 'description', {});
 names = fieldnames(grid);
 for i = 1:numel(names)
     key = names{i};
-    pattern = regexprep(key, '^(chi_obs|chi_mle)_.+$', '$1_channel');
+    pattern = regexprep(key, ['^(' strjoin(channel_kinds(), '|') ')_.+$'], '$1_channel');
     if isfield(units, key)
         u = units.(key);
     elseif isfield(units, pattern)
