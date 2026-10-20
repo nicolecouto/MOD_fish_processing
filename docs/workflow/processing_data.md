@@ -415,6 +415,12 @@ Nothing stops the worker except **Stop**:
 - One worker per processed folder: `realtime/worker.lock` holds the running worker's PID, and a
   second one refuses to start while that PID is alive. A lock left by a crashed worker is taken
   over automatically; `'force', true` (or `--force` on the `.command`) overrides it anyway.
+  When the `.command` is refused, its window says **Worker did NOT start**. It shows the running
+  worker's PID, start time and `ps` line, and how to stop it (Stop in the monitor, or `kill <PID>`,
+  then `pgrep -fl MODprocess_deployment` prints nothing). If that PID isn't a worker any more, it
+  says to start with `--force`. A worker is a windowless `matlab -batch`, so closing the MATLAB
+  app doesn't stop it. Before a `git pull`, stop the worker and check with `pgrep` that it's gone,
+  because a worker started before the pull may keep running the old code.
 - `RAW_full_cruise/` is looked for on every pass, so the worker can be started before the first
   rsync creates it.
 
@@ -778,3 +784,11 @@ different forms of epsilon and chi."
 - L2's scan-center CTD copies are left out.
 - `grid_version` is now 5, so every grid rebins once. The monitor's defaults and its T-S and
   waterfall plots use the new names.
+
+**2026-10-20 (evening) - "Worker did NOT start"** (branch `main-fork`). Nicole: "The worker stopped and it says hit any key to close. But I don't want to close it in case new data comes in, right? Is it really stopped?" A worker started at 19:33 was still running (closing the MATLAB app doesn't stop a `matlab -batch` worker), so every new start was refused but still printed "Worker stopped". `Start Realtime Processing.command` now tells three cases apart:
+- Refused (MATLAB exits 3 on `MODprocess_deployment:otherWorker`): prints "Worker did NOT start" and the lock's PID, host and start time.
+  - On this Mac, with a `ps` line that is a worker: how to stop it (Stop in the monitor, or `kill <PID>`, check with `pgrep`, `kill -9` if needed) and start again.
+  - On this Mac, but the PID isn't a worker: start with `--force`.
+  - On another Mac: stop it there.
+- An error: "Worker stopped with an error (above)".
+- A normal stop: "Worker stopped".

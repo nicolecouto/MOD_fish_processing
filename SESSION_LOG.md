@@ -4,6 +4,23 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-20 - Start script: "Worker did NOT start" (branch `main-fork`)
+
+Nicole: the start window said "Worker stopped. Press any key to close" after a refused start - "Is it really stopped?" - then "Make the script say 'Worker did NOT start' with a message and instructions for how to kill the process."
+- The worker from 19:33 (PID 59595) was still running: a `matlab -batch` worker doesn't stop when the MATLAB app is closed.
+- `Start Realtime Processing.command`:
+  - MATLAB exits 3 when `MODprocess_deployment` refuses for another worker's lock (`MODprocess_deployment:otherWorker`), and the window prints "Worker did NOT start" with the lock's PID, host and start time.
+  - When that PID is a worker on this Mac (its `ps` command has MODprocess_deployment): its `ps` line and how to stop it (monitor Stop or `kill <PID>`; `pgrep -fl MODprocess_deployment` to check; `kill -9`; start again).
+  - When the PID isn't a worker (a stale lock with a reused PID): `--force`, with the full path. When the lock is from another Mac: stop it there.
+  - Any other error: "Worker stopped with an error (above)". A normal stop: "Worker stopped".
+- Docs: processing_data.md (worker lock, History).
+
+Tested in a scratchpad sandbox (deleted) with a fake `worker.lock`:
+- PID of a process whose command line has MODprocess_deployment: the stop instructions.
+- PID of a plain `sleep`: the `--force` message.
+- Another host: stop it there.
+- A different MATLAB error in the same try/catch exits 1.
+
 ### 2026-10-20 - Raw files read one char per byte (branch `main-fork`)
 
 Nicole, on the reprocessed RR2609 mako2_test2: "There is a big gap in the grid between ~350 and ~550 m ... What is it?"
