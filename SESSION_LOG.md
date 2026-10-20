@@ -4,6 +4,16 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-19 - Cruise yml: fields up top, descriptions at the bottom (branch `main-fork`)
+
+Nicole: "it's easier to use a yml file if it's just the fields and not so much commenting text. So can you move the comments describing each field to the bottom of the file? Use indentation and hyphens to make each field stand out." Her choices: the cruise template only, one-line section headings kept, run ymls get the descriptions at their bottom too.
+- `MODsetup_write_cruise_meta_data_template.m`: short 3-line header, then each section's heading line, `sec:` and `  key: value` lines; then `# ==== Field descriptions ====`, "About this file" (the old header text), and per section `# sec - <heading>` with `#   - key: <description>` (continuation lines indented under it). Template regenerated.
+- `MODsetup_build_yaml.m`: the cruise yml is split at that line - fields merged as before, the descriptions appended last (step 5), after the `run:` block. A cruise yml without the line builds as before.
+- `MODsetup_write_yaml_value.m`: a new section or top-level key goes above the descriptions block, so prompted values saved later don't land under it.
+- Docs: processing_data.md, README.md, the three functions' headers.
+
+Tested in a scratchpad sandbox (deleted) with `muri/data/26_1015_fctd2_deck_test/meta/dev1_setup.yml`: new template reads to the same struct as the old one; run yml built, reads, descriptions last; a rebuild writes nothing; a new section and a new top-level key land above the descriptions and the file reads; a run built from the old template still reads.
+
 ### 2026-10-19 - MODvis_spectra_L0 exports CTD spectra too (branch `main-fork`)
 
 Nicole: "MODvis_spectra_L0 exports spectra for epsi fields, but not ctd fields. Can we export for ctd fields too?" Her choices: computed as L2 does, every ctd vector.

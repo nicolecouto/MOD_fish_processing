@@ -26,6 +26,10 @@ function MODsetup_write_yaml_value(yaml_file, section, key, value)
 %   calibrations_root), replaced in place, keeping any inline comment, or
 %   appended at the end of the file if it isn't there yet.
 %
+%   "The end of the file" is above its "# ==== Field descriptions ===="
+%   block when it has one (MODsetup_write_cruise_meta_data_template.m), so
+%   the descriptions stay last.
+%
 %   Only handles this repo's actual setup.yml shape (flat top-level
 %   blocks, simple scalar "key: value" children, 2-space indentation) -
 %   not a general YAML editor. Called by MODsetup_validate_metadata.m when
@@ -63,6 +67,18 @@ if ~isempty(lines) && isempty(lines{end})
     lines(end) = [];
 end
 
+% Split off the field descriptions block (and the blank lines above it):
+% appended lines go above it
+marker = find(~cellfun(@isempty, regexp(lines, '^#\s*=+\s*Field descriptions', 'once')), 1);
+descriptions = {};
+if ~isempty(marker)
+    while marker > 1 && isempty(strtrim(lines{marker - 1}))
+        marker = marker - 1;
+    end
+    descriptions = lines(marker:end);
+    lines = lines(1:marker - 1);
+end
+
 value_str = MODsetup_format_yaml_value(value);
 section = char(section);
 if isempty(section)
@@ -76,7 +92,7 @@ if isempty(section)
     else
         lines{key_line} = with_inline_comment(sprintf('%s: %s', key, value_str), lines{key_line});
     end
-    writelines(lines, yaml_file);
+    writelines([lines; descriptions], yaml_file);
     return
 end
 section_line = find_top_level_key(lines, section);
@@ -116,7 +132,7 @@ else
     end
 end
 
-writelines(lines, yaml_file);
+writelines([lines; descriptions], yaml_file);
 
 end %end function
 

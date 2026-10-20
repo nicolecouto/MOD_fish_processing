@@ -26,6 +26,8 @@ function [run_yml, info] = MODsetup_build_yaml(survey_meta_dir, cruise_meta_data
 %        Deployment writes) is copied to profile_detection.profile_dir,
 %        which is what processing reads.
 %     4. A run: block - name, L1_from, cruise_yml, created_utc.
+%     5. The cruise yml's field descriptions (everything from its
+%        "# ==== Field descriptions ====" line on), at the bottom.
 %
 %   Every run is rebuilt this way on every call, so an edit to
 %   dev1_setup.yml or to the run's cruise yml reaches it - edit those, not
@@ -144,6 +146,7 @@ end
 
 %% 1-3. dev1_setup.yml, then the cruise yml's processing parameters
 tmp_yml = [run_yml '.building'];
+descriptions = {};
 % (rewritten from scratch each time; left behind if a build fails, to look at)
 if isfile(cruise_meta_data_yml)
     sources = sprintf('dev1_setup.yml (below) and %s (after it)', cruise_meta_data_yml);
@@ -158,7 +161,8 @@ dev1 = read_source(dev1_yml);
 if isfile(cruise_meta_data_yml)
     info.cruise_yml = cruise_meta_data_yml;
     cruise = read_source(cruise_meta_data_yml);
-    blocks = split_top_level_blocks(read_lines(cruise_meta_data_yml));
+    [cruise_lines, descriptions] = split_descriptions(read_lines(cruise_meta_data_yml));
+    blocks = split_top_level_blocks(cruise_lines);
     for iB = 1:numel(blocks)
         sec = blocks(iB).key;
         if ~isfield(cruise, sec)
@@ -231,6 +235,11 @@ MODsetup_write_yaml_value(tmp_yml, 'run', 'created_utc', created_utc);
 MODsetup_write_yaml_value(tmp_yml, 'run', 'cruise_yml', info.cruise_yml);
 MODsetup_write_yaml_value(tmp_yml, 'run', 'L1_from', L1_from);
 MODsetup_write_yaml_value(tmp_yml, 'run', 'name', run);
+
+%% 5. Field descriptions, last
+if ~isempty(descriptions)
+    append_lines(tmp_yml, [{''}; descriptions]);
+end
 
 if ~isempty(info.changed)
     fprintf(['MODsetup_build_yaml: %s differed from its sources and now follows them:\n  %s\n' ...
@@ -322,6 +331,23 @@ end
 
 function append_lines(file, lines)
 writelines([read_lines(file); lines], file);
+end
+
+%% Split the cruise yml's lines at its "# ==== Field descriptions ====" line
+% (written by MODsetup_write_cruise_meta_data_template.m): the fields above
+% it, and that line and everything after it. No such line: descriptions = {}.
+function [fields, descriptions] = split_descriptions(lines)
+marker = find(~cellfun(@isempty, regexp(lines, '^#\s*=+\s*Field descriptions', 'once')), 1);
+if isempty(marker)
+    fields = lines;
+    descriptions = {};
+    return
+end
+fields = lines(1:marker - 1);
+descriptions = lines(marker:end);
+while ~isempty(fields) && isempty(strtrim(fields{end}))
+    fields(end) = [];
+end
 end
 
 %% Split yml text into top-level blocks. Each block is its 'key:' line, the

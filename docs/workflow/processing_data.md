@@ -229,8 +229,9 @@ microconductivity and an FCTD with fluorometer all display with the same code.
 
 **Before the cruise:** copy `setup/cruise_meta_data_template.yml` to
 `<processed_root>/cruise_meta_data.yml` and review every value. The template is generated from
-`MODsetup_metadata_field_registry.m` by `MODsetup_write_cruise_meta_data_template.m`, with each
-parameter's description as a comment. Its values are the registry's suggested defaults, which
+`MODsetup_metadata_field_registry.m` by `MODsetup_write_cruise_meta_data_template.m`. The top of
+the file is just the sections and their `key: value` lines; what each parameter is for is in a
+"Field descriptions" block at the bottom. Its values are the registry's suggested defaults, which
 are historical starting points, not choices made for this cruise. Rerun the generator after
 changing the registry.
 `acquisition/check_software/check_ship_setup.sh` reports whether `cruise_meta_data.yml` is there (see
@@ -244,6 +245,8 @@ How the merge works (done on the text, so both files' comments are kept):
 - dev1's `profiling_direction` is written to `profile_detection.profile_dir`, which is what
   processing reads.
 - A `run:` block records the run's `name`, `L1_from`, `cruise_yml` and `created_utc`.
+- The cruise yml's "Field descriptions" block goes last. Values saved to the run yml later (from
+  a prompt) go above it.
 
 **Every run's yml** (`meta_data_<run>.yml`) is rebuilt this way every time it's used (each pass of
 the worker for `realtime`). The cruise yml is the one given, or the one the run was built with
@@ -728,3 +731,8 @@ This is because Epsi free falls ... Epsi always has slack in the line, FCTD does
 the mean. New `platform` key (Start New Deployment writes `ship`; "every other platform we use does
 post-processed data so the user can manually type the platform into the .yml"). `grid_version` 4,
 so existing grids rebin once.
+
+**2026-10-19 - Cruise yml: fields up top, descriptions at the bottom** (branch `main-fork`).
+Nicole: easier to use "if it's just the fields". The template lists only sections (one heading
+line each) and `key: value` lines; each field's description is in a "Field descriptions" block at
+the bottom. Run ymls get that block last too; values saved to a run yml later go above it.
