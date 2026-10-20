@@ -4,6 +4,14 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-19 - MODvis_spectra_L0 exports CTD spectra too (branch `main-fork`)
+
+Nicole: "MODvis_spectra_L0 exports spectra for epsi fields, but not ctd fields. Can we export for ctd fields too?" Her choices: computed as L2 does, every ctd vector.
+- `exportScans` ('this' and 'all') adds `ctd` when the file has CTD vectors: `ctd.spectra.<field>` [scans x Nf_ctd], `ctd.f`, `ctd.units`, `ctd.n_samples`, `ctd.settings` (new `ctdSpectra` method). Same as `mod_scan_get_spectra.m`: one `periodogram(detrend(x), [], N_ctd, Fs_ctd, 'psd')` per scan over the CTD samples whose `dnum` is in the scan's time window, `N_ctd` = window length x Fs_ctd (Fs_ctd measured over the file - no metadata needed), NaN row for a scan with a NaN or under 2 samples. Units from MODunits_L1 (`counts` for `_raw`), bracketed when compound. The spectrum plot is unchanged (epsi only).
+- Docs: visualization/index.md (export table + method), the viewer's header.
+
+Tested in a scratchpad sandbox (left - it was the session's working directory) on a copy of `muri/data/26_1015_fctd2_deck_test`, made through L1: L0 and L1 exports of all 23 scans - Fs_ctd 16.000 Hz, nfft 160, 81 bins to 8 Hz, 155-158 samples per scan, no NaN rows; L0 fields P_raw/T_raw/S_raw/C_raw/PT_raw in counts^2/Hz, L1 adds T, P, C, SP, SR, CT, sigma0, dPdt, z, dzdt with their units; scan 3 identical to a periodogram by hand; 'this' gives one row; the saved file holds `ctd`.
+
 ### 2026-10-18 - Monitor map: casts as v and ^, track only between the first and last cast (branch `main-fork`)
 
 Nicole: "The map should show the locations of the downcasts with v upcasts with ^ and all the other gps data in between, but no data outside the first and last v and ^ of the deployment."

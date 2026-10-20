@@ -55,6 +55,10 @@ classdef MODvis_spectra_L0 < handle
     %     E = load(file) gives E.spectra.t1_volt, E.f, ...). Each spectrum
     %     is a row: 1 x Nf for one scan, M x Nf for M scans, one shared f.
     %     Also callable without the dialog: app.exportScans('all', outfile).
+    %     A file with CTD data also gets the same scans' CTD spectra
+    %     (E.ctd), every ctd vector, computed as L2 does: one detrended
+    %     periodogram per scan at the CTD's own rate (too few samples per
+    %     window for Welch segments), with its own E.ctd.f.
     %
     % INPUTS
     %   target - (optional) an L0 .mat file or a folder of them. Default:
@@ -74,6 +78,7 @@ classdef MODvis_spectra_L0 < handle
     %
     % CALLS
     %   mod_scan_welch_psd.m, mod_scan_dof.m, mod_efe_conversion.m,
+    %   MODunits_L1.m, periodogram (Signal Processing Toolbox),
     %   mod_efe_counts_to_volts_g.m, mod_efe_volts_g_to_counts.m
     %
     % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
@@ -939,6 +944,56 @@ classdef MODvis_spectra_L0 < handle
             fullLsb = delta^2/(Fs/2);
         end
 
+        function ctd = ctdSpectra(app, dnum_start, dnum_end, window_s)
+            % CTD spectra of each scan [dnum_start, dnum_end], as
+            % mod_scan_get_spectra.m does at L2: CTD samples far slower than
+            % epsi, so one detrended periodogram per scan at the CTD's own
+            % rate, nfft fixed from the window length so every scan shares
+            % one f. [] if the file has no CTD vectors.
+            ctd = [];
+            items = app.signalList();
+            fields = erase(items(startsWith(items, 'ctd.')), 'ctd.');
+            C = app.Data.ctd;
+            if isempty(fields) || numel(C.dnum) < 2
+                return
+            end
+            Fs_ctd = (numel(C.dnum) - 1) / ((C.dnum(end) - C.dnum(1)) * 86400); % ms-quantized times: whole span
+            N_ctd = max(2, round(window_s * Fs_ctd));
+            f = (0:floor(N_ctd/2))' * Fs_ctd / N_ctd;
+            units = MODunits_L1();
+            M = numel(dnum_start);
+            ctd.f = f';
+            ctd.n_samples = zeros(M, 1);
+            for k = 1:numel(fields)
+                ctd.spectra.(fields{k}) = NaN(M, numel(f));
+                key = ['ctd_' fields{k}];
+                if endsWith(fields{k}, '_raw')
+                    unit = 'counts';
+                elseif isfield(units, key)
+                    unit = regexp(units.(key).unit, '^[^\s,(]+', 'match', 'once'); % 'degC (ITS-90...)' -> 'degC'
+                else
+                    unit = 'unknown';
+                end
+                if any(ismember(unit, '/^'))
+                    unit = ['(' unit ')']; %#ok<AGROW> % (S/m)^2/Hz, not S/m^2/Hz
+                end
+                ctd.units.(fields{k}) = [unit '^2/Hz'];
+            end
+            for m = 1:M
+                in = C.dnum >= dnum_start(m) & C.dnum <= dnum_end(m);
+                ctd.n_samples(m) = nnz(in);
+                for k = 1:numel(fields)
+                    x = C.(fields{k})(in);
+                    if numel(x) < 2 || ~all(isfinite(x))
+                        continue
+                    end
+                    ctd.spectra.(fields{k})(m,:) = periodogram(detrend(double(x(:))), [], N_ctd, Fs_ctd, 'psd')';
+                end
+            end
+            ctd.settings = struct('Fs_ctd', Fs_ctd, 'nfft', N_ctd, 'df', Fs_ctd / N_ctd, 'detrend', 'linear', ...
+                'method', 'one periodogram per scan at the CTD''s own rate (as L2, mod_scan_get_spectra.m)');
+        end
+
         function out = exportScans(app, which, outfile)
             % which = 'this' (the shaded window) or 'all' (the current file
             % tiled into back-to-back windows of window_s, a leftover
@@ -964,6 +1019,22 @@ classdef MODvis_spectra_L0 < handle
             %   settings      - nfft, window_s, window_samples, overlap_pct,
             %                   taper, detrend, Fs, Fs_measured, df
             %   epsi_conversion - the file's counts <-> volts/g record
+            %   ctd           - (when the file has CTD data) the same scans'
+            %                   CTD spectra, computed as L2 does
+            %                   (mod_scan_get_spectra.m): one detrended
+            %                   periodogram per scan of the CTD samples in
+            %                   its time window, at the CTD's own rate, not
+            %                   interpolated onto epsi:
+            %     f           - [1 x Nf_ctd] frequency [Hz], 0 to Fs_ctd/2
+            %     spectra.<field> - [M x Nf_ctd] PSD, every ctd vector in
+            %                   the file (L0: T_raw, C_raw, ... counts; L1:
+            %                   P, T, C, SP, ...); all-NaN for a scan with
+            %                   a NaN or under 2 samples
+            %     units.<field> - e.g. 'dbar^2/Hz', '(S/m)^2/Hz', 'counts^2/Hz'
+            %     n_samples   - [M x 1] CTD samples in each scan
+            %     settings    - Fs_ctd (measured over the file), nfft
+            %                   (window length x Fs_ctd, the same for every
+            %                   scan), detrend 'linear', method
             out = [];
             if isempty(fieldnames(app.Data)); return; end
             t = app.Data.epsi.dnum;
@@ -1056,6 +1127,11 @@ classdef MODvis_spectra_L0 < handle
                 'taper', app.TaperDrop.Value, 'detrend', app.DetrendDrop.Value, ...
                 'Fs', Fs, 'Fs_measured', app.measuredFs(), 'df', Fs/nfft);
             out.epsi_conversion = app.Conversion;
+            ctd = app.ctdSpectra(out.scan.dnum_start, out.scan.dnum_end, out.settings.window_samples / Fs);
+            if ~isempty(ctd)
+                out.ctd = ctd;
+                out.README = [out.README ' ctd holds the same scans'' CTD spectra (see its fields).'];
+            end
 
             save(outfile, '-struct', 'out');
             uialert(app.Fig, sprintf('Exported %d scan(s) to %s', M, outfile), 'Spectra exported', ...

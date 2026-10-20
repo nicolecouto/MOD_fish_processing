@@ -131,6 +131,14 @@ app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup
     | `noise.<field>` | flat floors [same units as the spectra]: `bit24`/`bit20`/`bit16` = Δ²/12/(Fs/2), `bit24_full_lsb`/... = Δ²/(Fs/2), `lsb`, and `adxl` for accelerometers |
     | `settings` | `nfft`, `window_s`, `window_samples`, `overlap_pct`, `taper`, `detrend`, `Fs`, `Fs_measured`, `df` |
     | `epsi_conversion`, `README`, `exported` | the file's counts ↔ volts/g record, a plain-text description, export time |
+    | `ctd.spectra.<field>`, `ctd.f` | when the file has CTD data: the same scans' CTD spectra, every ctd vector (L0: `T_raw`, `C_raw`, ... counts; L1: `P`, `T`, `C`, `SP`, ...), M × Nf_ctd, with their own frequencies `ctd.f` (0 to Fs_ctd/2) |
+    | `ctd.units`, `ctd.n_samples`, `ctd.settings` | e.g. `dbar^2/Hz`, `(S/m)^2/Hz`, `counts^2/Hz`; M × 1 CTD samples per scan; `Fs_ctd` (measured over the file), `nfft`, `df`, `detrend` |
+
+    The CTD is computed as L2 does (`mod_scan_get_spectra.m`): it samples far slower than epsi
+    (16 Hz SBE49 - about 160 samples in a 10 s window, fewer than one 1024-point segment), so each
+    scan gets one linearly detrended periodogram of the CTD samples in its time window, at the
+    CTD's own rate, not interpolated onto epsi. nfft = window length × Fs_ctd, the same for every
+    scan; a scan with a NaN or under 2 samples is an all-NaN row.
 
     ```matlab
     A = load('EPSI_B_PC2_21_07_15_021224_spectra_all.mat');
