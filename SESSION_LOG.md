@@ -4,6 +4,18 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-20 - Raw files read one char per byte (branch `main-fork`)
+
+Nicole, on the reprocessed RR2609 mako2_test2: "There is a big gap in the grid between ~350 and ~550 m ... What is it?"
+- The gap was the downcast's 17:55:44-18:00:52.
+- `time_index.mat` had `EPSI26_10_19_175544.mat` at 11:50-16:35. The index takes a file's times from epsi, and that file's epsi had 4880 samples with scrambled times; its ctd, vnav, GPS and isap times were right.
+- The raw file is fine: 5.0 MB and 1254 `$EFE40` blocks of the right length (checked byte by byte in Python).
+- `fopen(modraw_file)` with no encoding lets Matlab guess one from the file's bytes. It guessed ISO-2022-CN for this file (ISO-8859-1 for its neighbour), dropping 5448 bytes, so 1193 of 1254 EFE blocks failed the length check.
+- Fix: `MODprocess_single_modraw_to_L0.m` (the main read and the header read) and `MODutil_route_raw_by_survey.m` open raw files with `'ISO-8859-1'`. `MODutil_read_som3` already reads uint8.
+- Docs: modraw_to_L0_conversion.md History.
+
+Tested on copies of the two raw files in a scratchpad sandbox (deleted). 175544: 100,320 epsi samples, 17:55:44-18:00:52, no bad blocks (was 4880). 175036: unchanged, 100,480. The share's L0/L1/L2/grid still need reprocessing from raw with the fix. The share's grid is `grid_version` 4, so DEV3 is also running code from before today's commits.
+
 ### 2026-10-20 - Grid: long-form names, every L2 per-scan value, attitude and height above bottom (branch `main-fork`)
 
 Nicole: "grid should have more things in it - basically everything from L2 that you can put into cast format. Let's also keep the long-form variable names as much as possible in the grid: salinity_absolute and salinity_practical, temperature, etc. Keep all the different forms of epsilon and chi." Then "I meant salinity_reference and salinity_practical". Her choices: also attitude (pitch, roll, tilt) and height above bottom; L2's scan-center CTD copies left out (they are literal interpolations at one scan's center); no N^2, dT/dz or diffusivities yet.

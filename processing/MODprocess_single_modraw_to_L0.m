@@ -87,8 +87,11 @@ if nargin < 2
 end
 
 %% Open file and save contents as 'str'
-%fprintf("   Open %s \r\n",filename)
-fid = fopen(modraw_file);
+% ISO-8859-1 reads one char per byte. Without it, Matlab guesses the
+% encoding from the bytes: for EPSI26_10_19_175544.modraw (RR2609
+% mako2_test2) it guessed ISO-2022-CN and dropped 5448 bytes, and 1193
+% of its 1254 EFE blocks failed the length check.
+fid = fopen(modraw_file, 'r', 'n', 'ISO-8859-1');
 fseek(fid,0,1);
 frewind(fid);
 str = fread(fid,'*char')';
@@ -197,7 +200,7 @@ else
     % San added these GPS steps. Here, he reads the file header to get
     % offset_time, which anchors each GPS record's truncated timestamp
     % into an absolute datenum below.
-    FID = fopen(modraw_file,'r');
+    FID = fopen(modraw_file, 'r', 'n', 'ISO-8859-1'); % one char per byte, as above
     if FID<0
         error('MATLAB:FastCTD_ReadASCII:FileError', 'Could not open file %s',fname);
     end

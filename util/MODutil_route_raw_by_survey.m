@@ -152,7 +152,7 @@ end %end function
 %% The CTD.survey value in a raw file's header ('' if none)
 function survey = header_survey(file, n_bytes)
 survey = '';
-fid = fopen(file, 'r');
+fid = fopen(file, 'r', 'n', 'ISO-8859-1'); % one char per byte (MODprocess_single_modraw_to_L0.m)
 if fid < 0
     return
 end
