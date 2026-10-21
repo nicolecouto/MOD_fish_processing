@@ -240,7 +240,7 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   inputs, kept the same way spectra.(channel)_Tg_k is
 %                   for chi. _shear_co_k stays NaN for a scan with no
 %                   usable coherence.
-%     fft_length, fft_segments_per_scan, dof, f_sample_epsi, n_samples_scan_epsi, scan_step -
+%     fft_length, fft_segments_per_scan, dof, fs_afe, n_samples_scan_afe, scan_step -
 %                   provenance, passed through from mod_L2_tile_scans.m.
 %   nbscan is 0 (all per-scan fields empty) if epsi wasn't tiled at all
 %   (see DESCRIPTION), is too short for even one scan, or no scan lands on
@@ -756,7 +756,7 @@ L2data.qc = struct();
 L2data.fft_length = tiled_scans.fft_length;
 L2data.fft_segments_per_scan = tiled_scans.fft_segments_per_scan;
 L2data.dof = tiled_scans.dof;
-L2data.f_sample_epsi = tiled_scans.f_sample_epsi;
-L2data.n_samples_scan_epsi = tiled_scans.n_samples_scan_epsi;
+L2data.fs_afe = tiled_scans.fs_afe;
+L2data.n_samples_scan_afe = tiled_scans.n_samples_scan_afe;
 L2data.scan_step = tiled_scans.scan_step;
 end

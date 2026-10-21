@@ -27,7 +27,7 @@ function efe = MODsetup_default_efe()
 %   efe - metadata-shaped struct, so anything that takes a metadata struct
 %         can take it directly:
 %           PROCESS.channels        - {'t1','t2','s1','s2','a1','a2','a3'}, slot order
-%           PROCESS.f_sample_epsi         - 320 [Hz], nominal EFE sample rate
+%           PROCESS.fs_afe          - 320 [Hz], nominal AFE (EFE board) sample rate
 %           AFE.(ch).type           - 'fpo7' / 'shear' / 'acc'
 %           AFE.(ch).full_range     - [V]
 %           AFE.(ch).ADCconf        - 'Unipolar' / 'Bipolar'
@@ -54,7 +54,7 @@ function efe = MODsetup_default_efe()
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
 efe.PROCESS.channels = {'t1', 't2', 's1', 's2', 'a1', 'a2', 'a3'};
-efe.PROCESS.f_sample_epsi = 320;
+efe.PROCESS.fs_afe = 320;
 
 for ch = {'t1', 't2'}
     efe.AFE.(ch{1}) = struct('type', 'fpo7', 'full_range', 2.5, 'ADCconf', 'Unipolar', 'ADCfilter', 'sinc4');

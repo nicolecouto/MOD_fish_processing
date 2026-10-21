@@ -42,11 +42,11 @@ function profile_data = modProcess_extract_profile(profile, TimeIndex, metadata)
 %   function computes dt = diff(epsi.dnum)*86400 across the WHOLE stitched
 %   record - not just at file seams, since a real discontinuity can also
 %   occur mid-file (PLAN.md Section 9's known block-drop artifact) - and
-%   flags dt > metadata.PROCESS.epsi_gap_factor * (1/metadata.PROCESS.f_sample_epsi)
+%   flags dt > metadata.PROCESS.epsi_gap_factor * (1/metadata.PROCESS.fs_afe)
 %   as a genuine gap. Unlike mod_L1_detect_profiling_direction.m's
 %   segment-median-relative threshold (appropriate for sparse, irregular
 %   pressure data), the denominator here is the deployment's NOMINAL epsi
-%   sample interval (1/f_sample_epsi), because epsi is uniformly clocked
+%   sample interval (1/fs_afe), because epsi is uniformly clocked
 %   hardware and a local 2-sample "median" at a seam has no meaning.
 %   metadata.PROCESS.epsi_gap_factor is deliberately a separate field from
 %   metadata.PROFILES.ctd_gap_factor - different timebase, different
@@ -73,13 +73,13 @@ function profile_data = modProcess_extract_profile(profile, TimeIndex, metadata)
 %   metadata  - metadata struct (from MODsetup_read_yaml.m). Uses:
 %               metadata.paths.L1 (directory TimeIndex.filename lives in -
 %               TimeIndex itself carries no path, same "paths never
-%               persisted" rule as metadata.mat), metadata.PROCESS.f_sample_epsi,
+%               persisted" rule as metadata.mat), metadata.PROCESS.fs_afe,
 %               metadata.PROCESS.epsi_gap_factor. epsi_gap_factor is
 %               validated via MODsetup_validate_metadata.m as the first
 %               executable line (same point-of-use pattern
-%               mod_scan_get_spectra.m uses); f_sample_epsi is read directly,
+%               mod_scan_get_spectra.m uses); fs_afe is read directly,
 %               unconditionally, matching mod_scan_get_spectra.m's own
-%               not-yet-validated f_sample_epsi read (PLAN.md Section 2,
+%               not-yet-validated fs_afe read (PLAN.md Section 2,
 %               "Deferred" note).
 %
 % OUTPUTS
@@ -131,7 +131,7 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsi_gap_factor', 'f_sample_epsi'});
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsi_gap_factor', 'fs_afe'});
 
 profile_data.profile_number = profile.profile_number;
 profile_data.direction = profile.direction;
@@ -230,7 +230,7 @@ n = numel(epsi.dnum);
 segment_id = ones(n, 1);
 if n > 1
     dt = diff(epsi.dnum) * 86400; % seconds
-    nominal_dt = 1 / metadata.PROCESS.f_sample_epsi;
+    nominal_dt = 1 / metadata.PROCESS.fs_afe;
     gap_after = dt > metadata.PROCESS.epsi_gap_factor * nominal_dt;
     segment_id = 1 + [0; cumsum(gap_after)];
 end

@@ -33,7 +33,7 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %                metadata.PROCESS.channels, metadata.PROCESS.fft_length (also
 %                the Hamming taper length - no separate zero-padding),
 %                metadata.PROCESS.fft_segments_per_scan,
-%                metadata.PROCESS.f_sample_epsi, metadata.AFE.(channel).type
+%                metadata.PROCESS.fs_afe, metadata.AFE.(channel).type
 %                (to know each channel's field suffix - '_g' for acc,
 %                '_volt' for everything else - same acc-vs-everything-else
 %                split mod_efe_counts_to_volts_g.m
@@ -100,11 +100,11 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'fft_length', 'fft_segments_per_scan', 'f_sample_epsi'});
+    {'fft_length', 'fft_segments_per_scan', 'fs_afe'});
 
 fft_length = metadata.PROCESS.fft_length;
 fft_segments_per_scan = metadata.PROCESS.fft_segments_per_scan;
-f_sample_epsi = metadata.PROCESS.f_sample_epsi;
+fs_afe = metadata.PROCESS.fs_afe;
 fft_seg_starts = mod_scan_fft_seg_starts(fft_length, fft_segments_per_scan);
 
 scan.spectra = struct();
@@ -134,7 +134,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
         continue
     end
 
-    [Pxx, f] = mod_scan_welch_psd(scan.epsi.(field), fft_length, fft_seg_starts, f_sample_epsi, 'hamming', 'linear');
+    [Pxx, f] = mod_scan_welch_psd(scan.epsi.(field), fft_length, fft_seg_starts, fs_afe, 'hamming', 'linear');
     scan.spectra.([field '_f']) = Pxx(:)';
 end
 

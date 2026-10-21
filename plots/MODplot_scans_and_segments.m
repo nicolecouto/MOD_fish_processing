@@ -43,7 +43,7 @@ function fig = MODplot_scans_and_segments(fft_length, scan_length, fall_speed, o
 %                 panel 3 and the kmin annotation
 %
 % OPTIONS (name-value)
-%   f_sample_epsi      - sample rate [Hz], for the sample<->time axis conversion
+%   fs_afe      - sample rate [Hz], for the sample<->time axis conversion
 %                  and the meters/kmin conversion. Default: 320 (the
 %                  registry default - MODsetup_metadata_field_registry.m)
 %   n_scans      - how many scans to draw (odd, so there's a true center
@@ -75,7 +75,7 @@ function fig = MODplot_scans_and_segments(fft_length, scan_length, fall_speed, o
 %   that same doc page for the distinction.
 %
 %   kmin printed in panel 3 is the wavenumber-domain frequency resolution
-%   df = f_sample_epsi/fft_length converted via Taylor's frozen-turbulence
+%   df = fs_afe/fft_length converted via Taylor's frozen-turbulence
 %   hypothesis (k = f/fall_speed) - i.e. the smallest non-zero wavenumber
 %   any spectrum computed at this fft_length/fall_speed can represent.
 %   This is a property of fft_length (segment length), not scan_length -
@@ -89,12 +89,12 @@ arguments
     fft_length (1,1) double {mustBePositive}
     scan_length (1,1) double {mustBePositive}
     fall_speed (1,1) double {mustBePositive}
-    opts.f_sample_epsi (1,1) double {mustBePositive} = 320
+    opts.fs_afe (1,1) double {mustBePositive} = 320
     opts.n_scans (1,1) double {mustBePositive, mustBeInteger} = 5
     opts.scan_overlap (1,1) double {mustBeGreaterThanOrEqual(opts.scan_overlap,0), mustBeLessThan(opts.scan_overlap,1)} = 0.5
 end
 
-f_sample_epsi = opts.f_sample_epsi;
+fs_afe = opts.fs_afe;
 SEGMENT_OVERLAP = 0.5; % hardcoded - matches mod_scan_fft_seg_starts.m's hardcoded overlap, see NOTES
 
 %% tile scans across the illustrative record (mirrors mod_L2_tile_scans.m)
@@ -161,7 +161,7 @@ th1 = title(ax1, {sprintf('%d scans, scan\\_length=%d, scan\\_step=%d ((1-scan\\
     'center scan (black outline) highlighted in panel 3'});
 set(ax1, 'YTick', 1:n_scans);
 apply_sample_ticks(ax1, fft_length, x_max);
-add_time_axis(ax1, f_sample_epsi);
+add_time_axis(ax1, fs_afe);
 raise_title(th1);
 
 %% Panel 2: segments within each scan, shaded by parent scan's hue
@@ -193,13 +193,13 @@ th2 = title(ax2, {sprintf('each scan''s %d segment(s), fft\\_length=%d, 50%% wit
     'shades = same scan'});
 set(ax2, 'YTick', 1:n_scans);
 apply_sample_ticks(ax2, fft_length, x_max);
-add_time_axis(ax2, f_sample_epsi);
+add_time_axis(ax2, fs_afe);
 raise_title(th2);
 
 %% Panel 3: scans converted to meters via fall_speed, center scan highlighted
 ax3 = subtightplot(n_rows,1,3,gap,marg_h,marg_w);
 hold(ax3,'on');
-to_m = @(samp) (samp-1)/f_sample_epsi*fall_speed;
+to_m = @(samp) (samp-1)/fs_afe*fall_speed;
 for i = 1:n_scans
     lw = 10;
     if i == i_center
@@ -207,15 +207,15 @@ for i = 1:n_scans
     end
     plot(ax3, [to_m(scan_starts(i)) to_m(scan_ends(i))], [i i], '-', 'color', scan_colors(i,:), 'linewidth', lw);
 end
-footprint_m = scan_length/f_sample_epsi*fall_speed;
-kmin = f_sample_epsi/(fft_length*fall_speed);
+footprint_m = scan_length/fs_afe*fall_speed;
+kmin = fs_afe/(fft_length*fall_speed);
 text(ax3, to_m(scan_starts(i_center)), i_center+0.55, sprintf('scan length = %.2f m', footprint_m), ...
     'FontWeight','bold', 'HorizontalAlignment','left', 'FontSize', 12);
 ylim(ax3, [0.3, n_scans+0.7]);
 xlim(ax3, [0, to_m(x_max)]);
 ylabel(ax3, 'scan index');
-xlabel(ax3, 'distance fallen [m] (sample #/f\_sample\_epsi \times fall\_speed)');
-title(ax3, sprintf('fall\\_speed=%.2f m/s -> highlighted scan spans %.2f m; kmin = f\\_sample\\_epsi/(fft\\_length\\times fall\\_speed) = %.3f cpm', ...
+xlabel(ax3, 'distance fallen [m] (sample #/fs\_afe \times fall\_speed)');
+title(ax3, sprintf('fall\\_speed=%.2f m/s -> highlighted scan spans %.2f m; kmin = fs\\_afe/(fft\\_length\\times fall\\_speed) = %.3f cpm', ...
     fall_speed, footprint_m, kmin));
 set(ax3, 'YTick', 1:n_scans);
 
@@ -235,13 +235,13 @@ ax.XTick = 0:fft_length:x_max;
 end
 
 %% helper: top x-axis in integer seconds, aligned to the bottom (sample #) axis
-function ax_top = add_time_axis(ax_bottom, f_sample_epsi)
+function ax_top = add_time_axis(ax_bottom, fs_afe)
 drawnow % settle ax_bottom's Position before copying it
 pos = ax_bottom.Position;
 ax_top = axes('Position', pos, 'Color', 'none', ...
     'XAxisLocation', 'top', 'YAxisLocation', 'right', ...
     'YTick', [], 'YColor', 'none', 'Box', 'off');
-ax_top.XLim = ax_bottom.XLim / f_sample_epsi;
+ax_top.XLim = ax_bottom.XLim / fs_afe;
 t_max = ax_top.XLim(2);
 ax_top.XTick = 0:1:floor(t_max);
 xlabel(ax_top, 'time [s]');

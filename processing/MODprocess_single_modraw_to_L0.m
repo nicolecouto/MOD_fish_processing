@@ -1159,7 +1159,7 @@ else
     ind_apf_stop=ind_apf0_stop;
 
 
-    sampling_freq=160;
+    sample_freq=160;
     % Pre-allocate space for data
     apf.data.n_blocks           = numel(ind_apf_start); %Number of data blocks beginning with $EFE
 
@@ -1291,7 +1291,7 @@ else
 
 
         [~,fe]=pwelch(1.*(1:apf.metadata.nfft{iB}),apf.metadata.nfft{iB},[], ...
-            apf.metadata.nfft{iB},sampling_freq);
+            apf.metadata.nfft{iB},sample_freq);
         apf.data.freq{iB}=fe(2:end);
         apf.data.freq_diag{iB}=fe(1:2:end);
         apf.data.freq_diag{iB}=apf.data.freq_diag{iB}(1:apf.metadata.nfftdiag{iB} );
@@ -1451,7 +1451,7 @@ else
     ind_apf_start=ind_apf2_start;
     ind_apf_stop=ind_apf2_stop;
 
-    sampling_freq=160;
+    sample_freq=160;
 
     % Pre-allocate space for data
     apf.data.n_blocks           = numel(ind_apf_start); %Number of data blocks beginning with $EFE
@@ -1556,7 +1556,7 @@ else
 
     apf.metadata.nfft=2048;
     [~,fe]=pwelch(1.*(1:apf.metadata.nfft),apf.metadata.nfft,[], ...
-        apf.metadata.nfft,sampling_freq);
+        apf.metadata.nfft,sample_freq);
 
     %epsi.time_s and epsi.dnum will be created from epsi_timestamp once
     %all its records are filled

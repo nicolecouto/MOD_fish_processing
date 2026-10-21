@@ -1,7 +1,7 @@
-function H2 = mod_scan_ucond_electronics_filter(f, ucond, f_sample_epsi, ADCfilter)
+function H2 = mod_scan_ucond_electronics_filter(f, ucond, fs_afe, ADCfilter)
 % mod_scan_ucond_electronics_filter        Part of MOD_fish_processing
 %
-% H2 = mod_scan_ucond_electronics_filter(f, ucond, f_sample_epsi, ADCfilter)
+% H2 = mod_scan_ucond_electronics_filter(f, ucond, fs_afe, ADCfilter)
 %
 % DESCRIPTION
 %   Magnitude-squared response of a microconductivity channel's
@@ -25,7 +25,7 @@ function H2 = mod_scan_ucond_electronics_filter(f, ucond, f_sample_epsi, ADCfilt
 %   ucond     - metadata.PROCESS.UCOND: preemphasis_R22_ohm,
 %               preemphasis_R24_ohm, preemphasis_R25_ohm, preemphasis_C19_F,
 %               antialias_sinc_power
-%   f_sample_epsi   - EFE sample rate [Hz] (f_Nyquist = f_sample_epsi/2)
+%   fs_afe   - EFE sample rate [Hz] (f_Nyquist = fs_afe/2)
 %   ADCfilter - the channel's ADC filter type, e.g. 'sinc4'
 %
 % OUTPUTS
@@ -58,7 +58,7 @@ w1 = 1 ./ (2*pi*f*ucond.preemphasis_C19_F);
 H_pre = 1 + Rf*R22 ./ (R22^2 + w1.^2) + 1i*Rf*w1 ./ (R22^2 + w1.^2);
 H_pre(f == 0) = 1; % w1 is infinite at f = 0, where the circuit passes the signal unchanged
 
-H_antialias = sinc(f / (f_sample_epsi/2)).^ucond.antialias_sinc_power;
+H_antialias = sinc(f / (fs_afe/2)).^ucond.antialias_sinc_power;
 
 H2 = abs(H_pre).^2 .* H_antialias .* H_adc.^2;
 

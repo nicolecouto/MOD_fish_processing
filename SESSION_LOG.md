@@ -4,35 +4,26 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
-### 2026-10-21 - Sample-rate names: f_sample_epsi, n_samples_scan_epsi, f_sample_ctd, f_sample (branch `main-fork`)
+### 2026-10-21 - Sample-rate names: fs, fs_afe, fs_ctd (branch `main-fork`)
 
 Nicole: "What do you suppose the s in Fs_ctd and Fs_epsi stand for? I think sampling."
-- First chosen: `f_sample_efe`. Then, after I pointed out it would sit next to `data.epsi`/`epsi_conversion`: "make them all f_sample_epsi, f_sample_measured_epsi, etc."
-- "Anywhere that there is a variable called 'Fs' for frequency, change it to 'f_sample'."
-- She'll remake this cruise's L0/L1, so no reading of the old name from them; old L2 files error.
+- The board's rate also covers microconductivity on FCTD, so it's named for the board (`afe`, as in the yml's `afe:` section and `metadata.AFE`), not the vehicle.
+- The stem is `fs`, the short form other repos use (MATLAB/scipy `fs`, ODAS `fs_fast`).
+- She'll remake this cruise's L0/L1, so the old name isn't read from them; old L2 files error.
 
 Renamed:
-- `Fs_epsi` -> `f_sample_epsi`, everywhere: registry entry (yml key still `afe.sample_rate`), `metadata.PROCESS`, L2, `mod_efe_conversion`'s record (`f_sample_epsi`, `f_sample_epsi_source`).
-- `N_epsi` -> `n_samples_scan_epsi`.
-- `Fs_ctd` -> `f_sample_ctd`; `N_ctd` -> `n_samples_ctd`.
-- Every `Fs`/`fs` sample-rate variable and argument -> `f_sample`: `mod_scan_welch_psd`, `mod_scan_fpo7_modeled_noise_f`, both spectra viewers, and comments/docs formulas like delta^2/12/(f_sample/2).
-- MODvis_spectra_L0:
-  - export `settings.Fs`/`Fs_measured` -> `f_sample_epsi`/`f_sample_measured_epsi`
-  - `measuredFs` -> `measuredFSample`
-  - plot text "f_sample ... Hz nominal"
-- Plot labels in MODplot_scans_and_segments and MODplot_scan_context.
+- `Fs_epsi` -> `fs_afe`, everywhere: registry entry (yml key still `afe.sample_rate`), `metadata.PROCESS`, L2, `mod_efe_conversion`'s record (`fs_afe` and `fs_afe_source`, where the value came from).
+- `N_epsi` -> `n_samples_scan_afe`.
+- `Fs_ctd` -> `fs_ctd`; `N_ctd` -> `n_samples_ctd`.
+- Every `Fs` sample-rate variable and argument -> `fs`: `mod_scan_welch_psd`, both spectra viewers, and comments/docs formulas.
+- MODvis_spectra_L0's export `settings.Fs`/`Fs_measured` -> `fs_afe`/`fs_measured_afe`; the plot text reads "fs ... Hz nominal".
+- The L0 parser's `sampling_freq` -> `sample_freq`, like its other blocks.
 
 Kept: reads of MOD_fish_lib's own fields (`Meta_Data.PROCESS.Fs_epsi`/`Fs_ctd`, `Meta_Data.AFE.FS`) in SpectraExplorerApp and MODvis_spectra's legacy-Profile reader.
 
 Old files:
 - L2 with `Fs_epsi`/`N_epsi`: the grid raises `MODprocess_grid:oldL2Layout` (`grid_version` 11), and MODvis_spectra shows an "Old L2 file" alert.
 - L0/L1 whose `epsi_conversion` has `Fs_epsi`: MODvis_spectra_L0 says "remake its L0 and L1".
-
-Tested in the scratchpad (L2 folders deleted so every file was redone; the driver's 'force' only overrides the worker lock, so the CTD-spectra-removal check earlier today had redone only one file per survey):
-- 26_1021_fctd2_rupture_disc copy: all 31 L2 files `isequaln` the ones made here before today's CTD-spectra removal and this rename (old names mapped). That checks both changes; the grid's chi_obs bins per cast match the footprint run.
-- 26_1019_mako2_test2 copy (Epsi): all 10 match the worker's (DEV3, an Intel Mac) to 7e-8 relative at most (chi MLE), with the same NaN pattern.
-- The grid on old L2 stops with the reprocess error. MODvis_spectra opens the new L2. MODvis_spectra_L0 exports 27 windows.
-- `checkcode` shows only pre-existing messages; `mkdocs build --strict`.
 
 ### 2026-10-21 - Turbulence over each scan's footprint; Profiling "both" in Start New Deployment (branch `main-fork`)
 

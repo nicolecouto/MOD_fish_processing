@@ -30,7 +30,7 @@ function conversion = mod_efe_conversion(n_slots, metadata)
 %   n_slots  - number of EFE ADC slots in the data (7 for a standard EFE)
 %   metadata - (optional) metadata struct from MODsetup_read_yaml.m, or
 %              [] / omitted to use the standard EFE defaults for everything.
-%              Uses: PROCESS.channels, PROCESS.f_sample_epsi,
+%              Uses: PROCESS.channels, PROCESS.fs_afe,
 %              AFE.(name).type/.full_range/.ADCconf, paths.setup_yml
 %              (for the source label only)
 %
@@ -40,7 +40,9 @@ function conversion = mod_efe_conversion(n_slots, metadata)
 %     source             - char, 'default EFE (MODsetup_default_efe.m)',
 %                          the setup.yml path, or that path + ' (partial,
 %                          remaining fields from default EFE)'
-%     f_sample_epsi            - [Hz] nominal sample rate, and f_sample_epsi_source
+%     fs_afe             - [Hz] nominal AFE sample rate
+%     fs_afe_source      - char, where fs_afe came from: the setup.yml path,
+%                          or 'default EFE (MODsetup_default_efe.m)'
 %     bit_counts, gain, acc_offset_V, acc_factor_V_per_g - board constants
 %     channels           - cellstr of names in slot order
 %     channel.(name)     - struct per channel:
@@ -57,7 +59,7 @@ function conversion = mod_efe_conversion(n_slots, metadata)
 % NOTES
 %   scale is also one ADC LSB in the channel's own units, which is what
 %   the viewers' bit-noise lines use: an N-bit ADC's quantization floor is
-%   (scale * 2^(bit_counts - N))^2 / 12 / (f_sample/2) in unit^2/Hz.
+%   (scale * 2^(bit_counts - N))^2 / 12 / (fs/2) in unit^2/Hz.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -80,12 +82,12 @@ end
 conversion = struct();
 conversion.README = '';   % filled in below, once the numbers are known
 conversion.source = '';
-conversion.f_sample_epsi = def.PROCESS.f_sample_epsi;
-conversion.f_sample_epsi_source = default_label;
-if isstruct(metadata) && isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'f_sample_epsi') ...
-        && ~isempty(metadata.PROCESS.f_sample_epsi)
-    conversion.f_sample_epsi = metadata.PROCESS.f_sample_epsi;
-    conversion.f_sample_epsi_source = yml_label;
+conversion.fs_afe = def.PROCESS.fs_afe;
+conversion.fs_afe_source = default_label;
+if isstruct(metadata) && isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'fs_afe') ...
+        && ~isempty(metadata.PROCESS.fs_afe)
+    conversion.fs_afe = metadata.PROCESS.fs_afe;
+    conversion.fs_afe_source = yml_label;
 end
 conversion.bit_counts = def.EFE.bit_counts;
 conversion.gain = def.EFE.gain;

@@ -15,7 +15,7 @@ function metadata = MODsetup_define_filters(metadata)
 %   function on its own (mod_scan_fpo7_transfer_function.m, already
 %   built). Everything else in get_filters_SOM.m - the per-channel ADC
 %   sinc^4 response, shear's charge-amp electronics filter, gains -
-%   depends only on f (itself just metadata.PROCESS.fft_length/.f_sample_epsi) and
+%   depends only on f (itself just metadata.PROCESS.fft_length/.fs_afe) and
 %   metadata.AFE.(ch), so it's a genuine "resolve once, like volts_to_C"
 %   value. See PLAN.md Section 6.2's "Design note: instrument filters"
 %   for the full reasoning, and docs/workflow/L2_calc_chi.md for how
@@ -44,7 +44,7 @@ function metadata = MODsetup_define_filters(metadata)
 %
 % INPUTS
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
-%              metadata.PROCESS.fft_length/.f_sample_epsi/.channels,
+%              metadata.PROCESS.fft_length/.fs_afe/.channels,
 %              metadata.AFE.(ch).type/.ADCfilter,
 %              metadata.paths.calibrations_root (shear only),
 %              metadata.PROCESS.UCOND (microcond only)
@@ -53,7 +53,7 @@ function metadata = MODsetup_define_filters(metadata)
 %   metadata - same struct, with metadata.AFE.(ch).electronics_filter
 %              (magnitude-squared, nfreq x 1, same f as
 %              mod_scan_get_spectra.m produces for this deployment's
-%              fft_length/f_sample_epsi) added for every channel with a resolvable
+%              fft_length/fs_afe) added for every channel with a resolvable
 %              type/filter. A shear channel is left without the field
 %              (warning, not error) if the charge-amp filter file isn't
 %              found - same "missing calibration is not an error"
@@ -70,7 +70,7 @@ function metadata = MODsetup_define_filters(metadata)
 %
 % NOTES
 %   f is derived via a cheap dummy pwelch call (zeros(fft_length,1), same fft_length/
-%   f_sample_epsi/'psd' args mod_scan_get_spectra.m uses) rather than hand-
+%   fs_afe/'psd' args mod_scan_get_spectra.m uses) rather than hand-
 %   deriving the one-sided PSD frequency-bin formula - guarantees this
 %   function's f is bit-identical to every real scan's f, rather than
 %   risking a subtly different bin edge/count from reimplementing
@@ -90,7 +90,7 @@ yaml_file = '';
 if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
-metadata = MODsetup_validate_metadata(metadata, yaml_file, {'fft_length', 'f_sample_epsi'});
+metadata = MODsetup_validate_metadata(metadata, yaml_file, {'fft_length', 'fs_afe'});
 types = cellfun(@(ch) metadata.AFE.(ch).type, ...
     intersect(metadata.PROCESS.channels, fieldnames(metadata.AFE), 'stable'), 'UniformOutput', false);
 if any(strcmpi(types, 'microcond'))
@@ -100,8 +100,8 @@ if any(strcmpi(types, 'microcond'))
 end
 
 fft_length = metadata.PROCESS.fft_length;
-f_sample_epsi = metadata.PROCESS.f_sample_epsi;
-[~, f] = pwelch(zeros(fft_length, 1), fft_length, [], fft_length, f_sample_epsi, 'psd');
+fs_afe = metadata.PROCESS.fs_afe;
+[~, f] = pwelch(zeros(fft_length, 1), fft_length, [], fft_length, fs_afe, 'psd');
 f = f(:);
 
 for iC = 1:numel(metadata.PROCESS.channels)
@@ -140,7 +140,7 @@ for iC = 1:numel(metadata.PROCESS.channels)
 
         case 'microcond'
             metadata.AFE.(ch).electronics_filter = mod_scan_ucond_electronics_filter( ...
-                f, metadata.PROCESS.UCOND, f_sample_epsi, ADCfilter);
+                f, metadata.PROCESS.UCOND, fs_afe, ADCfilter);
 
         otherwise
             % Not a channel type this repo's chi/shear/accel chains use

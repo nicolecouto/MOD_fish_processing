@@ -7,7 +7,7 @@ function fig = MODplot_scan_context(data, metadata, target_pressure, channel, op
 %   Diagnostic figure for one scan of one L1 file: how that scan's window
 %   relates to its neighbors (between-scan overlap, tied to fft_length/
 %   fft_segments_per_scan/scan_overlap via MODprocess_single_L1_to_L2.m's
-%   scan_step = (1-scan_overlap)*n_samples_scan_epsi, unlike the old mod_fish_lib
+%   scan_step = (1-scan_overlap)*n_samples_scan_afe, unlike the old mod_fish_lib
 %   pipeline where scan spacing was a fixed, independent dz), and what
 %   mod_scan_get_spectra.m does inside that one scan (within-scan
 %   segmenting/per-segment-detrend/windowing/averaging, at a hardcoded
@@ -26,7 +26,7 @@ function fig = MODplot_scan_context(data, metadata, target_pressure, channel, op
 %                      data.ctd.dnum, data.ctd.P
 %   metadata         - metadata struct (MODsetup_read_yaml.m). Uses
 %                      metadata.PROCESS.fft_length, .fft_segments_per_scan,
-%                      .scan_overlap, .f_sample_epsi as defaults (overridable -
+%                      .scan_overlap, .fs_afe as defaults (overridable -
 %                      see OPTIONS)
 %   target_pressure - db; the scan whose center pressure is closest to
 %                      this is the one plotted
@@ -90,43 +90,43 @@ arguments
     opts.window_type (1,:) char {mustBeMember(opts.window_type,{'hamming','hann','rectwin','flattop'})} = 'hamming'
 end
 
-f_sample_epsi = metadata.PROCESS.f_sample_epsi;
+fs_afe = metadata.PROCESS.fs_afe;
 fft_length = opts.fft_length;
-n_samples_scan_epsi = mod_scan_length_from_segments(fft_length, opts.fft_segments_per_scan);
+n_samples_scan_afe = mod_scan_length_from_segments(fft_length, opts.fft_segments_per_scan);
 if fft_length ~= metadata.PROCESS.fft_length || opts.fft_segments_per_scan ~= metadata.PROCESS.fft_segments_per_scan ...
         || opts.scan_overlap ~= metadata.PROCESS.scan_overlap
     fprintf(['using fft_length=%d, fft_segments_per_scan=%d, scan_overlap=%.2f ' ...
         '(overridden from metadata.PROCESS) -> scan_length=%d\n'], ...
-        fft_length, opts.fft_segments_per_scan, opts.scan_overlap, n_samples_scan_epsi);
+        fft_length, opts.fft_segments_per_scan, opts.scan_overlap, n_samples_scan_afe);
 end
 
 %% locate scans the same way MODprocess_single_L1_to_L2.m does: windows of
-% n_samples_scan_epsi = scan_length samples, step = (1-scan_overlap)*n_samples_scan_epsi
-scan_step = round((1-opts.scan_overlap)*n_samples_scan_epsi);
+% n_samples_scan_afe = scan_length samples, step = (1-scan_overlap)*n_samples_scan_afe
+scan_step = round((1-opts.scan_overlap)*n_samples_scan_afe);
 n_samples = numel(data.epsi.dnum);
-if n_samples < n_samples_scan_epsi
+if n_samples < n_samples_scan_afe
     error('MODplot_scan_context:tooShort','this file has only %d epsi samples, needs at least scan_length=%d for one scan at fft_length=%d', ...
-        n_samples, n_samples_scan_epsi, fft_length);
+        n_samples, n_samples_scan_afe, fft_length);
 end
-scan_starts = 1:scan_step:(n_samples - n_samples_scan_epsi + 1);
+scan_starts = 1:scan_step:(n_samples - n_samples_scan_afe + 1);
 n_scans_total = numel(scan_starts);
 
-center_idx  = scan_starts + floor(n_samples_scan_epsi/2) - 1;
+center_idx  = scan_starts + floor(n_samples_scan_afe/2) - 1;
 center_dnum = data.epsi.dnum(center_idx);
 center_P    = interp1(data.ctd.dnum, data.ctd.P, center_dnum, 'linear', 'extrap');
 
 [~, iScan] = min(abs(center_P - target_pressure));
-fprintf('scan %d of %d: center pressure = %.2f db (target was %.2f db), n_samples_scan_epsi = %d samples (%.2fs)\n', ...
-    iScan, n_scans_total, center_P(iScan), target_pressure, n_samples_scan_epsi, n_samples_scan_epsi/f_sample_epsi);
+fprintf('scan %d of %d: center pressure = %.2f db (target was %.2f db), n_samples_scan_afe = %d samples (%.2fs)\n', ...
+    iScan, n_scans_total, center_P(iScan), target_pressure, n_samples_scan_afe, n_samples_scan_afe/fs_afe);
 
 %% context: how this scan's window sits among its neighbors (between-scan view)
 nb_idx  = max(1,iScan-opts.n_neighbors):min(n_scans_total,iScan+opts.n_neighbors);
 n_nb    = numel(nb_idx);
 cmap_nb = turbo(n_nb);
 
-idxE_all = [scan_starts(nb_idx)', scan_starts(nb_idx)'+n_samples_scan_epsi-1];
+idxE_all = [scan_starts(nb_idx)', scan_starts(nb_idx)'+n_samples_scan_afe-1];
 e_lo = min(idxE_all(:,1)); e_hi = max(idxE_all(:,2));
-t_epsi_ctx = ((e_lo:e_hi) - e_lo)'/f_sample_epsi;
+t_epsi_ctx = ((e_lo:e_hi) - e_lo)'/fs_afe;
 x_epsi_ctx = detrend(double(data.epsi.(channel)(e_lo:e_hi)));
 
 P0_nb = interp1(data.ctd.dnum, data.ctd.P, data.epsi.dnum(idxE_all(:,1)), 'linear', 'extrap');
@@ -136,9 +136,9 @@ width_db_nb = P1_nb - P0_nb;
 %% window + segment bookkeeping for the chosen scan (mirrors
 % mod_scan_welch_psd.m)
 idx0 = scan_starts(iScan);
-idx1 = idx0 + n_samples_scan_epsi - 1;
+idx1 = idx0 + n_samples_scan_afe - 1;
 x_raw = double(data.epsi.(channel)(idx0:idx1));   % NOT detrended - each segment gets its own detrend below
-t = (0:n_samples_scan_epsi-1)'/f_sample_epsi;
+t = (0:n_samples_scan_afe-1)'/fs_afe;
 
 switch opts.window_type
     case 'hamming', win = hamming(fft_length);
@@ -150,11 +150,11 @@ end
 FFT_OVERLAP = 0.5; % hardcoded - matches mod_scan_fft_seg_starts.m's hardcoded overlap
 noverlap = round(FFT_OVERLAP*fft_length);
 step = fft_length - noverlap;
-seg_starts = 1:step:(n_samples_scan_epsi - fft_length + 1);
+seg_starts = 1:step:(n_samples_scan_afe - fft_length + 1);
 n_segs = numel(seg_starts);
 
 fprintf('window length = %d samples (%.2fs); overlap = %d samples (%.0f%% of window); -> %d segment(s)\n', ...
-    fft_length, fft_length/f_sample_epsi, noverlap, 100*noverlap/fft_length, n_segs);
+    fft_length, fft_length/fs_afe, noverlap, 100*noverlap/fft_length, n_segs);
 
 %% replicate mod_scan_welch_psd.m by hand
 nfreq = fft_length/2 + 1;
@@ -172,7 +172,7 @@ for i = 1:n_segs
     seg_det(:,i) = xi_det;
     seg_win(:,i) = xiw;
 
-    [Pseg, f_manual] = periodogram(xiw, [], fft_length, f_sample_epsi, 'psd');
+    [Pseg, f_manual] = periodogram(xiw, [], fft_length, fs_afe, 'psd');
     Pxx_segs(:,i) = Pseg;
 end
 Pxx_manual = mean(Pxx_segs, 2);
@@ -182,7 +182,7 @@ Pxx_manual = mean(Pxx_segs, 2);
 % pwelch itself has no per-segment-detrend option to check against directly.
 Pxx_check = zeros(nfreq, n_segs);
 for i = 1:n_segs
-    Pxx_check(:,i) = periodogram(seg_win(:,i), [], fft_length, f_sample_epsi, 'psd');
+    Pxx_check(:,i) = periodogram(seg_win(:,i), [], fft_length, fs_afe, 'psd');
 end
 fprintf('max |manual - periodogram-per-segment| = %.3e (should be ~0)\n', ...
     max(abs(Pxx_manual - mean(Pxx_check,2))));
@@ -203,7 +203,7 @@ plot(t_epsi_ctx, x_epsi_ctx, 'color',[0.8 0.8 0.8])
 for k = 1:n_nb
     ii  = nb_idx(k);
     idx = idxE_all(k,1):idxE_all(k,2);
-    tt  = (idx - e_lo)'/f_sample_epsi;
+    tt  = (idx - e_lo)'/fs_afe;
     xx  = detrend(double(data.epsi.(channel)(idx)));
     off = (ii - iScan) * off_step_e;
     if ii==iScan
@@ -234,7 +234,7 @@ for k = 1:n_nb
 end
 ylim([-opts.n_neighbors-1, opts.n_neighbors+1])
 xlabel('pressure [db]'); ylabel(sprintf('scan index relative to scan %d',iScan))
-title(sprintf('scan\\_step = (1-scan\\_overlap)\\times n\\_samples\\_scan\\_epsi -> %.0f%% overlap by construction (median window width = %.2f db)', ...
+title(sprintf('scan\\_step = (1-scan\\_overlap)\\times n\\_samples\\_scan\\_afe -> %.0f%% overlap by construction (median window width = %.2f db)', ...
     100*opts.scan_overlap, median(width_db_nb)))
 
 % 1. full record (black, undetrended) with every Welch segment overlaid
@@ -257,7 +257,7 @@ title(sprintf('scan %d: raw record (black, mean-removed for display), %d segment
 
 % 2. the window shape itself
 subtightplot(n_rows,2,7,gap,marg_h,marg_w);
-plot((0:fft_length-1)/f_sample_epsi, win, 'k-','linewidth',1.5)
+plot((0:fft_length-1)/fs_afe, win, 'k-','linewidth',1.5)
 xlabel('time within segment [s]'); ylabel('window amplitude')
 title(sprintf('%s window, length %d', opts.window_type, fft_length))
 ylim([0 1.05*max(win)])
@@ -265,9 +265,9 @@ ylim([0 1.05*max(win)])
 % 3. segment 1: raw -> per-segment detrend -> windowed.
 subtightplot(n_rows,2,8,gap,marg_h,marg_w);
 hold on
-plot((0:fft_length-1)/f_sample_epsi, seg_raw(:,1)-mean(seg_raw(:,1)),'-','color',[0.6 0.6 0.6],'linewidth',1.2)
-plot((0:fft_length-1)/f_sample_epsi, seg_det(:,1),'-','color',cmap(1,:),'linewidth',1.5)
-plot((0:fft_length-1)/f_sample_epsi, seg_win(:,1),'k-','linewidth',1)
+plot((0:fft_length-1)/fs_afe, seg_raw(:,1)-mean(seg_raw(:,1)),'-','color',[0.6 0.6 0.6],'linewidth',1.2)
+plot((0:fft_length-1)/fs_afe, seg_det(:,1),'-','color',cmap(1,:),'linewidth',1.5)
+plot((0:fft_length-1)/fs_afe, seg_win(:,1),'k-','linewidth',1)
 legend('raw (mean-removed)','individually detrended','windowed','location','best')
 xlabel('time within segment [s]'); ylabel('amplitude')
 title('segment 1: raw -> per-segment detrend -> window')
@@ -283,7 +283,7 @@ end
 semilogy(f_manual, Pxx_manual, 'k-','linewidth',2)
 xlabel('frequency [Hz]'); ylabel('PSD')
 title(sprintf('%d individual periodogram(s) (per-segment detrend) -> Welch average', n_segs))
-xlim([0 f_sample_epsi/2])
+xlim([0 fs_afe/2])
 
 % 5. hand-rolled Welch vs. the same math via MATLAB's periodogram, sanity
 % check. Same 2x1 footprint as panel 4.
@@ -293,6 +293,6 @@ semilogy(f_manual, mean(Pxx_check,2),'r--','linewidth',1.5)
 legend('manual (by hand)','MATLAB periodogram, per segment','location','best')
 xlabel('frequency [Hz]'); ylabel('PSD [units^2/Hz]')
 title('sanity check: hand-rolled per-segment-detrend Welch matches periodogram exactly')
-xlim([0 f_sample_epsi/2])
+xlim([0 fs_afe/2])
 
 end

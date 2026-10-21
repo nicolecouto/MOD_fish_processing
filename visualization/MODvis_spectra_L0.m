@@ -36,14 +36,14 @@ classdef MODvis_spectra_L0 < handle
     %     (mod_scan_welch_psd.m, each segment detrended on its own).
     %   - Every spectral setting is editable in the left panel - nfft,
     %     window length, overlap, taper, detrend - and changing one
-    %     recomputes and redraws. The active settings, f_sample, segments, dof
+    %     recomputes and redraws. The active settings, fs, segments, dof
     %     and df are printed above the spectrum, so every screenshot
     %     records them.
     %   - Bit-noise lines for 24/20/16-bit ADCs, using the ADC LSB of the
     %     channel picked in the "Bit noise" dropdown (channels differ:
     %     t1/t2 unipolar 2.5 V, s1/s2 bipolar 2.5 V, a1-a3 in g via
-    %     0.4 V/g). Per bit depth N: solid = delta^2/12/(f_sample/2), dashed =
-    %     delta^2/(f_sample/2), with delta = LSB*2^(24-N) - same conventions and
+    %     0.4 V/g). Per bit depth N: solid = delta^2/12/(fs/2), dashed =
+    %     delta^2/(fs/2), with delta = LSB*2^(24-N) - same conventions and
     %     colors as MODvis_spectra. Plus the ADXL accelerometer sensor
     %     noise, (20e-6)^2 g^2/Hz, a property of the sensor, not the ADC.
     %   - "Export this scan" saves the shaded window's spectra; "Export all
@@ -493,7 +493,7 @@ classdef MODvis_spectra_L0 < handle
             if isstruct(conversion) && isfield(conversion, 'Fs_epsi')
                 app.Data = struct();
                 app.SpecTitle.Text = sprintf(['<b>%s</b> is from before 2026-10-21 (Fs_epsi, now ' ...
-                    'f_sample_epsi): remake its L0 and L1.'], file);
+                    'fs_afe): remake its L0 and L1.'], file);
                 for i = 1:app.NRows; cla(app.TopAxes(i)); end
                 cla(app.SpecAxes);
                 return
@@ -706,7 +706,7 @@ classdef MODvis_spectra_L0 < handle
 
         function n = windowSamples(app)
             % Spectrum window length [samples], at most the whole file
-            n = min(numel(app.Data.epsi.dnum), max(1, round(app.WindowField.Value * app.Conversion.f_sample_epsi)));
+            n = min(numel(app.Data.epsi.dnum), max(1, round(app.WindowField.Value * app.Conversion.fs_afe)));
         end
 
         function drawShade(app, i)
@@ -795,7 +795,7 @@ classdef MODvis_spectra_L0 < handle
         function plotSpectrum(app)
             if isempty(fieldnames(app.Data)); return; end
             ax = app.SpecAxes;
-            f_sample = app.Conversion.f_sample_epsi;
+            fs = app.Conversion.fs_afe;
             nfft = round(app.NfftField.Value);
             overlap_pct = app.OverlapField.Value;
             taper = app.TaperDrop.Value;
@@ -804,7 +804,7 @@ classdef MODvis_spectra_L0 < handle
             [i0, i1] = app.windowIndices();
             n = i1 - i0 + 1;
             t = app.Data.epsi.dnum;
-            f_sample_measured = app.measuredFSample();
+            fs_measured = app.measuredFs();
 
             % No legend - the checkbox column is color-keyed to every curve
             lockedLims = {};
@@ -883,10 +883,10 @@ classdef MODvis_spectra_L0 < handle
             app.SpecTitle.Text = sprintf([ ...
                 '<b>%s</b> &nbsp; %s-%s (%.3g s, %d samples) &nbsp; <font color="#666">(%s)</font><br>' ...
                 'nfft %d (df %.3g Hz) &middot; overlap %g%% &middot; %s taper &middot; detrend %s &middot; ' ...
-                'f_sample %g Hz nominal (%.4g measured) &middot; segments %d &middot; dof %s%s'], ...
-                app.CurrentFile, datestr(t(i0), 'HH:MM:SS'), datestr(t(i1), 'HH:MM:SS'), n/f_sample, n, ...
-                app.Conversion.source, nfft, f_sample/nfft, overlap_pct, taper, detrend_type, ...
-                f_sample, f_sample_measured, nsegUsed, dofTxt, warnTxt);
+                'fs %g Hz nominal (%.4g measured) &middot; segments %d &middot; dof %s%s'], ...
+                app.CurrentFile, datestr(t(i0), 'HH:MM:SS'), datestr(t(i1), 'HH:MM:SS'), n/fs, n, ...
+                app.Conversion.source, nfft, fs/nfft, overlap_pct, taper, detrend_type, ...
+                fs, fs_measured, nsegUsed, dofTxt, warnTxt);
         end
 
         function [names, fields] = presentChannels(app)
@@ -907,11 +907,11 @@ classdef MODvis_spectra_L0 < handle
             % Welch spectrum of each epsi field over samples i0:i1 with the
             % settings in the left panel. Segments with a NaN are skipped;
             % a field with no usable segment gets all-NaN. f is every bin
-            % from 0 to f_sample/2 (column), whether or not any segment was used.
-            f_sample = app.Conversion.f_sample_epsi;
+            % from 0 to fs/2 (column), whether or not any segment was used.
+            fs = app.Conversion.fs_afe;
             nfft = round(app.NfftField.Value);
             step = nfft - round(app.OverlapField.Value/100 * nfft);
-            f = (0:floor(nfft/2))' * f_sample/nfft;   % same bins periodogram returns
+            f = (0:floor(nfft/2))' * fs/nfft;   % same bins periodogram returns
             P = struct();
             nseg = struct();
             nskip = struct();
@@ -925,31 +925,31 @@ classdef MODvis_spectra_L0 < handle
                 if isempty(starts)
                     P.(fields{k}) = NaN(size(f));
                 else
-                    P.(fields{k}) = mod_scan_welch_psd(x, nfft, starts, f_sample, ...
+                    P.(fields{k}) = mod_scan_welch_psd(x, nfft, starts, fs, ...
                         app.TaperDrop.Value, app.DetrendDrop.Value);
                 end
             end
         end
 
-        function f_sample_measured = measuredFSample(app)
+        function fs_measured = measuredFs(app)
             % Timestamps are ms-quantized, so use the whole file's span
             % rather than a median sample spacing
             t = app.Data.epsi.dnum;
-            f_sample_measured = NaN;
+            fs_measured = NaN;
             if numel(t) > 1
-                f_sample_measured = (numel(t) - 1) / ((t(end) - t(1)) * 86400);
+                fs_measured = (numel(t) - 1) / ((t(end) - t(1)) * 86400);
             end
         end
 
         function [quant, fullLsb] = bitNoisePSD(app, c, bits)
             % Flat ADC bit-noise PSD [unit^2/Hz] for conversion channel
             % record c at an N-bit ADC: delta = LSB*2^(24-N);
-            % quant = delta^2/12/(f_sample/2) (solid line), fullLsb =
-            % delta^2/(f_sample/2) (dashed line)
-            f_sample = app.Conversion.f_sample_epsi;
+            % quant = delta^2/12/(fs/2) (solid line), fullLsb =
+            % delta^2/(fs/2) (dashed line)
+            fs = app.Conversion.fs_afe;
             delta = c.scale * 2^(app.Conversion.bit_counts - bits);
-            quant = delta^2/12/(f_sample/2);
-            fullLsb = delta^2/(f_sample/2);
+            quant = delta^2/12/(fs/2);
+            fullLsb = delta^2/(fs/2);
         end
 
         function ctd = ctdSpectra(app, dnum_start, dnum_end, window_s)
@@ -964,9 +964,9 @@ classdef MODvis_spectra_L0 < handle
             if isempty(fields) || numel(C.dnum) < 2
                 return
             end
-            f_sample_ctd = (numel(C.dnum) - 1) / ((C.dnum(end) - C.dnum(1)) * 86400); % ms-quantized times: whole span
-            n_samples_ctd = max(2, round(window_s * f_sample_ctd));
-            f = (0:floor(n_samples_ctd/2))' * f_sample_ctd / n_samples_ctd;
+            fs_ctd = (numel(C.dnum) - 1) / ((C.dnum(end) - C.dnum(1)) * 86400); % ms-quantized times: whole span
+            n_samples_ctd = max(2, round(window_s * fs_ctd));
+            f = (0:floor(n_samples_ctd/2))' * fs_ctd / n_samples_ctd;
             units = MODunits_L1();
             M = numel(dnum_start);
             ctd.f = f';
@@ -994,10 +994,10 @@ classdef MODvis_spectra_L0 < handle
                     if numel(x) < 2 || ~all(isfinite(x))
                         continue
                     end
-                    ctd.spectra.(fields{k})(m,:) = periodogram(detrend(double(x(:))), [], n_samples_ctd, f_sample_ctd, 'psd')';
+                    ctd.spectra.(fields{k})(m,:) = periodogram(detrend(double(x(:))), [], n_samples_ctd, fs_ctd, 'psd')';
                 end
             end
-            ctd.settings = struct('f_sample_ctd', f_sample_ctd, 'nfft', n_samples_ctd, 'df', f_sample_ctd / n_samples_ctd, 'detrend', 'linear', ...
+            ctd.settings = struct('fs_ctd', fs_ctd, 'nfft', n_samples_ctd, 'df', fs_ctd / n_samples_ctd, 'detrend', 'linear', ...
                 'method', 'one periodogram per scan at the CTD''s own rate (as L2, mod_scan_get_spectra.m)');
         end
 
@@ -1008,7 +1008,7 @@ classdef MODvis_spectra_L0 < handle
             % Saved with -struct, so load(outfile) returns out itself:
             %   README        - char, what's in here
             %   file, folder  - the L0 file the spectra came from
-            %   f             - [1 x Nf] frequency [Hz], 0 to f_sample/2, shared
+            %   f             - [1 x Nf] frequency [Hz], 0 to fs/2, shared
             %                   by every scan and channel
             %   spectra.<field> - [M x Nf] PSD per scan [V^2/Hz or g^2/Hz],
             %                   field = t1_volt, s1_volt, a1_g, ...; a scan
@@ -1020,31 +1020,31 @@ classdef MODvis_spectra_L0 < handle
             %   nseg.<field>, dof.<field> - [M x 1] Welch segments used,
             %                   dof = 1.9*nseg (NaN unless overlap is 50%)
             %   noise.<field> - flat noise floors [unit^2/Hz] (scalars):
-            %                   bit24/bit20/bit16 = delta^2/12/(f_sample/2),
-            %                   bit24_full_lsb/... = delta^2/(f_sample/2), lsb
+            %                   bit24/bit20/bit16 = delta^2/12/(fs/2),
+            %                   bit24_full_lsb/... = delta^2/(fs/2), lsb
             %                   [unit], plus adxl for accelerometer channels
             %   settings      - nfft, window_s, window_samples, overlap_pct,
-            %                   taper, detrend, f_sample_epsi, f_sample_measured_epsi, df
+            %                   taper, detrend, fs_afe, fs_measured_afe, df
             %   epsi_conversion - the file's counts <-> volts/g record
             %   ctd           - (when the file has CTD data) the same scans'
             %                   CTD spectra: one detrended
             %                   periodogram per scan of the CTD samples in
             %                   its time window, at the CTD's own rate, not
             %                   interpolated onto epsi:
-            %     f           - [1 x Nf_ctd] frequency [Hz], 0 to f_sample_ctd/2
+            %     f           - [1 x Nf_ctd] frequency [Hz], 0 to fs_ctd/2
             %     spectra.<field> - [M x Nf_ctd] PSD, every ctd vector in
             %                   the file (L0: T_raw, C_raw, ... counts; L1:
             %                   P, T, C, SP, ...); all-NaN for a scan with
             %                   a NaN or under 2 samples
             %     units.<field> - e.g. 'dbar^2/Hz', '(S/m)^2/Hz', 'counts^2/Hz'
             %     n_samples   - [M x 1] CTD samples in each scan
-            %     settings    - f_sample_ctd (measured over the file), nfft
-            %                   (window length x f_sample_ctd, the same for every
+            %     settings    - fs_ctd (measured over the file), nfft
+            %                   (window length x fs_ctd, the same for every
             %                   scan), detrend 'linear', method
             out = [];
             if isempty(fieldnames(app.Data)); return; end
             t = app.Data.epsi.dnum;
-            f_sample = app.Conversion.f_sample_epsi;
+            fs = app.Conversion.fs_afe;
             [~, base] = fileparts(app.CurrentFile);
             switch which
                 case 'this'
@@ -1085,8 +1085,8 @@ classdef MODvis_spectra_L0 < handle
                 'settings holds nfft, window, overlap, taper and detrend. Segments containing ' ...
                 'a NaN are skipped (nseg), and a scan with none left is all-NaN. noise.<field> ' ...
                 'holds flat noise floors in the same units as spectra.<field>: bitN is ADC ' ...
-                'quantization noise delta^2/12/(f_sample/2) with delta = lsb*2^(24-N), bitN_full_lsb ' ...
-                'is delta^2/(f_sample/2), and adxl (accelerometers only) is the ADXL sensor noise.'], ...
+                'quantization noise delta^2/12/(fs/2) with delta = lsb*2^(24-N), bitN_full_lsb ' ...
+                'is delta^2/(fs/2), and adxl (accelerometers only) is the ADXL sensor noise.'], ...
                 app.CurrentFile, M);
             out.file = char(app.CurrentFile);
             out.folder = char(app.Folder);
@@ -1131,9 +1131,9 @@ classdef MODvis_spectra_L0 < handle
             out.settings = struct('nfft', nfft, 'window_s', app.WindowField.Value, ...
                 'window_samples', i1(1) - i0(1) + 1, 'overlap_pct', overlap_pct, ...
                 'taper', app.TaperDrop.Value, 'detrend', app.DetrendDrop.Value, ...
-                'f_sample_epsi', f_sample, 'f_sample_measured_epsi', app.measuredFSample(), 'df', f_sample/nfft);
+                'fs_afe', fs, 'fs_measured_afe', app.measuredFs(), 'df', fs/nfft);
             out.epsi_conversion = app.Conversion;
-            ctd = app.ctdSpectra(out.scan.dnum_start, out.scan.dnum_end, out.settings.window_samples / f_sample);
+            ctd = app.ctdSpectra(out.scan.dnum_start, out.scan.dnum_end, out.settings.window_samples / fs);
             if ~isempty(ctd)
                 out.ctd = ctd;
                 out.README = [out.README ' ctd holds the same scans'' CTD spectra (see its fields).'];

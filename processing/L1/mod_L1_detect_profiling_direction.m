@@ -136,7 +136,7 @@ for iSeg = 1:numel(seg_starts)
 
     %% STEP 2 - Cheby2 lowpass with a cutoff period of lowpass_sec.
     % The normalized cutoff passed to cheby2 (1.0 = Nyquist) is
-    %   Fc = (1/lowpass_sec) / (f_sample/2) = 2 * seg_median_dt / lowpass_sec,
+    %   Fc = (1/lowpass_sec) / (fs/2) = 2 * seg_median_dt / lowpass_sec,
     % so the sample rate sets how many samples the cutoff spans (16 for
     % lowpass_sec = 1 at 16 Hz). Fc >= 1 means lowpass_sec is two samples
     % or less - nothing to filter - so the pressure is used as it is (also
