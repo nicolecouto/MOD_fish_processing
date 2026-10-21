@@ -7,7 +7,7 @@ In the setup yml the probe is an AFE channel of type `microcond`, usually named 
 volts (`epsi.c1_volt`) at L0 and L1, and `mod_scan_get_spectra.m` makes its raw spectrum
 (`spectra.c1_volt_f`) for each L2 scan. What's computed from it is decided by the channel type,
 not by the fish (`fish_flag`): any vehicle with a `microcond` channel, a fitted gain and real CTD
-T/S gets `chi_ucond`, as any vehicle with an `fpo7` channel gets FP07 chi
+T/S gets `microconductivity.<channel>_obs`, as any vehicle with an `fpo7` channel gets FP07 chi
 ([FP07 calibration and chi](L2_calc_chi.md)).
 
 This is a port of MHA's v3 microconductivity chi (MOD_fish_lib
@@ -63,10 +63,10 @@ frequencies. Measured power = true power × `H2`, with three terms:
 4. `chi_ucond = 6 * ktemp * (dT/dC)^2 * dk * sum(Phi_dCdz)` from `ucond.kmin_cpm` to
    `kmax = min(ucond.kmax_cpm, ucond.fmax_hz/abs(w))`
 
-NaN for a railed scan. L2 gets `chi_ucond.(ch)`, `chi_ucond_kmax.(ch)` and the spectrum it
-integrated, `spectra.(ch)_dCdz_k` (and `spectra.k` when there's no FP07 chi); the grid gets
-`chi_ucond_<ch>` and `chi_ucond_kmax_<ch>`. kmax is far below the Batchelor wavenumber, so
-**`chi_ucond` is an underestimate**, by a factor that grows with epsilon.
+NaN for a railed scan. L2 gets `microconductivity.<ch>_obs` (the chi), `microconductivity.<ch>_obs_kmax`
+and the spectrum it integrated, `spectra.<ch>_dCdz_k` (and `spectra.k` when there's no FP07 chi);
+the grid gets `microconductivity.<ch>_obs` and `microconductivity.<ch>_obs_kmax`. kmax is far below
+the Batchelor wavenumber, so **this chi is an underestimate**, by a factor that grows with epsilon.
 
 ## Parameters: the yml's `ucond` block
 
@@ -137,6 +137,11 @@ probe is railed at -2.5 V from 08:01 on: windows and scans after that are skippe
   deployment isn't followed.
 
 ## History
+
+**2026-10-21 - Names** (branch `main-fork`). `chi_ucond.(ch)`/`chi_ucond_kmax.(ch)` are now
+`microconductivity.<ch>_obs`/`microconductivity.<ch>_obs_kmax`, in L2 and the grid (the
+turbulence structs - see [Processing data](processing_data.md) History). Test results above use
+the old names.
 
 **2026-10-20 - Microconductivity chi** (branch `main-fork`). Ported MHA's v3 chi (chi only) as
 above: `MODprocess_L1_apply_ucond_calibration.m`, `mod_scan_ucond_electronics_filter.m`,

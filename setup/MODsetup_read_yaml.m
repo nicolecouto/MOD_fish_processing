@@ -47,7 +47,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %   metadata  - struct with fields:
 %     run.name, run.L1_from        - this run ('' for a non-run yml), and
 %                                     the run whose L1 it uses ('' = its own)
-%     paths.data_root, .raw, .L0, .L1, .L2, .profiles_L2, .profiles_L1, .meta,
+%     paths.data_root, .raw, .L0, .L1, .L2, .profiles_L2, .profiles_L1, .gridded, .meta,
 %     .L1_meta, .run, .survey_meta, .calibrations_root, .ctd, .setup_yml
 %                                   - for a run yml: .data_root is the
 %                                     survey folder, .run is
@@ -430,7 +430,7 @@ metadata.paths.L0                = fullfile(survey_dir, 'L0');
 metadata.paths.L2                = fullfile(run_dir, 'L2');
 metadata.paths.profiles_L2       = fullfile(run_dir, 'profiles_L2');
 metadata.paths.profiles_L1       = fullfile(run_dir, 'profiles_L1');
-metadata.paths.grid              = fullfile(run_dir, 'grid');
+metadata.paths.gridded           = fullfile(run_dir, 'gridded');
 metadata.paths.meta              = meta_dir;
 metadata.paths.calibrations_root = yml.calibrations_root;
 % ctd/ only exists for vehicles whose CTD arrives as an independent file

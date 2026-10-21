@@ -115,7 +115,7 @@ Run nfft512 - .../26_1015_fctd2_deck_test/meta/meta_data_nfft512.yml
 | `processed/<run>/L1/` | Physical-unit timeseries: `epsi`, `ctd`, `alt`, `vnav`, `gps`, `fluor`, `twist`, ... |
 | `processed/<run>/L2/` | **Scans only**, one file per L1 file with the **same name**: spectra, FP07 chi, epsilon and CTD values at each scan (microconductivity chi and fluorometer scan means later, steps 7-8). The time series stay in the L1 file, so nothing is stored twice; the viewers load both (`MODutil_level_folders.m`). |
 | `processed/<run>/profiles_L1/`, `profiles_L2/` | By-profile runs: `Profile####.mat` cut by cast (time series), and its scans under the same name |
-| `processed/<run>/grid/` | `grid.mat`: one column per cast (down and up), in depth bins of `grid.z_bin_m` - see [The grid](#the-grid) |
+| `processed/<run>/gridded/` | `gridded.mat`: one column per cast (down and up), in depth bins of `grid.z_bin_m` - see [The grid](#the-grid) |
 | `processed/<run>/meta/` | Files built from this run's L1 (`time_index.mat`, `pressure_time_series.mat`, `twist_time_series.mat`, `gps_time_series.mat`, `fpo7_calibration.mat`, `l1_file_cache.mat` - with the L1 they came from), this run's `casts.mat`, `metadata.mat`, and `log/` (`processing.log`, `problems.json`) |
 | `Processed/twist/` (cruise-wide) | `twist_time_series.mat`: the cruise twist count, every survey on the winch spool at 1 s, restarting at each spool change (stage 5); `twist_by_survey.mat`: the 1 s copy of each survey's twist, so a survey file is reread only when it changes |
 
@@ -159,13 +159,13 @@ switch only changes what goes in and where the result goes. `'from'` and `'until
 | 3 | → L2 (**built**) | `MODprocess_all_L1_to_L2` | Scans only, one file per L1 file (or per `profiles_L1/` profile) with the same name. The modules that run depend on the manifest: `fpo7` → FP07 chi; `shear` → epsilon; `microcond` → microconductivity chi (new `mod_scan_ucond_*`, step 7); `fluor` → scan means (step 8); CTD scan values always. By file, scans are kept for down, up or both per `profile_detection.profile_dir` (from Start New Deployment's `profiling_direction`). |
 | 4 | Grid (**built**) | `MODprocess_grid(metadata, by)` | Columns come from the cast table, down and up casts both. By file, each cast's L1 and L2 files are found through `time_index`; by profile, they're its `profiles_L1/` and `profiles_L2/` files. Depth bins of `grid.z_bin_m`; only new or changed casts are rebinned. See [The grid](#the-grid). No despiking or salinity smoothing yet: that will be its own step, once the gridded data have been looked at. |
 | 5 | Cruise twist (**built**) | `MODprocess_cruise_twist(processed_root)` | One winch and one spool serve every vehicle, so this joins **every survey on the winch spool** in time order (Start New Deployment's ON THE WINCH SPOOL / LAB TEST switch, `on_winch_spool` in `dev1_setup.yml`; a lab test keeps its own twist but isn't summed) into one series at 1 s (mean of the 40 Hz VNAV count in each second): each survey carries on from where the one before ended, and the count restarts from 0 at each spool change. Spool changes come from `MODprocess_find_spool_swaps`, which checks two sources against each other so a deleted file doesn't lose a change: every survey's `dev1_setup.yml` (`winch_spool`, and when it was written) and the one cruise log, `Processed/spool_swap_log.csv` (Start New Deployment adds a row when the spool changes; a mid-deployment change is added by hand). It uses the log's time when both agree, falls back to whichever one has the change, and warns when they disagree (in `cruise_log.txt` and `status.json`). Made from each survey's realtime-run `meta/twist_time_series.mat` (from 0 at the survey start, no spool resets: those are only applied here). The worker runs it after every pass; it rereads only the survey files that changed and rewrites `Processed/twist/twist_time_series.mat` only when something did. Run it by hand to rebuild a copied `Processed/`. |
-| - | Folder READMEs (**built**) | `MODutil_write_folder_readme` | `_README.txt` in `raw/`, `L0/`, `L1/`, `L2/`, `grid/` (and `profiles_L1/`, `profiles_L2/`): what the files hold, the run and its yml, the steps, the parameters used, the vehicle, and the code's git commit. Rewritten only when that changes. |
+| - | Folder READMEs (**built**) | `MODutil_write_folder_readme` | `_README.txt` in `raw/`, `L0/`, `L1/`, `L2/`, `gridded/` (and `profiles_L1/`, `profiles_L2/`): what the files hold, the run and its yml, the steps, the parameters used, the vehicle, and the code's git commit. Rewritten only when that changes. |
 
 ## One format for every vehicle
 
 ### The grid
 
-`MODprocess_grid(metadata, by)` writes `processed/<run>/grid/grid.mat`: one column per cast in the
+`MODprocess_grid(metadata, by)` writes `processed/<run>/gridded/gridded.mat` (not `grid`: that's Matlab's `grid on`): one column per cast in the
 run's cast table (down and up casts both), one row per depth bin of `grid.z_bin_m` meters
 (Nicole's choices, 2026-10-16). Every value is a bin mean. Names are long-form (2026-10-20), and
 L2's per-channel values are `<L2 name>_<channel>`:
@@ -190,17 +190,22 @@ L2's per-channel values are `<L2 name>_<channel>`:
   flat 120 m. A maximum that repeats exactly counts as pegged, since a real range varies, so a bin
   with no bottom in range is NaN. yaw and spin are headings and aren't gridded.
 - **Scans**: the mean of the L2 scans whose center is in the bin: `viscosity_kinematic` (`nu`),
-  `diffusivity_thermal_molecular` (`ktemp`), `epsilon_final`, and, per channel, every form of epsilon and chi:
-  `epsilon_obs_<ch>`, `epsilon_obs_coh_corr_<ch>`, `epsilon_mle_<ch>`, their cutoffs
-  `epsilon_obs_kc_<ch>` and `epsilon_obs_coh_corr_kc_<ch>`, `fom_<ch>`, `fom_mle_<ch>`,
-  `coherence_sum_<ch>`, `chi_obs_<ch>`, `chi_mle_<ch>` and `chi_obs_kc_<ch>`; per microconductivity
-  channel `chi_ucond_<ch>` and `chi_ucond_kmax_<ch>` ([Microconductivity chi](microconductivity.md)). Per cast,
-  `epsilon_final_source` says which epsilon `epsilon_final` is.
+  `diffusivity_thermal_molecular` (`ktemp`), and L2's four turbulence structs under the same
+  names, each leaf `<channel>_<variant>`:
+  - `epsilon`: `final` (and per cast `final_source`, which epsilon `final` is), and per shear
+    channel `<s>_obs`, `<s>_obs_kc`, `<s>_obs_coh_corr`, `<s>_obs_coh_corr_kc`, `<s>_mle`,
+    `<s>_fom_obs_coh_corr`, `<s>_fom_mle`
+  - `chi`: per fpo7 channel `<t>_obs`, `<t>_obs_kc`, `<t>_mle`
+  - `microconductivity`: per microcond channel `<c>_obs`, `<c>_obs_kmax`
+    ([Microconductivity chi](microconductivity.md))
+  - `qc`: per shear channel `<s>_coherence_a3_sum`
+  e.g. `gridded.epsilon.final`, `gridded.chi.t1_obs`. `gridded.variables` names them the same way
+  (`'epsilon.s1_mle'`).
   - A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m bins and a scan
     every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts have scans.
-  - `epsilon_final` is gridded only when L2 computed it, so a vehicle without shear probes, like
-    the FCTD, has none. L2 doesn't write it then, and an older L2 file's all-NaN one (with an empty
-    `epsilon_final_source`) is skipped.
+  - A struct holds only what L2 computed, so a vehicle without shear probes, like the FCTD, has
+    no `epsilon.final` (only `epsilon.final_source`, all `''`). An L2 file in the old flat layout
+    (before 2026-10-21) stops the grid with an error: reprocess L2.
   - L2's scan-center CTD values (`pressure`, `w`, `temperature`, `salinity`, `SR`) aren't gridded.
     Each is the L1 CTD interpolated at one scan's center. L2 needs them for that scan's `nu`, `ktemp`
     and wavenumbers, but the CTD bin means above use every sample. They are also the background
@@ -221,21 +226,20 @@ L2's per-channel values are `<L2 name>_<channel>`:
   `deepsolo`/`wirewalker` when `vehicle_name` is one. Changing `platform` or `fish_flag` rebins
   the casts whose rule changes.
 
-`grid.mat` contains:
+`gridded.mat` contains:
 - axes `z` (bin centers, m, positive down) and `z_bin_m`; per cast `time`, `latitude`, `longitude`,
-  `cast_start`, `cast_end`, `cast_direction`, `cast_complete`, `profile_number`,
-  `epsilon_final_source`;
+  `cast_start`, `cast_end`, `cast_direction`, `cast_complete`, `profile_number`;
 - the fields above, only those that exist (the data decide);
 - `variables` (name, unit and description from `setup/MODunits_L3.m`), `source` (`'file'` or
   `'profile'`), `source_stamp` and `provenance`.
 
 A cast keeps its column while its start, end and source files (their times) don't change, so
-each call only rebins new or changed casts, and `grid.mat` isn't rewritten when none changed; a
+each call only rebins new or changed casts, and `gridded.mat` isn't rewritten when none changed; a
 cast still in progress (`cast_complete` false) is rebinned every call until it ends. A different
 `by`, `z_bin_m` or yml `latitude` (the scans' depth uses it; it's part of each cast's stamp, not
 saved on its own), or a grid from another `grid_version`, rebins every cast. `by` must match how the run made its L2: a `by`
 with no files to read is refused, so it can't replace a run's grid with an empty one. Call the
-output something other than `grid` (e.g. `G`): `grid` is Matlab's `grid on`. Fluorometer channels come later (steps 8 and after).
+output `gridded` (as the templates do), not `grid`: `grid` is Matlab's `grid on`. Fluorometer channels come later (steps 8 and after).
 
 Tested on a sandbox copy of 8 canyonhead raw files (2026-10-16): 20 casts, 107 bins of 1 m, by
 file and by profile; a CTD bin and a scan bin matched their direct means; the steps template's
@@ -499,7 +503,7 @@ Run once on the ship computers, with the code that will be used at sea:
    In a second Matlab, replay a copy of a real deployment into its `RAW_full_cruise/` with
    `MODutil_simulate_acquisition` (above). Check `realtime/status.json` and `cruise_log.txt`;
    in the survey: `raw/` files are real files (`stat -f %l <file>` is 2), and L0, L1, L2,
-   `casts.mat` and `grid/grid.mat` are made. Stop it with `{"command": "stop"}` in
+   `casts.mat` and `gridded/gridded.mat` are made. Stop it with `{"command": "stop"}` in
    `realtime/control.json`. If `status.json` lists the files as unrouted ("could not link"),
    hard links don't work on that path: `acquisition/config.yml` has `processed_root` as
    `/Volumes/DEV3_HD/...`, and if that is a network mount on DEV3 itself, use DEV3's local
@@ -801,3 +805,23 @@ a path for FCTD microconductivity (`c1`). L0 → L1 fits the `microcond` channel
 `chi_ucond_<ch>` and `chi_ucond_kmax_<ch>`; `grid_version` is now 6. The cruise yml gets a
 `ucond` block, needed whenever a channel is `microcond`. See
 [Microconductivity chi](microconductivity.md).
+
+**2026-10-21 - Turbulence grouped in L2 and the grid** (branch `main-fork`). Nicole: "L2 and grid
+are getting busy and I would like to combine like-variables ... a structure of epsilon with .final,
+.s1, .s1_co, etc. And a chi structure and a microconductivity structure." L2 and the grid now hold
+`epsilon`, `chi`, `microconductivity` and `qc` structs with leaves `<channel>_<variant>`
+(`epsilon.s1_obs_coh_corr`, `epsilon.s1_fom_mle`, `chi.t1_obs_kc`, `microconductivity.c1_obs`,
+`qc.s1_coherence_a3_sum`; the full list is above). `fom` is `<s>_fom_obs_coh_corr` (the fit it
+scores) and the coherence sum moved out of epsilon into `qc`. `nu`/`ktemp` stay top-level. No old
+layout support: Nicole reprocesses everything, and an old flat L2 stops the grid with an error.
+`grid_version` is now 7. The monitor reads grouped names (`epsilon.final` is a default section);
+`MODvis_spectra` maps the new L2 structs in `normalizeL2`.
+
+**2026-10-21 (later) - `gridded`, not `grid`** (branch `main-fork`). Nicole: "grid is a somewhat
+commonly used function in matlab, so we need to call our data grid something else. Maybe just
+'gridded'." The data and its folder are renamed: `processed/<run>/gridded/gridded.mat`
+(`metadata.paths.gridded`), and the struct is `gridded` in the code, docs and folder README
+(`gridded.epsilon.final`, `gridded.variables`). The stage (`'grid'` in `'from'`/`'until'`), the
+yml's `grid` block (`z_bin_m`) and `MODprocess_grid` keep their names. An existing
+`processed/<run>/grid/` is no longer read or written; delete it when reprocessing.
+

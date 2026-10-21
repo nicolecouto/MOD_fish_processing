@@ -50,7 +50,7 @@ function short_path = MODutil_short_path(full_path)
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
-known_subfolders = {'raw', 'L0', 'L1', 'L2', 'L3', 'meta', 'ctd', 'grid', 'figures'};
+known_subfolders = {'raw', 'L0', 'L1', 'L2', 'L3', 'meta', 'ctd', 'gridded', 'figures'};
 
 parts = strsplit(full_path, filesep);
 i = find(ismember(parts, known_subfolders), 1, 'last');

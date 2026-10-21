@@ -39,9 +39,8 @@ classdef MODvis_spectra < handle
     %     with flat ADC bit-noise and accelerometer noise reference lines
     %     (BitNoiseOrder - bit noise uses the ADC LSB of whichever
     %     channel is picked in the "Bit noise" dropdown), FPO7 noise
-    %     floors (L2: the run's FPO7_benchnoise.mat, found through
-    %     processed/<run>/meta/metadata.mat's calibrations_root or
-    %     acquisition/config.yml's calibrations_root), the fc/kc
+    %     floors (L2: the run's FPO7_benchnoise.mat, found through the
+    %     run yml's calibrations_root or acquisition/config.yml's), the fc/kc
     %     cutoffs and the Batchelor/Panchev overlays (L2's chi_obs, *_kc,
     %     *_fc_index and epsilon fields mapped by normalizeL2). The
     %     frequency and wavenumber panels are always loglog.
@@ -1376,26 +1375,23 @@ classdef MODvis_spectra < handle
         function [coefs, note] = loadBenchNoise(~, L2_dir)
             % FP07 bench noise floor, the same file L2 used
             % (MODprocess_single_L1_to_L2.m): <calibrations_root>/FPO7/
-            % FPO7_benchnoise.mat, calibrations_root from the run's
-            % meta/metadata.mat (processed/<run>/L2 -> processed/<run>/meta).
-            % Off the ship that path (DEV1's) usually isn't mounted, so
-            % this computer's calibrations_root (acquisition/config.yml)
-            % is tried next.
+            % FPO7_benchnoise.mat, calibrations_root from the run's yml
+            % (<survey>/processed/<run>/L2 -> <survey>/meta/
+            % meta_data_<run>.yml). Off the ship that path (DEV1's) usually
+            % isn't mounted, so this computer's calibrations_root
+            % (acquisition/config.yml) is tried next.
             coefs = [];
             roots = {};
-            meta_file = fullfile(fileparts(char(L2_dir)), 'meta', 'metadata.mat');
-            if isfile(meta_file)
-                try
-                    m = load(meta_file, 'paths');
-                    roots{end+1} = m.paths.calibrations_root;
-                catch
-                end
-            end
+            run_dir = fileparts(char(L2_dir));
+            [~, run] = fileparts(run_dir);
+            run_yml = fullfile(fileparts(fileparts(run_dir)), 'meta', ['meta_data_' run '.yml']);
             cfg = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'acquisition', 'config.yml');
-            if isfile(cfg)
-                tok = regexp(fileread(cfg), '(?m)^calibrations_root:\s*([^#\r\n]*)', 'tokens', 'once');
-                if ~isempty(tok)
-                    roots{end+1} = strtrim(strrep(strrep(tok{1}, '"', ''), '''', ''));
+            for yml = {run_yml, cfg}
+                if isfile(yml{1})
+                    tok = regexp(fileread(yml{1}), '(?m)^calibrations_root:\s*([^#\r\n]*)', 'tokens', 'once');
+                    if ~isempty(tok)
+                        roots{end+1} = strtrim(strrep(strrep(tok{1}, '"', ''), '''', '')); %#ok<AGROW>
+                    end
                 end
             end
             for i = 1:numel(roots)
@@ -1412,22 +1408,28 @@ classdef MODvis_spectra < handle
         function S = normalizeL2(app, S)
             % This repo's L2 under the names the noise-floor, cutoff and
             % Batchelor/Panchev overlays read (the names
-            % normalizeLegacyProfile gives a legacy Profile):
-            %   chi_obs -> chi, epsilon_obs_coh_corr -> epsilonCo,
-            %   epsilon_mle -> epsilonMle, nu -> kvis,
-            %   chi_obs_kc -> t1_kc/t2_kc, spectra.t*_fc_index -> t*_fc [Hz],
-            %   epsilon_obs_kc -> s1_kc/s2_kc, s*_fc = s*_kc x |w| [Hz],
+            % normalizeLegacyProfile gives a legacy Profile), from L2's
+            % grouped structs (chi.<t>_obs, epsilon.<s>_mle, ...):
+            %   epsilon.final -> epsilon_final, chi.t*_obs -> chi.t*,
+            %   chi.t*_mle -> chi_mle.t*, epsilon.s*_obs_coh_corr ->
+            %   epsilonCo.s*, epsilon.s*_mle -> epsilonMle.s*, nu -> kvis,
+            %   chi.t*_obs_kc -> t*_kc, spectra.t*_fc_index -> t*_fc [Hz],
+            %   epsilon.s*_obs_kc -> s*_kc, s*_fc = s*_kc x |w| [Hz],
             %   FP07 bench noise (loadBenchNoise) -> physUnits.noise_coefs.
             % A field the file doesn't have is left out.
             S.physUnits = struct('noise_coefs', app.NoiseCoefs);
-            if isfield(S, 'chi_obs'); S.chi = S.chi_obs; end
-            if isfield(S, 'epsilon_obs_coh_corr'); S.epsilonCo = S.epsilon_obs_coh_corr; end
-            if isfield(S, 'epsilon_mle'); S.epsilonMle = S.epsilon_mle; end
+            chiL2 = app.getFieldOr(S, 'chi', struct());
+            epsL2 = app.getFieldOr(S, 'epsilon', struct());
+            if isfield(epsL2, 'final'); S.epsilon_final = epsL2.final; end
+            S.chi = app.byChannel(chiL2, '_obs');
+            S.chi_mle = app.byChannel(chiL2, '_mle');
+            S.epsilonCo = app.byChannel(epsL2, '_obs_coh_corr');
+            S.epsilonMle = app.byChannel(epsL2, '_mle');
             if isfield(S, 'nu'); S.kvis = S.nu; end
             for ch = {'t1','t2'}
                 c = ch{1};
-                if isfield(S, 'chi_obs_kc') && isfield(S.chi_obs_kc, c)
-                    S.([c '_kc']) = S.chi_obs_kc.(c)(:);
+                if isfield(chiL2, [c '_obs_kc'])
+                    S.([c '_kc']) = chiL2.([c '_obs_kc'])(:);
                 end
                 if isfield(S, 'spectra') && isfield(S.spectra, [c '_fc_index']) && isfield(S.spectra, 'f')
                     ix = S.spectra.([c '_fc_index'])(:);
@@ -1439,10 +1441,26 @@ classdef MODvis_spectra < handle
             end
             for ch = {'s1','s2'}
                 c = ch{1};
-                if isfield(S, 'epsilon_obs_kc') && isfield(S.epsilon_obs_kc, c)
-                    S.([c '_kc']) = S.epsilon_obs_kc.(c)(:);
+                if isfield(epsL2, [c '_obs_kc'])
+                    S.([c '_kc']) = epsL2.([c '_obs_kc'])(:);
                     if isfield(S, 'w') && numel(S.w) == numel(S.([c '_kc']))
                         S.([c '_fc']) = S.([c '_kc']) .* abs(S.w(:));
+                    end
+                end
+            end
+        end
+
+        function out = byChannel(~, group, suffix)
+            % A grouped L2 struct's <channel><suffix> leaves as
+            % out.<channel> (chi.t1_obs -> out.t1). Exact suffix only, so
+            % '_obs' doesn't also take t1_obs_kc.
+            out = struct();
+            for leaf = fieldnames(group)'
+                name = leaf{1};
+                if endsWith(name, suffix)
+                    c = name(1:end - numel(suffix));
+                    if isvarname(c) && ~contains(c, '_')
+                        out.(c) = group.(name);
                     end
                 end
             end

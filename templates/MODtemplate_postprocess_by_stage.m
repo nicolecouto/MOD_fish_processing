@@ -55,6 +55,6 @@ fprintf('%d cast(s)\n', summary.n_casts);
 summary = MODprocess_deployment(survey_folder, opts{:}, 'from', 'L2', 'until', 'L2');
 MODvis_spectra(run_folder);
 
-%% 6. Grid (processed/<run>/grid/grid.mat: one column per cast, in depth bins)
+%% 6. Grid (processed/<run>/gridded/gridded.mat: one column per cast, in depth bins)
 summary = MODprocess_deployment(survey_folder, opts{:}, 'from', 'grid', 'until', 'grid');
-gridded = load(fullfile(run_folder, 'grid', 'grid.mat'));   % not 'grid': that's Matlab's grid on/off
+gridded = load(fullfile(run_folder, 'gridded', 'gridded.mat'));   % not 'grid': that's Matlab's grid on/off

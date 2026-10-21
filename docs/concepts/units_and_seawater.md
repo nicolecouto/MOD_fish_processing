@@ -127,7 +127,7 @@ processing level for what every field means and what units it's in, callable any
 needing real data in hand. Mirrors `setup/MODsetup_metadata_field_registry.m`'s existing pattern
 (a static registry function, no data required), extended with a dedicated `unit` key that registry
 never had (units there, where mentioned at all, were embedded in free-text `description` strings).
-Dynamically-named per-channel fields (e.g. `chi_obs.(channel)`, `spectra.(channel)_f`) are
+Dynamically-named per-channel fields (e.g. `chi.<channel>_obs`, `spectra.(channel)_f`) are
 documented once as a *pattern*, not enumerated per possible channel name, matching how
 `mod_L2_tile_scans.m`'s own header docstring already documents them.
 

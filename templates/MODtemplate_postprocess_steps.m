@@ -58,7 +58,7 @@ profiles_L2_files = MODprocess_all_L1_to_L2(metadata.paths.profiles_L1, metadata
 % Or, instead of 5-6, L2 by file (whole L1 files tiled into scans, as realtime):
 % L2_files = MODprocess_all_L1_to_L2(metadata.paths.L1, metadata, metadata.paths.L2);
 
-%% 7. Grid (processed/<run>/grid/grid.mat: one column per cast, in depth bins of
+%% 7. Grid (processed/<run>/gridded/gridded.mat: one column per cast, in depth bins of
 % grid.z_bin_m: CTD = mean of the L1 samples in each bin, every L2 value = mean of the
 % scans whose center is in it; long-form names, e.g. temperature, salinity_practical). 'profile' reads profiles_L1/ and profiles_L2/ (and L1/ for GPS);
 % with L2 by file above, use 'file'.
@@ -66,7 +66,7 @@ gridded = MODprocess_grid(metadata, 'profile');   % not 'grid': that's Matlab's 
 
 %% 8. _README.txt in each folder (what's in it, the run, the steps, the parameters)
 % (with L1_from set, leave out 'L1' - that README is the other run's)
-for level = {'raw', 'L0', 'L1', 'profiles_L1', 'profiles_L2', 'grid'}
+for level = {'raw', 'L0', 'L1', 'profiles_L1', 'profiles_L2', 'gridded'}
     MODutil_write_folder_readme(metadata.paths.(level{1}), level{1}, metadata);
 end
 

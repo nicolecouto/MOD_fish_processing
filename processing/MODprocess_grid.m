@@ -1,4 +1,4 @@
-function grid = MODprocess_grid(metadata, by)
+function gridded = MODprocess_grid(metadata, by)
 % MODprocess_grid        Part of MOD_fish_processing
 %
 % G = MODprocess_grid(metadata)
@@ -8,7 +8,8 @@ function grid = MODprocess_grid(metadata, by)
 %   Puts a processing run's casts on a depth grid: one column per cast in
 %   the run's cast table (meta/casts.mat, MODprocess_L1_update_cast_table.m),
 %   down and up casts both, one row per depth bin of grid.z_bin_m meters.
-%   Saves processed/<run>/grid/grid.mat.
+%   Saves processed/<run>/gridded/gridded.mat (not grid: that's
+%   Matlab's grid on/off).
 %
 %   Field names are long-form (temperature, salinity_practical, ...); L2's
 %   per-channel values are <L2 name>_<channel> (epsilon_mle_s1, chi_obs_t2).
@@ -23,9 +24,10 @@ function grid = MODprocess_grid(metadata, by)
 %       each at the CTD depth at its time (interpolated). roll is a
 %       circular mean (it wraps at +-180 deg); yaw and spin are headings
 %       and are left out.
-%     - Scans (viscosity_kinematic, diffusivity_thermal_molecular,
-%       epsilon_final, every form of epsilon and chi per channel with their
-%       cutoffs, fom and coherence_sum): the mean of the L2 scans whose
+%     - Scans (viscosity_kinematic, diffusivity_thermal_molecular, and
+%       L2's grouped structs epsilon, chi, microconductivity and qc, under
+%       the same names: gridded.epsilon.final, gridded.epsilon.s1_obs,
+%       gridded.chi.t1_mle, ...): the mean of the L2 scans whose
 %       center is in the bin. A bin with no scan is NaN, and n_scans says
 %       how many scans each bin holds. Only casts in the
 %       profile_detection.profile_dir direction have scans. L2's
@@ -34,8 +36,9 @@ function grid = MODprocess_grid(metadata, by)
 %       the L1 bin means above use every sample.
 %   Only fields that exist are gridded: the data decide, so a CTD-only
 %   vehicle's grid has no turbulence fields, one with no shear channels
-%   has no epsilon (L2's epsilon_final_source is empty) and one with
-%   no fpo7 channels has no chi.
+%   has no epsilon leaves (only epsilon.final_source, all '') and one
+%   with no fpo7 channels an empty chi struct. An L2 file in the old flat
+%   layout (before 2026-10-21) stops with an error: reprocess L2.
 %   Position (latitude, longitude per cast) is from the L1 GPS fixes
 %   during the cast, from the L1 files either way (by profile too): the
 %   first fix for an Epsi downcast from the ship (metadata.platform
@@ -47,7 +50,7 @@ function grid = MODprocess_grid(metadata, by)
 %   Each call rebins only the casts that are new or changed - a cast whose
 %   start, end and source files (their times) are the same as when it was
 %   last binned keeps its column (and the yml latitude the scans' depth
-%   uses: a change rebins every cast) - and doesn't rewrite grid.mat when no
+%   uses: a change rebins every cast) - and doesn't rewrite gridded.mat when no
 %   cast changed. A cast still in progress (cast_complete false) is
 %   rebinned every call until it ends. A different by or z_bin_m,
 %   or a grid made by another version of this function (grid_version),
@@ -55,7 +58,7 @@ function grid = MODprocess_grid(metadata, by)
 %   file loaded at most once (only the variables used).
 %
 % INPUTS
-%   metadata - from MODsetup_read_yaml.m. Uses metadata.paths (grid, meta,
+%   metadata - from MODsetup_read_yaml.m. Uses metadata.paths (gridded, meta,
 %              L1_meta, L1, L2, profiles_L1, profiles_L2),
 %              metadata.PROCESS.latitude and grid.z_bin_m
 %              (metadata.PROCESS.GRID.z_bin_m).
@@ -68,13 +71,13 @@ function grid = MODprocess_grid(metadata, by)
 %              time_index.mat).
 %
 % OUTPUTS
-%   grid - (call it something else, e.g. G: grid is Matlab's grid on/off)
-%          the struct saved in grid.mat (see setup/MODunits_L3.m for every
+%   gridded - the struct saved in gridded.mat (see setup/MODunits_L3.m for every
 %          field): z (bin centers, m), z_bin_m, then per cast
 %          (1 x ncast) time, latitude, longitude (first or mean GPS fix
 %          during the cast, see above; NaN without one), cast_start, cast_end, cast_direction, cast_complete,
-%          profile_number, epsilon_final_source (cellstr, '' for a cast
-%          without epsilon), then nz x ncast fields, variables (the units
+%          profile_number, then nz x ncast fields and the structs epsilon
+%          (with final_source, 1 x ncast cellstr, '' for a cast without
+%          epsilon), chi, microconductivity and qc, variables (the units
 %          and descriptions of the fields present), source ('file' or
 %          'profile'), provenance. An empty grid (no columns) if there are
 %          no casts yet.
@@ -110,7 +113,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 6; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi. A grid from another version rebins every cast.
+GRID_VERSION = 7; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -150,8 +153,8 @@ if ~isempty(casts) && ~any(startsWith(string(keys(dates)), string(folders(1:2)))
         'profiles_L1/ and profiles_L2/).'], folders{1}, folders{2}, by);
 end
 
-grid_dir = metadata.paths.grid;
-grid_file = fullfile(grid_dir, 'grid.mat');
+grid_dir = metadata.paths.gridded;
+grid_file = fullfile(grid_dir, 'gridded.mat');
 old = [];
 if isfile(grid_file)
     old = load(grid_file);
@@ -193,20 +196,20 @@ for iC = 1:numel(casts)
 end
 
 if n_binned == 0 && ~isempty(old) && isequal(old.cast_start, [casts.dnum_start])
-    grid = old; % nothing changed - not rewritten
+    gridded = old; % nothing changed - not rewritten
     fprintf(1, 'MODprocess_grid: %d casts, none changed - %s not rewritten\n', numel(casts), grid_file);
     return
 end
-grid = assemble(columns, casts, z_bin, by);
-grid.grid_version = GRID_VERSION;
-grid.provenance = MODutil_provenance(unique(all_sources, 'stable'), metadata);
-grid.variables = variables_present(grid);
+gridded = assemble(columns, casts, z_bin, by);
+gridded.grid_version = GRID_VERSION;
+gridded.provenance = MODutil_provenance(unique(all_sources, 'stable'), metadata);
+gridded.variables = variables_present(gridded);
 if ~isfolder(grid_dir)
     mkdir(grid_dir);
 end
-MODutil_save_atomic(grid_file, grid);
+MODutil_save_atomic(grid_file, gridded);
 fprintf(1, 'MODprocess_grid: %d casts (%d binned), %d depth bins of %g m -> %s\n', ...
-    numel(casts), n_binned, numel(grid.z), z_bin, grid_file);
+    numel(casts), n_binned, numel(gridded.z), z_bin, grid_file);
 end %end function
 
 %% The L1 (CTD) and L2 (scans) files that hold a cast, and the L1 files
@@ -346,8 +349,8 @@ end
 scans = struct('dnum', [], 'pressure', []);
 turb = struct();
 for i = 1:numel(L2_files)
-    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', 'epsilon_final', ...
-        'epsilon_final_source'}, channel_kinds()]);
+    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', ...
+        'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum'}, turbulence_groups()]);
     if ~isfield(s, 'dnum') || isempty(s.dnum) || ~isfield(s, 'pressure')
         continue
     end
@@ -448,28 +451,26 @@ if nnz(dst == peg) > 1
 end
 end
 
-%% L2's per-channel structs (one field per channel), each gridded as
-% <kind>_<channel>; longest first, so variables_present matches
-% epsilon_obs_coh_corr_kc before epsilon_obs
-function kinds = channel_kinds()
-kinds = {'epsilon_obs_coh_corr_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_kc', 'epsilon_obs', ...
-    'epsilon_mle', 'fom_mle', 'fom', 'coherence_sum', 'chi_obs_kc', 'chi_obs', 'chi_mle', ...
-    'chi_ucond_kmax', 'chi_ucond'};
+%% L2's grouped turbulence structs, gridded under the same names
+% (gridded.<group>.<leaf>)
+function g = turbulence_groups()
+g = {'epsilon', 'chi', 'microconductivity', 'qc'};
 end
 
-%% Per-scan values from an L2 file, as nscan x 1 columns, and its
-% epsilon_final_source ('' without epsilon)
+%% Per-scan values from an L2 file, as nscan x 1 columns keyed
+% <group>__<leaf> (flat while binning; assemble nests them), and its
+% epsilon.final_source ('' without epsilon)
 function [v, source] = scan_values(s)
 v = struct();
 source = '';
 n = numel(s.dnum);
-% epsilon_final only where L2 computed it (L2 files made before
-% 2026-10-17 have an all-NaN epsilon_final and an empty
-% epsilon_final_source when there were no shear probes)
-if isfield(s, 'epsilon_final') && numel(s.epsilon_final) == n ...
-        && isfield(s, 'epsilon_final_source') && ~isempty(s.epsilon_final_source)
-    v.epsilon_final = s.epsilon_final(:);
-    source = char(s.epsilon_final_source);
+if any(isfield(s, {'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum'}))
+    error('MODprocess_grid:oldL2Layout', ...
+        ['An L2 file has the old flat layout (epsilon_obs, chi_obs, ...), from before ' ...
+         '2026-10-21. Reprocess L2 (delete processed/<run>/L2/ or reset the survey) and grid again.']);
+end
+if isfield(s, 'epsilon') && isfield(s.epsilon, 'final_source')
+    source = char(s.epsilon.final_source);
 end
 % molecular properties at the scans (ktemp is all NaN without chi)
 long = struct('nu', 'viscosity_kinematic', 'ktemp', 'diffusivity_thermal_molecular');
@@ -478,14 +479,15 @@ for name = fieldnames(long)'
         v.(long.(name{1})) = s.(name{1})(:);
     end
 end
-for kind = channel_kinds()
-    if isfield(s, kind{1}) && isstruct(s.(kind{1}))
-        channels = fieldnames(s.(kind{1}));
-        for k = 1:numel(channels)
-            x = s.(kind{1}).(channels{k});
-            if numel(x) == n
-                v.([kind{1} '_' channels{k}]) = x(:);
-            end
+for group = turbulence_groups()
+    if ~isfield(s, group{1}) || ~isstruct(s.(group{1}))
+        continue
+    end
+    leaves = fieldnames(s.(group{1}));
+    for k = 1:numel(leaves)
+        x = s.(group{1}).(leaves{k});
+        if isnumeric(x) && numel(x) == n
+            v.([group{1} '__' leaves{k}]) = x(:);
         end
     end
 end
@@ -518,14 +520,28 @@ end
 n = accumarray(b(ok), 1, [], @sum, 0);
 end
 
-%% A column taken back out of an earlier grid
+%% A column taken back out of an earlier grid (grouped fields flattened
+% back to <group>__<leaf>)
 function col = column_from_grid(old, k)
+source = '';
+if isfield(old, 'epsilon') && isfield(old.epsilon, 'final_source')
+    source = old.epsilon.final_source{k};
+end
 col = struct('fields', struct(), 'n_bins', 0, 'time', old.time(k), 'latitude', old.latitude(k), ...
-    'longitude', old.longitude(k), 'epsilon_final_source', old.epsilon_final_source{k});
-names = setdiff(fieldnames(old), [axis_fields(), {'z', 'z_bin_m', 'variables', 'source', ...
-    'provenance', 'source_stamp', 'grid_version'}]);
+    'longitude', old.longitude(k), 'epsilon_final_source', source);
+flat = struct();
+for name = setdiff(fieldnames(old), [axis_fields(), turbulence_groups(), {'z', 'z_bin_m', 'variables', ...
+        'source', 'provenance', 'source_stamp', 'grid_version'}])'
+    flat.(name{1}) = old.(name{1});
+end
+for group = intersect(turbulence_groups(), fieldnames(old))
+    for leaf = fieldnames(old.(group{1}))'
+        flat.([group{1} '__' leaf{1}]) = old.(group{1}).(leaf{1});
+    end
+end
+names = fieldnames(flat);
 for f = 1:numel(names)
-    x = old.(names{f});
+    x = flat.(names{f});
     if isnumeric(x) && size(x, 1) == numel(old.z) && size(x, 2) == numel(old.time)
         x = x(:, k);
         % its own depth, so the grid can get shallower again
@@ -541,11 +557,11 @@ end
 
 function names = axis_fields()
 names = {'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_direction', 'cast_complete', ...
-    'profile_number', 'epsilon_final_source'};
+    'profile_number'};
 end
 
 %% Columns -> one grid
-function grid = assemble(columns, casts, z_bin, by)
+function gridded = assemble(columns, casts, z_bin, by)
 n = numel(columns);
 nz = 0;
 names = {};
@@ -553,58 +569,103 @@ for i = 1:n
     nz = max(nz, columns{i}.n_bins);
     names = union(names, fieldnames(columns{i}.fields));
 end
-grid.z = ((1:nz)' - 0.5) * z_bin;
-grid.z_bin_m = z_bin;
-grid.time = nan(1, n);
-grid.latitude = nan(1, n);
-grid.longitude = nan(1, n);
-grid.cast_start = [casts.dnum_start];
-grid.cast_end = [casts.dnum_end];
-grid.cast_direction = {casts.direction};
-grid.cast_complete = [casts.complete];
-grid.profile_number = [casts.profile_number];
-grid.epsilon_final_source = repmat({''}, 1, n);
+gridded.z = ((1:nz)' - 0.5) * z_bin;
+gridded.z_bin_m = z_bin;
+gridded.time = nan(1, n);
+gridded.latitude = nan(1, n);
+gridded.longitude = nan(1, n);
+gridded.cast_start = [casts.dnum_start];
+gridded.cast_end = [casts.dnum_end];
+gridded.cast_direction = {casts.direction};
+gridded.cast_complete = [casts.complete];
+gridded.profile_number = [casts.profile_number];
+for group = turbulence_groups()
+    gridded.(group{1}) = struct();
+end
+gridded.epsilon.final_source = repmat({''}, 1, n);
 for f = 1:numel(names)
     fill = NaN;
     if strcmp(names{f}, 'n_scans')
         fill = 0;
     end
-    grid.(names{f}) = fill * ones(nz, n);
+    gridded = set_field(gridded, names{f}, fill * ones(nz, n));
 end
-grid.source_stamp = cell(1, n);
+gridded.source_stamp = cell(1, n);
 for i = 1:n
-    grid.time(i) = columns{i}.time;
-    grid.latitude(i) = columns{i}.latitude;
-    grid.longitude(i) = columns{i}.longitude;
-    grid.epsilon_final_source{i} = columns{i}.epsilon_final_source;
-    grid.source_stamp{i} = columns{i}.source_stamp;
+    gridded.time(i) = columns{i}.time;
+    gridded.latitude(i) = columns{i}.latitude;
+    gridded.longitude(i) = columns{i}.longitude;
+    gridded.epsilon.final_source{i} = columns{i}.epsilon_final_source;
+    gridded.source_stamp{i} = columns{i}.source_stamp;
     cn = fieldnames(columns{i}.fields);
     for f = 1:numel(cn)
         x = columns{i}.fields.(cn{f});
-        grid.(cn{f})(1:numel(x), i) = x;
+        M = get_field(gridded, cn{f});
+        M(1:numel(x), i) = x;
+        gridded = set_field(gridded, cn{f}, M);
     end
 end
 if n == 0
-    grid.cast_direction = {};
+    gridded.cast_direction = {};
 end
-grid.source = by;
+gridded.source = by;
 end
 
-%% Units and descriptions of the gridded fields that are present
-function v = variables_present(grid)
+%% A column field name -> its place in the grid: <group>__<leaf> is
+% gridded.<group>.<leaf>, anything else top-level
+function path = field_path(name)
+path = strsplit(name, '__');
+end
+
+function gridded = set_field(gridded, name, value)
+path = field_path(name);
+gridded = setfield(gridded, path{:}, value);
+end
+
+function value = get_field(gridded, name)
+path = field_path(name);
+value = getfield(gridded, path{:});
+end
+
+%% Units and descriptions of the gridded fields that are present: name is
+% the field's path ('temperature', 'epsilon.s1_obs'). A per-channel leaf
+% (<channel>_<variant>) takes MODunits_L3's channel_<variant> entry for
+% its group, the longest variant that matches.
+function v = variables_present(gridded)
 units = MODunits_L3();
 v = struct('name', {}, 'unit', {}, 'description', {});
-names = fieldnames(grid);
+names = fieldnames(gridded);
 for i = 1:numel(names)
     key = names{i};
-    pattern = regexprep(key, ['^(' strjoin(channel_kinds(), '|') ')_.+$'], '$1_channel');
-    if isfield(units, key)
-        u = units.(key);
-    elseif isfield(units, pattern)
-        u = units.(pattern);
-    else
-        continue
+    if ismember(key, turbulence_groups())
+        if ~isfield(units, key)
+            continue
+        end
+        for leaf = fieldnames(gridded.(key))'
+            u = leaf_units(units.(key), leaf{1});
+            if ~isempty(u)
+                v(end+1) = struct('name', [key '.' leaf{1}], 'unit', u.unit, 'description', u.description); %#ok<AGROW>
+            end
+        end
+    elseif isfield(units, key) && isfield(units.(key), 'unit')
+        v(end+1) = struct('name', key, 'unit', units.(key).unit, 'description', units.(key).description); %#ok<AGROW>
     end
-    v(end+1) = struct('name', key, 'unit', u.unit, 'description', u.description); %#ok<AGROW>
+end
+end
+
+function u = leaf_units(group_units, leaf)
+u = [];
+if isfield(group_units, leaf)
+    u = group_units.(leaf);
+    return
+end
+patterns = fieldnames(group_units);
+patterns = patterns(startsWith(patterns, 'channel_'));
+[~, order] = sort(cellfun(@numel, patterns), 'descend');
+for p = patterns(order)'
+    if endsWith(leaf, p{1}(numel('channel') + 1:end))
+        u = group_units.(p{1});
+        return
+    end
 end
 end

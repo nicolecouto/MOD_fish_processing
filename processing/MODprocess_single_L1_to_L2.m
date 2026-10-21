@@ -178,75 +178,60 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   computation, not computed independently.
 %     spectra.(channel)_Tg_k - deconvolved temperature-gradient wavenumber
 %                   spectrum, nbscan x nfreq, one field per fpo7 channel in
-%                   chi_obs_channels (see chi_obs.(channel) below) -
+%                   chi_obs_channels (see chi.<t>_obs below) -
 %                   mod_scan_calc_chi_obs.m's intermediate Pt_Tg_k, kept
 %                   rather than discarded after computing chi_obs from it.
 %     spectra.(channel)_fc_index - noise-floor cutoff index into
 %                   spectra.f/spectra.k/spectra.(channel)_f, nbscan x 1,
 %                   one field per fpo7 channel in chi_obs_channels - see
 %                   mod_scan_fpo7_cutoff.m's OUTPUTS.
-%     chi_obs.(channel)    - direct-integration thermal variance
-%                   dissipation rate [degC^2/s], nbscan x 1, one field per
-%                   fpo7 channel that both has a resolved
-%                   metadata.AFE.(channel).volts_to_C AND ctd has real
-%                   T/S (see temperature/salinity above) - this struct
-%                   simply has no fields at all otherwise. Individual
-%                   scans within a present field can still be NaN
-%                   (mod_scan_calc_chi_obs.m - no valid noise-floor
-%                   cutoff range for that scan).
-%     chi_obs_kc.(channel) - the noise-floor cutoff wavenumber [cpm] used
-%                   for each chi_obs.(channel) value - diagnostic, see
-%                   mod_scan_calc_chi_obs.m's OUTPUTS. Same values as
-%                   spectra.k(:, spectra.(channel)_fc_index), just
-%                   pre-indexed for convenience.
-%     epsilon_final - only when epsilon is computed (epsilon_channels
-%                   non-empty: a shear channel with a calibration, and CTD
-%                   T/S); a vehicle with no shear probes has no
-%                   epsilon_final or epsilon_final_source. The per-scan
-%                   epsilon value actually fed to chi_mle
-%                   below [W/kg], nbscan x 1 - mean, omitting NaN, across
-%                   this deployment's epsilon_channels of whichever
-%                   variant epsilon_final_source (below) selects. A
-%                   per-scan simplification, not the full profile-level
-%                   ratio-based per-channel selection MOD_fish_lib's
-%                   legacy pipeline does - see docs/workflow/L2_calc_eps.md's
-%                   "Known limitations."
-%     epsilon_final_source - which variant epsilon_final actually is this
-%                   run, resolved once from
-%                   metadata.PROCESS.EPSILON.epsilon_final_source: the
-%                   scalar string 'epsilon_mle' or 'epsilon_co' (an
-%                   unrecognized/invalid metadata value falls back to
-%                   'epsilon_co', same as it always has - this field makes
-%                   that fallback visible in the output instead of
-%                   silent). Written with epsilon_final, only.
-%     chi_mle.(channel)    - Batchelor-spectrum MLE-fit thermal variance
-%                   dissipation rate [degC^2/s], nbscan x 1, one field per
-%                   fpo7 channel in chi_obs_channels (see chi_obs above) -
-%                   computed only for scans where L2data.epsilon_final
-%                   (above) is finite. NaN for every scan otherwise.
-%     chi_ucond.(channel), chi_ucond_kmax.(channel) - microconductivity
-%                   chi [degC^2/s] and the upper integration bound [cpm],
-%                   nbscan x 1, one field per microcond channel with a
-%                   fitted metadata.AFE.(channel).volts_to_S_per_m
-%                   (MODprocess_L1_apply_ucond_calibration.m) AND real CTD
-%                   T/S - see mod_scan_calc_chi_ucond.m. NaN for a railed
-%                   scan. spectra.(channel)_dCdz_k holds the
-%                   conductivity-gradient spectrum it integrated.
-%     epsilon_obs.(channel), .epsilon_obs_kc.(channel),
-%     epsilon_obs_coh_corr.(channel), .epsilon_obs_coh_corr_kc.(channel),
-%     epsilon_mle.(channel), .fom.(channel), .fom_mle.(channel),
-%     coherence_sum.(channel) - direct-integration, MLE, and figure-of-
-%                   merit epsilon products, nbscan x 1 each, one field per
-%                   shear channel that both has a resolved
-%                   metadata.AFE.(channel).cal AND ctd has real T/S (same
-%                   have_ctd_ts gate as chi_obs, since kinematic viscosity
-%                   nu needs T/S the same way ktemp does) - these structs
-%                   simply have no fields at all otherwise. See
-%                   mod_scan_calc_epsilon.m's OUTPUTS for what each
-%                   one means; coherence_sum is that function's
-%                   spectra.(channel)_coh_a3_sum, pulled up to a top-level
-%                   field for the same "kept rather than discarded"
-%                   reason chi_obs_kc is.
+%     Turbulence, grouped in four structs (the grid uses the same names).
+%     Each leaf is nbscan x 1; a struct has no fields when the run has none
+%     of its kind. <s> is a shear channel with a resolved
+%     metadata.AFE.(s).cal, <t> an fpo7 channel with a resolved volts_to_C,
+%     <c> a microcond channel with a fitted volts_to_S_per_m - each only
+%     when ctd has real T/S (see temperature/salinity above).
+%     epsilon - [W/kg] unless noted:
+%       .final        - the per-scan epsilon fed to chi_mle: mean, omitting
+%                       NaN, across the shear channels of whichever variant
+%                       .final_source selects. A per-scan simplification,
+%                       not the full profile-level ratio-based per-channel
+%                       selection MOD_fish_lib's legacy pipeline does - see
+%                       docs/workflow/L2_calc_eps.md's "Known limitations."
+%       .final_source - 'epsilon_mle' or 'epsilon_co', resolved once from
+%                       metadata.PROCESS.EPSILON.epsilon_final_source (an
+%                       unrecognized value falls back to 'epsilon_co',
+%                       visible here instead of silent)
+%       .<s>_obs, .<s>_obs_kc [cpm] - direct integration of the raw shear
+%                       spectrum, and its cutoff
+%       .<s>_obs_coh_corr, .<s>_obs_coh_corr_kc [cpm] - the same, from the
+%                       coherence-cleaned spectrum
+%       .<s>_mle      - Nasmyth-spectrum MLE fit
+%       .<s>_fom_obs_coh_corr, .<s>_fom_mle - figures of merit of the
+%                       obs_coh_corr and MLE fits against the cleaned
+%                       spectrum (dimensionless)
+%       See mod_scan_calc_epsilon.m's OUTPUTS for each one.
+%     chi - [degC^2/s] unless noted:
+%       .<t>_obs      - direct integration of the deconvolved
+%                       temperature-gradient spectrum
+%                       (mod_scan_calc_chi_obs.m); a scan can be NaN (no
+%                       valid noise-floor cutoff range)
+%       .<t>_obs_kc   - its noise-floor cutoff [cpm] (same as
+%                       spectra.k(:, spectra.<t>_fc_index))
+%       .<t>_mle      - Batchelor-spectrum MLE fit, only where
+%                       epsilon.final is finite, NaN elsewhere
+%     microconductivity - chi from a microconductivity probe
+%                       (mod_scan_calc_chi_ucond.m):
+%       .<c>_obs      - [degC^2/s], an underestimate; NaN for a railed scan
+%       .<c>_obs_kmax - the upper integration bound [cpm]
+%       spectra.<c>_dCdz_k holds the conductivity-gradient spectrum it
+%       integrated.
+%     qc:
+%       .<s>_coherence_a3_sum - shear-a3 coherence integrated over
+%                       coherence_fmin_hz..coherence_fmax_hz [Hz], a
+%                       vibration-contamination diagnostic
+%                       (mod_scan_calc_epsilon.m's
+%                       spectra.<s>_coh_a3_sum)
 %     spectra.(channel)_shear_k, .(channel)_shear_co_k - raw and
 %                   coherence-cleaned shear wavenumber spectra, nbscan x
 %                   nfreq, one pair per shear channel with epsilon
@@ -378,7 +363,7 @@ if have_ctd_ts
         metadata = MODsetup_validate_metadata(metadata, yaml_file, {'epsilon_final_source'});
 
         % Resolved once here, not re-switched every scan: also what
-        % L2data.epsilon_final_source records, so the output data itself
+        % L2data.epsilon.final_source records, so the output data itself
         % is traceable to which variant was actually used, independent of
         % whatever the yaml/metadata value literally was (e.g. a typo or
         % unrecognized string falls through to 'epsilon_co' below, same as
@@ -574,27 +559,37 @@ L2data.salinity = SP_all;
 L2data.SR = SR_all;
 L2data.nu = nu_all;
 L2data.ktemp = ktemp_all;
-if ~isempty(epsilon_channels) % no shear probes (or no CTD T/S): no epsilon_final at all
-    L2data.epsilon_final = epsilon_all; % per-scan value fed to chi_mle below - see DESCRIPTION
-    L2data.epsilon_final_source = epsilon_final_source_resolved; % which variant epsilon_final actually is - 'epsilon_mle' or 'epsilon_co'
+% Like variables grouped, one struct each, leaves named <channel>_<variant>
+% (the grid uses the same names). A struct has no fields when the run has
+% none of its kind.
+epsilon_leaf = struct('epsilon_obs', 'obs', 'epsilon_obs_kc', 'obs_kc', ...
+    'epsilon_obs_coh_corr', 'obs_coh_corr', 'epsilon_obs_coh_corr_kc', 'obs_coh_corr_kc', ...
+    'epsilon_mle', 'mle', 'fom', 'fom_obs_coh_corr', 'fom_mle', 'fom_mle');
+L2data.epsilon = struct();
+L2data.chi = struct();
+L2data.microconductivity = struct();
+L2data.qc = struct();
+if ~isempty(epsilon_channels) % no shear probes (or no CTD T/S): no epsilon.final at all
+    L2data.epsilon.final = epsilon_all; % per-scan value fed to chi_mle - see DESCRIPTION
+    L2data.epsilon.final_source = epsilon_final_source_resolved; % 'epsilon_mle' or 'epsilon_co'
+end
+for iC = 1:numel(epsilon_channels)
+    ch = epsilon_channels{iC};
+    for field = fieldnames(epsilon_leaf)'
+        L2data.epsilon.([ch '_' epsilon_leaf.(field{1})]) = epsilon_all_by_field.(field{1}).(ch);
+    end
+    L2data.qc.([ch '_coherence_a3_sum']) = epsilon_all_by_field.coherence_sum.(ch);
 end
 for iC = 1:numel(chi_obs_channels)
     ch = chi_obs_channels{iC};
-    L2data.chi_obs.(ch) = chi_obs_all.(ch);
-    L2data.chi_obs_kc.(ch) = chi_obs_kc_all.(ch);
-    L2data.chi_mle.(ch) = chi_mle_all.(ch);
-end
-for iF = 1:numel(epsilon_fields)
-    field = epsilon_fields{iF};
-    for iC = 1:numel(epsilon_channels)
-        ch = epsilon_channels{iC};
-        L2data.(field).(ch) = epsilon_all_by_field.(field).(ch);
-    end
+    L2data.chi.([ch '_obs']) = chi_obs_all.(ch);
+    L2data.chi.([ch '_obs_kc']) = chi_obs_kc_all.(ch);
+    L2data.chi.([ch '_mle']) = chi_mle_all.(ch);
 end
 for iC = 1:numel(ucond_channels)
     ch = ucond_channels{iC};
-    L2data.chi_ucond.(ch) = chi_ucond_all.(ch);
-    L2data.chi_ucond_kmax.(ch) = chi_ucond_kmax_all.(ch);
+    L2data.microconductivity.([ch '_obs']) = chi_ucond_all.(ch);
+    L2data.microconductivity.([ch '_obs_kmax']) = chi_ucond_kmax_all.(ch);
 end
 L2data.spectra.f = scan_results{1}.spectra.f;
 
@@ -751,17 +746,10 @@ L2data.SR = [];
 L2data.nu = [];
 L2data.ktemp = [];
 L2data.spectra = struct('f', []);
-L2data.chi_obs = struct();
-L2data.chi_obs_kc = struct();
-L2data.chi_mle = struct();
-L2data.epsilon_obs = struct();
-L2data.epsilon_obs_kc = struct();
-L2data.epsilon_obs_coh_corr = struct();
-L2data.epsilon_obs_coh_corr_kc = struct();
-L2data.epsilon_mle = struct();
-L2data.fom = struct();
-L2data.fom_mle = struct();
-L2data.coherence_sum = struct();
+L2data.epsilon = struct();
+L2data.chi = struct();
+L2data.microconductivity = struct();
+L2data.qc = struct();
 L2data.fft_length = tiled_scans.fft_length;
 L2data.fft_segments_per_scan = tiled_scans.fft_segments_per_scan;
 L2data.dof = tiled_scans.dof;

@@ -8,7 +8,7 @@ classdef MODvis_realtime_monitor < handle
     % 'watch' true), laid out after the 2018 FastCTD GUI. It only reads
     % the worker's files - <processed_root>/realtime/status.json and
     % twist/twist_time_series.mat, each survey's
-    % processed/realtime/grid/grid.mat, meta/ and meta/log/ - and
+    % processed/realtime/gridded/gridded.mat, meta/ and meta/log/ - and
     % refreshes every few seconds. It writes only realtime/control.json
     % (Pause, Stop) and saved PNGs, and Start launches the worker as its
     % own matlab -batch process, so closing or crashing the monitor never
@@ -20,7 +20,8 @@ classdef MODvis_realtime_monitor < handle
     %           vs time; one cast spans its own start to end), with sigma0 contours (2+ casts; on/off and the interval in
     %           the controls). All 4 share the depth and
     %           time limits; each has its own variable (from
-    %           grid.variables; epsilon and chi as log10, not their cutoffs), colormap and
+    %           gridded.variables, e.g. epsilon.final; epsilon, chi and microconductivity as
+    %           log10, not their cutoffs or figures of merit), colormap and
     %           colour range.
     %   Middle, 3 rows x 2 columns of small plots beside sections 1-3,
     %           half a section's width: left, pressure vs time over the
@@ -104,7 +105,7 @@ classdef MODvis_realtime_monitor < handle
     end
 
     properties (Constant)
-        DefaultVars = {'sigma0', 'temperature', 'salinity_practical', 'epsilon_final'}
+        DefaultVars = {'sigma0', 'temperature', 'salinity_practical', 'epsilon.final'}
         DefaultCmaps = {'dense', 'thermal', 'haline', 'turbo'}
         % parula and turbo are Matlab's; the rest are cmocean's (toolbox/cmocean)
         Colormaps = {'parula', 'turbo', 'thermal', 'haline', 'dense', 'deep', 'algae', 'matter', ...
@@ -423,7 +424,7 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function changed = loadGrid(app)
-            f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'grid', 'grid.mat');
+            f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'gridded', 'gridded.mat');
             changed = false;
             stamp = NaN;
             if isfile(f)
@@ -446,8 +447,8 @@ classdef MODvis_realtime_monitor < handle
             names = {'temperature'};
             if isfield(app.Grid, 'variables') && ~isempty(app.Grid.variables)
                 v = app.Grid.variables;
-                keep = arrayfun(@(x) isfield(app.Grid, x.name) && isnumeric(app.Grid.(x.name)) ...
-                    && size(app.Grid.(x.name), 1) == numel(app.Grid.z) && size(app.Grid.(x.name), 2) > 0, v);
+                keep = arrayfun(@(x) size(app.gridField(app.Grid, x.name), 1) == numel(app.Grid.z) ...
+                    && size(app.gridField(app.Grid, x.name), 2) > 0, v);
                 names = {v(keep).name};
                 names = names(~ismember(names, {'z', 'time', 'latitude', 'longitude', 'cast_start', 'cast_end', 'cast_complete', 'profile_number'}));
             end
@@ -521,7 +522,7 @@ classdef MODvis_realtime_monitor < handle
             colorbar(ax, 'off');
             g = app.Grid;
             name = app.VarDrop(i).Value;
-            if ~isfield(g, 'z') || ~isfield(g, name) || isempty(g.time)
+            if ~isfield(g, 'z') || isempty(app.gridField(g, name)) || isempty(g.time)
                 if i == 1
                     title(ax, sprintf('%s: no grid yet (%s)', app.SurveyDrop.Value, app.shortPath(app.GridFile)), ...
                         'Interpreter', 'none', 'FontSize', app.FontSize + 1);
@@ -537,7 +538,8 @@ classdef MODvis_realtime_monitor < handle
             [t, order] = sort(g.time(cols));
             idx = find(cols);
             idx = idx(order);
-            [label, v] = app.displayed(name, g.(name)(:, idx));
+            G = app.gridField(g, name);
+            [label, v] = app.displayed(name, G(:, idx));
             % one cell per cast and bin: edges halfway between cast times
             % and at the bin edges, so no cast or bin is dropped; a lone
             % cast spans its own start to end
@@ -658,7 +660,8 @@ classdef MODvis_realtime_monitor < handle
                     unit = app.Grid.variables(k).unit;
                 end
             end
-            if startsWith(name, {'epsilon', 'chi'}) && ~contains(name, {'_kc', '_kmax'})
+            if startsWith(name, {'epsilon.', 'chi.', 'microconductivity.'}) ...
+                    && ~contains(name, {'_kc', '_kmax', '_fom'})
                 v(v <= 0) = NaN;
                 v = log10(v);
                 label = sprintf('log10 %s [%s]', name, unit);
@@ -765,11 +768,12 @@ classdef MODvis_realtime_monitor < handle
             cla(ax);
             g = app.Grid;
             [idx, colors, labels] = app.lastCasts();
-            if ~isfield(g, name) || isempty(idx)
+            G = app.gridField(g, name);
+            if isempty(G) || isempty(idx)
                 title(ax, sprintf('%s profiles: none in the grid yet', name), 'FontSize', app.FontSize + 1);
                 return
             end
-            X = g.(name)(:, idx);
+            X = G(:, idx);
             how = sprintf('%g %s', offset, unit);
             if isempty(offset)
                 % auto: a quarter of the profiles' range
@@ -1173,6 +1177,23 @@ classdef MODvis_realtime_monitor < handle
             tok = regexp(fileread(cfg), '(?m)^processed_root:\s*([^#\r\n]*)', 'tokens', 'once');
             if ~isempty(tok)
                 root = strtrim(strrep(strrep(tok{1}, '"', ''), '''', ''));
+            end
+        end
+
+        %% A gridded field by its variables name: 'temperature' or a
+        % grouped one, 'epsilon.final' (gridded.epsilon.final); [] if the grid
+        % doesn't have it or it isn't numeric
+        function x = gridField(g, name)
+            x = [];
+            parts = strsplit(name, '.');
+            for i = 1:numel(parts)
+                if ~isstruct(g) || ~isfield(g, parts{i})
+                    return
+                end
+                g = g.(parts{i});
+            end
+            if isnumeric(g)
+                x = g;
             end
         end
 

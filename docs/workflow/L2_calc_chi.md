@@ -144,7 +144,7 @@ Calls Module 5, then integrates from `kmin = metadata.PROCESS.CHI.kmin_obs` (his
 
 **No figure-of-merit QC flag** - `mod_efe_scan_chi.m` computes one (`compute_fom.m`) alongside its own chi/chi_mle. Left as a clearly-scoped-out follow-up, same as before.
 
-Wired into `MODprocess_single_L1_to_L2.m`: scan-center `temperature`/`salinity` are interpolated the same way `pressure`/`w` already were, and `chi_obs.(channel)`/`chi_obs_kc.(channel)` get computed automatically for every fpo7 channel with a resolved `volts_to_C`, whenever the bench noise file (see below) is present - no changes needed to `MODprocess_all_L1_to_L2.m` itself, since it already calls through to the per-file function.
+Wired into `MODprocess_single_L1_to_L2.m`: scan-center `temperature`/`salinity` are interpolated the same way `pressure`/`w` already were, and `chi_obs`/`chi_obs_kc` get computed automatically (L2: `chi.<channel>_obs`/`chi.<channel>_obs_kc`, with `chi.<channel>_mle`) for every fpo7 channel with a resolved `volts_to_C`, whenever the bench noise file (see below) is present - no changes needed to `MODprocess_all_L1_to_L2.m` itself, since it already calls through to the per-file function.
 
 ### 7. `toolbox/theoretical_spectra/batchelor_spectrum.m` — chi_mle's spectral model
 
@@ -268,6 +268,7 @@ Two limitations this section used to list here are resolved as of branch `epsilo
 
 ## History
 
+
 Built on branch `chi_processing`, off `l1_to_l2_conversion`. `chi_obs` (originally just "chi") - 2026-07-27, one module at a time, each tested standalone against real `epsi_mako/blt2021_0715` data in a scratchpad sandbox copy (`meta`/`calibrations`/`L1` only - `L0`/`raw` left out, ~930 MB not needed for this work) before being wired into the next piece. See `SESSION_LOG.md` entry (2026-07-27) for full numbers. `chi_mle` (plus the `chi` → `chi_obs` rename across the codebase) - 2026-07-28, ported from `MOD_fish_lib`'s Ruddick-et-al.-2000 MLE machinery and validated end-to-end against real ASTRAL data. See `SESSION_LOG.md` entry (2026-07-28).
 
 **2026-09-08, branch `epsilon_processing`:** `chi_mle` wired into `mod_L2_tile_scans.m`, and its grid-search zoom (`mle_search_chi`) split out into the shared `toolbox/mod_scan_mle_grid_search.m` once `mod_scan_calc_epsilon_mle.m` needed the identical search machinery - see [Epsilon (shear turbulence)](L2_calc_eps.md) for the full epsilon module this unblocked. Verified behavior-preserving by a synthetic-data regression check (a known-chi Batchelor spectrum, noiseless, recovered to <0.01% by the refactored search) before and conceptually after the extraction - see that doc's "How to run it"/verification notes.
@@ -275,3 +276,5 @@ Built on branch `chi_processing`, off `l1_to_l2_conversion`. `chi_obs` (original
 `MODsetup_define_filters.m` (AFE electronics/ADC term, Module 2b) - also 2026-07-28, found while comparing this repo's `chi_obs` directly against a real `Profile100.mat`'s `Profile.chi` (a comparison the `chi_mle` validation above didn't do): `chi_obs` came out systematically low, traced to the AFE sinc⁴ ADC response `mod_scan_fpo7_transfer_function.m`'s own docstring had already flagged as deliberately excluded. Implemented per PLAN.md Section 6.2's design note (fpo7/shear/acc, not just fpo7 - shear/acc resolved for future use, not yet consumed). See `SESSION_LOG.md` entry (2026-07-28) and "ASTRAL `Profile100.mat` vs. `electronics_filter`" above for validation results and the residual full-profile `kc` question this surfaced.
 
 **2026-10-15, branch `main-fork`:** `FPO7_benchnoise.mat` and `cap1nFres200Meg_5KohmInput.mat` are now committed to `MOD_fish_calibrations` (`bed972c`); the "not yet committed" notes above are removed.
+
+**2026-10-21 - L2 field names grouped** (branch `main-fork`). L2's chi fields moved into one struct: `chi.<t>_obs`, `chi.<t>_obs_kc`, `chi.<t>_mle` (were `chi_obs.<t>`, `chi_obs_kc.<t>`, `chi_mle.<t>`). The computation is unchanged.

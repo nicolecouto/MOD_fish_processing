@@ -576,7 +576,7 @@ end
 if strcmp(opts.by, 'profile')
     levels = [levels, {'profiles_L1', 'profiles_L2'}];
 end
-levels{end+1} = 'grid';
+levels{end+1} = 'gridded';
 readme_ok = true;
 for lv = levels
     try

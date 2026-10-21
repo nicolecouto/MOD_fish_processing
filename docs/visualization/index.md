@@ -63,10 +63,10 @@ accelerometers. Reference lines on it:
 - **Noise floors**: FPO7 bench noise, shifted per channel, and modeled
   - see [From raw volts to a trustworthy wavenumber spectrum](../concepts/spectral_filtering_and_noise_floors.md#4-where-the-noise-floor-comes-in).
   Shaded up to 3x (the cutoff search's `SN_min`). For L2 the bench noise is
-  `FPO7/FPO7_benchnoise.mat` under the run's `paths.calibrations_root` (from `meta/metadata.mat`),
+  `FPO7/FPO7_benchnoise.mat` under the run yml's `calibrations_root` (`<survey>/meta/meta_data_<run>.yml`),
   or `acquisition/config.yml`'s `calibrations_root` (this computer's setting) when that path isn't mounted. The fc/kc
-  cutoffs and the Batchelor/Panchev overlays come from L2's `chi_obs_kc`, `t*_fc_index` and
-  `epsilon_obs_kc`, renamed to the legacy names on load.
+  cutoffs and the Batchelor/Panchev overlays come from L2's `chi.t*_obs_kc`, `t*_fc_index` and
+  `epsilon.s*_obs_kc`, renamed to the legacy names on load.
 - **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits,
   each drawn solid at Δ²/12/(Fs/2) and dashed at Δ²/(Fs/2), plus the accelerometer sensor noise
   at (20e-6)² g²/Hz - see
@@ -182,12 +182,13 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 
 - **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
   missing parameters, last update (red when there are problems or missing parameters).
-- **Left:** 4 colour sections of the survey's grid (`processed/realtime/grid/grid.mat`), one
+- **Left:** 4 colour sections of the survey's grid (`processed/realtime/gridded/gridded.mat`), one
   column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
   there are 2 or more ("sigma0 contours": on/off, and the interval in kg/m^3; empty = 10
   levels; shown in the first section's title). All 4 share the depth and time limits;
-  each has its own variable (any field in `grid.variables`; epsilon and chi as log10, not their
-  cutoffs; sections start as sigma0, temperature, salinity_practical and epsilon_final),
+  each has its own variable (any field in `gridded.variables`, grouped ones by path like `epsilon.s1_mle`;
+  epsilon, chi and microconductivity as log10, not their cutoffs or figures of merit; sections start
+  as sigma0, temperature, salinity_practical and epsilon.final),
   colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
   and turbo. Click one to pick a time: the L1/L2 file holding it is shown.

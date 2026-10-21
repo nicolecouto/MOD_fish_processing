@@ -4,17 +4,18 @@ function u = MODunits_L3()
 % u = MODunits_L3()
 %
 % DESCRIPTION
-%   Static registry of every grid.mat field's units and description
+%   Static registry of every gridded.mat field's units and description
 %   (MODprocess_grid.m's output), one entry per field name - see
-%   MODunits_L0.m's own DESCRIPTION for the overall design. Per-channel
-%   fields (<L2 name>_<channel>: epsilon_mle_s1, chi_obs_t2, ...) are
-%   documented once as a pattern, <L2 name>_channel.
+%   MODunits_L0.m's own DESCRIPTION for the overall design. The
+%   turbulence structs (epsilon, chi, microconductivity, qc) are nested
+%   here as in the grid, their per-channel leaves (<channel>_<variant>:
+%   s1_obs, t2_mle, ...) documented once as channel_<variant>.
 %   MODprocess_grid.m copies the entries for the fields a grid has into
-%   grid.variables, so a viewer can loop over them.
+%   gridded.variables, so a viewer can loop over them.
 %
 % OUTPUTS
 %   u - struct, one field per grid field name. Each value is
-%       struct('unit', ..., 'description', ...). nz = numel(grid.z),
+%       struct('unit', ..., 'description', ...). nz = numel(gridded.z),
 %       ncast = number of casts (columns).
 %
 % CALLED BY
@@ -28,7 +29,7 @@ function u = MODunits_L3()
 % --- axes ---
 u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, metadata.PROCESS.latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
 u.z_bin_m = struct('unit', 'm', 'description', 'Depth bin size (grid.z_bin_m in the yml).');
-u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi). A grid from another version is rebinned from scratch.');
+u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc). A grid from another version is rebinned from scratch.');
 u.latitude = struct('unit', 'degrees N', 'description', 'From the L1 GPS fixes (gps.latitude) during the cast, 1 x ncast: the first fix for an Epsi downcast from the ship (platform ship, fish_flag EPSI - it free falls where it was dropped), else their mean; NaN if the cast has none.');
 u.longitude = struct('unit', 'degrees E', 'description', 'From the L1 GPS fixes (gps.longitude) during the cast, 1 x ncast, as latitude; NaN if the cast has none. A plain mean, so wrong for a cast that crosses 180 deg.');
 u.time = struct('unit', 'MATLAB datenum', 'description', 'Mean time of the cast''s CTD samples, 1 x ncast (the middle of the cast if it has none).');
@@ -37,7 +38,6 @@ u.cast_end = struct('unit', 'MATLAB datenum', 'description', 'Cast end time from
 u.cast_direction = struct('unit', 'n/a (cellstr)', 'description', '''down'' or ''up'', 1 x ncast.');
 u.cast_complete = struct('unit', 'logical', 'description', 'false for a cast still in progress (it runs into the end of the pressure record), 1 x ncast. Its column is rebinned every call until it ends.');
 u.profile_number = struct('unit', 'n/a', 'description', 'The cast''s number in the cast table (Profile####.mat), 1 x ncast. Can change as the record grows - use cast_start to match casts.');
-u.epsilon_final_source = struct('unit', 'n/a (cellstr)', 'description', 'L2''s epsilon_final_source for the cast''s scans (''epsilon_mle'' or ''epsilon_co''): which epsilon epsilon_final is, 1 x ncast; '''' for a cast without epsilon.');
 
 % --- CTD: mean of every L1 CTD sample in the bin ---
 u.pressure = struct('unit', 'dbar', 'description', 'Mean CTD pressure (ctd.P) in the bin, nz x ncast.');
@@ -58,21 +58,27 @@ u.height_above_bottom = struct('unit', 'm', 'description', 'Mean altimeter heigh
 % --- scans: mean of the L2 scans whose center is in the bin ---
 u.n_scans = struct('unit', 'count', 'description', 'Number of L2 scans whose center is in the bin, nz x ncast. 0 where there is no scan (the scan fields are NaN there).');
 u.viscosity_kinematic = struct('unit', 'm^2/s', 'description', 'Mean of the scans'' kinematic viscosity (L2 nu) in the bin, nz x ncast.');
-u.diffusivity_thermal_molecular = struct('unit', 'm^2/s', 'description', 'Mean of the scans'' molecular thermal diffusivity (L2 ktemp) in the bin, nz x ncast. Only with fpo7 channels (L2 has it only for chi).');
-u.epsilon_final = struct('unit', 'W/kg', 'description', 'Mean of the scans'' epsilon_final in the bin, nz x ncast. Which epsilon it is: epsilon_final_source.');
-u.epsilon_obs_channel = struct('unit', 'W/kg', 'description', 'Mean of the scans'' epsilon_obs (direct integration of the raw shear spectrum) for one shear channel in the bin, nz x ncast. Pattern: epsilon_obs_<channel>, e.g. epsilon_obs_s1.');
-u.epsilon_obs_kc_channel = struct('unit', 'cpm', 'description', 'Mean of the scans'' epsilon_obs integration cutoff wavenumber, nz x ncast. Pattern: epsilon_obs_kc_<channel>.');
-u.epsilon_obs_coh_corr_channel = struct('unit', 'W/kg', 'description', 'Mean of the scans'' epsilon_obs_coh_corr (as epsilon_obs, from the coherence-cleaned shear spectrum), nz x ncast. Pattern: epsilon_obs_coh_corr_<channel>.');
-u.epsilon_obs_coh_corr_kc_channel = struct('unit', 'cpm', 'description', 'Mean of the scans'' epsilon_obs_coh_corr cutoff wavenumber, nz x ncast. Pattern: epsilon_obs_coh_corr_kc_<channel>.');
-u.epsilon_mle_channel = struct('unit', 'W/kg', 'description', 'Mean of the scans'' epsilon_mle (Nasmyth-spectrum MLE fit), nz x ncast. Pattern: epsilon_mle_<channel>.');
-u.fom_channel = struct('unit', 'dimensionless', 'description', 'Mean of the scans'' figure of merit for the direct-integration epsilon fit (lower is better), nz x ncast. Pattern: fom_<channel>.');
-u.fom_mle_channel = struct('unit', 'dimensionless', 'description', 'Mean of the scans'' figure of merit for the MLE epsilon fit, nz x ncast. Pattern: fom_mle_<channel>.');
-u.coherence_sum_channel = struct('unit', 'Hz', 'description', 'Mean of the scans'' shear-a3 coherence integrated over coherence_fmin_hz to coherence_fmax_hz (a vibration-contamination diagnostic), nz x ncast. Pattern: coherence_sum_<channel>.');
-u.chi_obs_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans'' chi_obs (direct integration) for one fpo7 channel in the bin, nz x ncast. Pattern: chi_obs_<channel>, e.g. chi_obs_t1.');
-u.chi_obs_kc_channel = struct('unit', 'cpm', 'description', 'Mean of the scans'' chi_obs noise-floor cutoff wavenumber, nz x ncast. Pattern: chi_obs_kc_<channel>.');
-u.chi_mle_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans'' chi_mle (Batchelor-spectrum MLE fit) for one fpo7 channel in the bin, nz x ncast. Pattern: chi_mle_<channel>.');
-u.chi_ucond_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans'' chi_ucond (microconductivity; an underestimate, see MODunits_L2.m) for one microcond channel in the bin, nz x ncast. Pattern: chi_ucond_<channel>, e.g. chi_ucond_c1.');
-u.chi_ucond_kmax_channel = struct('unit', 'cpm', 'description', 'Mean of the scans'' chi_ucond upper integration bound, nz x ncast. Pattern: chi_ucond_kmax_<channel>.');
+u.diffusivity_thermal_molecular = struct('unit', 'm^2/s', 'description', 'Mean of the scans'' molecular thermal diffusivity (L2 ktemp) in the bin, nz x ncast. Only with FP07 or microconductivity chi (L2 has it only for chi).');
+
+% --- turbulence, grouped as in L2: gridded.<group>.<leaf>, each leaf the mean
+% of the scans' values in the bin, nz x ncast. Per-channel leaves are
+% <channel>_<variant> (s1_obs, t2_mle, ...), documented once per group as
+% channel_<variant>. ---
+u.epsilon.final = struct('unit', 'W/kg', 'description', 'Mean of the scans'' epsilon.final in the bin, nz x ncast. Which epsilon it is: epsilon.final_source.');
+u.epsilon.final_source = struct('unit', 'n/a (cellstr)', 'description', 'L2''s epsilon.final_source for the cast''s scans (''epsilon_mle'' or ''epsilon_co''), 1 x ncast; '''' for a cast without epsilon.');
+u.epsilon.channel_obs = struct('unit', 'W/kg', 'description', 'Direct integration of the raw shear spectrum, one shear channel. Pattern: epsilon.<channel>_obs, e.g. epsilon.s1_obs.');
+u.epsilon.channel_obs_kc = struct('unit', 'cpm', 'description', 'The _obs integration cutoff wavenumber. Pattern: epsilon.<channel>_obs_kc.');
+u.epsilon.channel_obs_coh_corr = struct('unit', 'W/kg', 'description', 'As _obs, from the coherence-cleaned shear spectrum. Pattern: epsilon.<channel>_obs_coh_corr.');
+u.epsilon.channel_obs_coh_corr_kc = struct('unit', 'cpm', 'description', 'The _obs_coh_corr cutoff wavenumber. Pattern: epsilon.<channel>_obs_coh_corr_kc.');
+u.epsilon.channel_mle = struct('unit', 'W/kg', 'description', 'Nasmyth-spectrum MLE fit. Pattern: epsilon.<channel>_mle.');
+u.epsilon.channel_fom_obs_coh_corr = struct('unit', 'dimensionless', 'description', 'Figure of merit of the _obs_coh_corr fit against the cleaned spectrum (lower is better). Pattern: epsilon.<channel>_fom_obs_coh_corr.');
+u.epsilon.channel_fom_mle = struct('unit', 'dimensionless', 'description', 'Figure of merit of the MLE fit. Pattern: epsilon.<channel>_fom_mle.');
+u.chi.channel_obs = struct('unit', 'degC^2/s', 'description', 'Direct integration of the deconvolved temperature-gradient spectrum, one fpo7 channel. Pattern: chi.<channel>_obs, e.g. chi.t1_obs.');
+u.chi.channel_obs_kc = struct('unit', 'cpm', 'description', 'The _obs noise-floor cutoff wavenumber. Pattern: chi.<channel>_obs_kc.');
+u.chi.channel_mle = struct('unit', 'degC^2/s', 'description', 'Batchelor-spectrum MLE fit. Pattern: chi.<channel>_mle.');
+u.microconductivity.channel_obs = struct('unit', 'degC^2/s', 'description', 'chi from one microconductivity channel (an underestimate, see MODunits_L2.m). Pattern: microconductivity.<channel>_obs, e.g. microconductivity.c1_obs.');
+u.microconductivity.channel_obs_kmax = struct('unit', 'cpm', 'description', 'The _obs upper integration bound. Pattern: microconductivity.<channel>_obs_kmax.');
+u.qc.channel_coherence_a3_sum = struct('unit', 'Hz', 'description', 'Shear-a3 coherence integrated over coherence_fmin_hz to coherence_fmax_hz (a vibration-contamination diagnostic), one shear channel. Pattern: qc.<channel>_coherence_a3_sum.');
 
 % --- record ---
 u.variables = struct('unit', 'n/a (struct array)', 'description', 'name, unit and description of each gridded field present (from this registry).');

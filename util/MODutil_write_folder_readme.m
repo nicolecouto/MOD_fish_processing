@@ -15,7 +15,7 @@ function written = MODutil_write_folder_readme(folder, level, metadata)
 %
 % INPUTS
 %   folder   - the level folder (e.g. metadata.paths.L1)
-%   level    - 'raw', 'L0', 'L1', 'L2', 'profiles_L1', 'profiles_L2' or 'grid'
+%   level    - 'raw', 'L0', 'L1', 'L2', 'profiles_L1', 'profiles_L2' or 'gridded'
 %   metadata - from MODsetup_read_yaml.m (for the deployment and parameters)
 %
 % OUTPUTS
@@ -58,9 +58,9 @@ switch level
         what = {'One Profile####.mat per cast, with the same name as in profiles_L1/: the same per-scan spectra and turbulence as L2, computed on the whole cast. Scans only - the time series are in profiles_L1/.'};
         steps = {'MODprocess_all_L1_to_L2.m pointed at profiles_L1/ (postprocessing).'};
         sections = {'spectral', 'ctd', 'profile_detection', 'chi', 'epsilon'};
-    case 'grid'
-        what = {'grid.mat: one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. Long-form names (temperature, salinity_practical, ...). CTD, attitude and height above bottom = mean of the L1 samples in the bin; every L2 per-scan value (all forms of epsilon and chi, per channel) = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans; no epsilon without shear probes). Per cast: latitude/longitude = the first GPS fix for an Epsi downcast from the ship (it free falls where it was dropped), else the mean fix during the cast. grid.variables lists each field''s unit and description.'};
-        steps = {'MODprocess_grid.m, from the L1 and L2 files (by file) or profiles_L1/ and profiles_L2/ (by profile) - see grid.source. Only new or changed casts are rebinned.'};
+    case 'gridded'
+        what = {'gridded.mat (not grid.mat: grid is Matlab''s grid on/off): one column per cast in this run''s meta/casts.mat (down and up), one row per depth bin of grid.z_bin_m m. Long-form names (temperature, salinity_practical, ...). CTD, attitude and height above bottom = mean of the L1 samples in the bin; every L2 per-scan value = mean of the L2 scans whose center is in the bin (NaN where there is none, see n_scans), the turbulence grouped as in L2 (gridded.epsilon.final, gridded.epsilon.s1_obs, gridded.chi.t1_obs, gridded.microconductivity.c1_obs, gridded.qc...). Per cast: latitude/longitude = the first GPS fix for an Epsi downcast from the ship (it free falls where it was dropped), else the mean fix during the cast. gridded.variables lists each field''s unit and description.'};
+        steps = {'MODprocess_grid.m, from the L1 and L2 files (by file) or profiles_L1/ and profiles_L2/ (by profile) - see gridded.source. Only new or changed casts are rebinned.'};
         sections = {'grid', 'profile_detection'};
     otherwise
         error('MODutil_write_folder_readme:unknownLevel', 'Unknown level "%s".', level);
@@ -79,7 +79,7 @@ if ismember(level, {'raw', 'L0'}) && ~isempty(run_name)
     L{end+1, 1} = 'Shared by every processing run of this survey (processed/<run>/).';
 elseif ~isempty(run_name)
     L{end+1, 1} = sprintf('Processing run: %s (settings: meta/meta_data_%s.yml in the survey folder)', run_name, run_name);
-    if ismember(level, {'L2', 'profiles_L1', 'profiles_L2', 'grid'})
+    if ismember(level, {'L2', 'profiles_L1', 'profiles_L2', 'gridded'})
         if isempty(metadata.run.L1_from)
             L{end+1, 1} = sprintf('From L1: this run''s own (processed/%s/L1)', run_name);
         else

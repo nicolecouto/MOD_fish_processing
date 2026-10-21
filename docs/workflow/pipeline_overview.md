@@ -184,7 +184,7 @@ flowchart LR
   TILE2 -.->|"direction doesn't match"| PROFOUT
 
   PROFOUT --> GRID["MODprocess_grid.m"]
-  GRID --> GRIDOUT[("grid/grid.mat<br/>one column per cast, depth bins")]
+  GRID --> GRIDOUT[("gridded/gridded.mat<br/>one column per cast, depth bins")]
 ```
 
 | Function | In → out | Role |
@@ -224,7 +224,7 @@ flowchart LR
   EPSOBS --> EPSMLE
   EPSMLE --> EPSMLEOUT[("scan.epsilon_mle")]
 
-  EPSOBS -.->|"mean across shear<br/>channels (epsilon_final_source)"| EPSFINAL["L2data.epsilon_final"]
+  EPSOBS -.->|"mean across shear<br/>channels (epsilon_final_source)"| EPSFINAL["L2data.epsilon.final"]
   EPSMLEOUT -.-> EPSFINAL
   EPSFINAL --> CHIMLE["mod_scan_calc_<br/>chi_mle.m"]
   CHIOBSOUT --> CHIMLE
