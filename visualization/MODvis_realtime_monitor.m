@@ -98,6 +98,7 @@ classdef MODvis_realtime_monitor < handle
         Grid struct = struct()
         GridFile char = ''
         GridStamp double = NaN
+        ChosenVars cell = {}         % each section's last pick from its menu, kept while the grid lacks it
         SelectedTime double = NaN
         TimeLimits double = []       % the sections' time limits, shared with pressure and twist
         Twist struct = struct()      % <processed_root>/twist/twist_time_series.mat
@@ -238,7 +239,7 @@ classdef MODvis_realtime_monitor < handle
             for i = 1:app.NSections
                 row = row + 1;
                 app.VarDrop(i) = app.labelled(c, row, sprintf('Section %d', i), 'drop', app.DefaultVars(i), ...
-                    @(~, ~) app.drawSections());
+                    @(src, ~) app.varChosen(i, src.Value));
                 row = row + 1;
                 app.CmapDrop(i) = app.labelled(c, row, '  colormap', 'drop', app.Colormaps, @(~, ~) app.drawSections());
                 app.CmapDrop(i).Value = app.DefaultCmaps{i};
@@ -434,16 +435,18 @@ classdef MODvis_realtime_monitor < handle
             if strcmp(f, app.GridFile) && isequaln(stamp, app.GridStamp)
                 return
             end
-            app.GridFile = f;
-            app.GridStamp = stamp;
-            app.Grid = struct();
             if isfile(f)
                 try
-                    app.Grid = load(f);
+                    g = load(f);
                 catch
-                    app.GridStamp = NaN; % being written - next refresh
+                    return % being written - next refresh (the last grid stays up)
                 end
+            else
+                g = struct();
             end
+            app.GridFile = f;
+            app.GridStamp = stamp;
+            app.Grid = g;
             names = {'temperature'};
             if isfield(app.Grid, 'variables') && ~isempty(app.Grid.variables)
                 v = app.Grid.variables;
@@ -455,8 +458,13 @@ classdef MODvis_realtime_monitor < handle
             if isempty(names)
                 names = {'temperature'};
             end
+            % a pick the grid lacks for now (e.g. microconductivity before
+            % the first downcast with scans) comes back when it's there again
             for i = 1:app.NSections
                 current = app.VarDrop(i).Value;
+                if numel(app.ChosenVars) >= i && ~isempty(app.ChosenVars{i})
+                    current = app.ChosenVars{i};
+                end
                 app.VarDrop(i).Items = names;
                 if any(strcmp(names, current))
                     app.VarDrop(i).Value = current;
@@ -467,6 +475,11 @@ classdef MODvis_realtime_monitor < handle
                 end
             end
             changed = true;
+        end
+
+        function varChosen(app, i, name)
+            app.ChosenVars{i} = name;
+            app.drawSections();
         end
 
         %% Plots

@@ -113,7 +113,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 8; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2. A grid from another version rebins every cast.
+GRID_VERSION = 9; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi). A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -372,7 +372,7 @@ for i = 1:numel(L2_files)
         end
         turb.(names{f}) = [turb.(names{f}); values.(names{f})(keep)];
     end
-    for f = setdiff(fieldnames(turb)', names)
+    for f = setdiff(fieldnames(turb), names)' % both columns: a column back, made a row
         turb.(f{1}) = [turb.(f{1}); nan(nnz(keep), 1)];
     end
 end
@@ -534,7 +534,7 @@ for name = setdiff(fieldnames(old), [axis_fields(), turbulence_groups(), {'z', '
         'source', 'provenance', 'source_stamp', 'grid_version'}])'
     flat.(name{1}) = old.(name{1});
 end
-for group = intersect(turbulence_groups(), fieldnames(old))
+for group = intersect(turbulence_groups(), fieldnames(old)') % both rows: a row back, one pass per group
     for leaf = fieldnames(old.(group{1}))'
         flat.([group{1} '__' leaf{1}]) = old.(group{1}).(leaf{1});
     end

@@ -4,6 +4,26 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-21 - Fix: the grid kept only `chi` for reused casts; monitor keeps section picks (branch `main-fork`)
+
+Nicole, after the 26_1021_fctd2_rupture_disc test deployment: "In the realtime monitor, I only ever see the last profile of microconducitvity chi ... the dropdowns I had set for microcond.chi_obs and .chi_tot were gone. Later they would show up again."
+
+- Every L2 file had microconductivity; the worker's `gridded.mat` had it only for the newest binned cast.
+- Cause: `column_from_grid` looped over `intersect(turbulence_groups(), fieldnames(old))`. A row and a column give a column, and a `for` over a column runs once, so only `chi` (first alphabetically) was copied back. Every reused cast lost `epsilon`, `microconductivity` and `qc` whenever another cast was rebinned.
+  - Not caught before: the earlier tests compared full rebins.
+  - The same mistake was in `bin_cast`'s NaN padding (`setdiff`).
+  - Both fixed; `grid_version` 9, so old grids rebin in full.
+- The dropdowns: after a pass that rebinned only an upcast (no scans), no cast had microconductivity, so `gridded.variables` lacked it and the monitor reset those sections. The grid fix ends that. The monitor also now:
+  - remembers each section's pick (`ChosenVars`) and restores it when the variable is back
+  - keeps the last grid up when `gridded.mat` is mid-write, instead of clearing it
+
+Tested on a scratchpad copy of 26_1021_fctd2_rupture_disc:
+- Reproduced: a one-cast rebin emptied microconductivity in 20 of 22 columns.
+- After the fix, a one-cast rebin `isequaln` a full rebin in every field (chi_obs in all 11 downcasts).
+- The worker's v8 grid rebins all 22 casts, then "none changed".
+- Monitor driven by script: a pick of `microconductivity.chi_tot` falls back while the grid lacks it and comes back with it; screenshot checked.
+- `mkdocs build --strict`; `checkcode` shows only pre-existing messages.
+
 ### 2026-10-21 - Microconductivity chi_tot and eps_chi (branch `main-fork`)
 
 Nicole: "Let's do microconductivity chi_tot and eps_chi." Her choices:

@@ -188,8 +188,9 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   levels; shown in the first section's title). All 4 share the depth and time limits;
   each has its own variable (any field in `gridded.variables`, grouped ones by path like `epsilon.s1_mle`;
   epsilon, chi and microconductivity as log10, not their cutoffs or figures of merit; sections start
-  as sigma0, temperature, salinity_practical and epsilon.final),
-  colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
+  as sigma0, temperature, salinity_practical and epsilon.final; a variable you pick that the grid
+  lacks for a while, e.g. microconductivity before the first downcast with scans, is picked again
+  when it's back), colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
   and turbo. Click one to pick a time: the L1/L2 file holding it is shown.
 - **Middle,** 3 rows x 2 columns beside sections 1-3, then the log beside section 4. Left:

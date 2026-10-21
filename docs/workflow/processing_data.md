@@ -830,3 +830,13 @@ gridded data's `microconductivity` struct is now `chi_obs`, `chi_obs_kmax`, `chi
 and `n2`, with no channel in the names (one probe). `grid_version` 8. See
 [Microconductivity chi](microconductivity.md).
 
+**2026-10-21 (evening) - Fix: reused casts kept only `chi`** (branch `main-fork`). Nicole, after
+the 26_1021 FCTD2 test deployment: "In the realtime monitor, I only ever see the last profile of
+microconductivity chi." Every L2 file had it; the grid lost it. When a cast was copied back out of
+the previous grid (`column_from_grid`), `intersect` of a row and a column came back as a column,
+so the `for` over it ran once and only the first group, `chi`, was copied: `epsilon`,
+`microconductivity` and `qc` of every reused cast went NaN whenever another cast was rebinned (an
+Epsi grid would have lost epsilon the same way). The NaN padding of an L2 file missing a field
+(`bin_cast`, a `setdiff`) had the same bug. Both now loop over rows. `grid_version` 9, so a grid made
+before the fix is rebinned in full on the next pass. Tested on a sandbox copy of
+26_1021_fctd2_rupture_disc: a one-cast rebin now equals a full rebin, field for field.
