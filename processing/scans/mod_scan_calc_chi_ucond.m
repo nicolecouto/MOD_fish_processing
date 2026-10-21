@@ -20,9 +20,19 @@ function scan = mod_scan_calc_chi_ucond(scan, metadata, channel)
 %        ucond.kmin_cpm to kmax = min(ucond.kmax_cpm, ucond.fmax_hz/abs(w))
 %
 %   kmax is far below the Batchelor wavenumber, so chi_ucond is an
-%   underestimate, by a factor that grows with epsilon. Legacy's
-%   correction for it (chi_tot, eps_chi; Alford and Pinkel 2000b) needs
-%   N^2 and Rrho and isn't ported yet.
+%   underestimate, by a factor that grows with epsilon. Step 5 corrects
+%   for that (Alford and Pinkel 2000b, as in MHA's add_chi_microMHA_v3.m),
+%   assuming stratified turbulence with a mixing efficiency gamma:
+%     5. chi_pe  = g*alpha/rho * chi_ucond/N^2 * (1 + 1/Rrho^2)
+%        eps_chi = (2*gamma*c)^(-1/(p+1)) * chi_pe^(1/(p+1))
+%        r       = c * eps_chi^p   (the fraction of chi resolved)
+%        chi_tot = chi_ucond / r
+%   with N^2 from the CTD around the scan (mod_scan_n2_local.m), alpha,
+%   rho and g from GSW at the scan (legacy: g = 9.8, rho = 1026), and
+%   Rrho, gamma, c and p from the yml's ucond block. NaN where N^2 <= 0.
+%   The chi_pe expression is legacy's as written: it isn't the textbook
+%   buoyancy flux (g*alpha)^2*chi/(2*N^2), and equals it only when
+%   g*alpha*rho = 2 (alpha ~ 2e-4 /K); c was fit by MHA with this form.
 %
 % INPUTS
 %   scan     - struct with:
@@ -35,10 +45,13 @@ function scan = mod_scan_calc_chi_ucond(scan, metadata, channel)
 %                                    temperature [degC], pressure [dbar]
 %                volts             - the scan's c1_volt samples, to tell
 %                                    a railed signal
+%                n2                - [s^-2] around the scan (mod_scan_n2_local.m)
+%                alpha, rho, g     - thermal expansion [1/K], density
+%                                    [kg/m^3], gravity [m/s^2] at the scan
 %   metadata - uses metadata.AFE.(channel).volts_to_S_per_m,
 %              .electronics_filter and .full_range,
 %              metadata.PROCESS.UCOND.kmin_cpm/.kmax_cpm/.fmax_hz/
-%              .rail_fraction
+%              .rail_fraction/.rrho/.ap00b_gamma/.ap00b_c/.ap00b_p
 %   channel  - e.g. 'c1'
 %
 % OUTPUTS
@@ -48,6 +61,9 @@ function scan = mod_scan_calc_chi_ucond(scan, metadata, channel)
 %                      kmax <= kmin or a needed value is NaN
 %     chi_ucond_kmax - the kmax used [cpm]
 %     dTdC           - [degC per S/m]
+%     eps_chi        - [W/kg], epsilon implied by chi_ucond (step 5)
+%     chi_tot        - [degC^2/s], chi_ucond corrected for the unresolved
+%                      part (step 5)
 %     spectra.k, spectra.Pc_dCdz_k - wavenumber [cpm] and conductivity-
 %                      gradient spectrum [(S/m)^2/m^2 per cpm]
 %
@@ -64,6 +80,9 @@ function scan = mod_scan_calc_chi_ucond(scan, metadata, channel)
 %   D = 1.4e-7 is the scan's ktemp, and its own 2 s windows and 0.5 s FFTs
 %   are this deployment's scans. Legacy took the spectrum of the first
 %   difference; this uses (2*pi*k)^2, the exact derivative, like FP07 chi.
+%   Step 5 from add_chi_microMHA_v3.m (MHA, Feb 2025); legacy's N^2 was
+%   density smoothed over 500 CTD samples along the record, here a line
+%   through a depth window on the scan's cast.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -72,7 +91,8 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'ucond_kmin_cpm', 'ucond_kmax_cpm', 'ucond_fmax_hz', 'ucond_rail_fraction'});
+    {'ucond_kmin_cpm', 'ucond_kmax_cpm', 'ucond_fmax_hz', 'ucond_rail_fraction', ...
+     'ucond_rrho', 'ucond_ap00b_gamma', 'ucond_ap00b_c', 'ucond_ap00b_p'});
 U = metadata.PROCESS.UCOND;
 afe = metadata.AFE.(channel);
 
@@ -91,6 +111,8 @@ scan.dTdC = 1 / dCdT;
 
 scan.chi_ucond_kmax = min(U.kmax_cpm, U.fmax_hz / w);
 krange = k >= U.kmin_cpm & k <= scan.chi_ucond_kmax;
+scan.eps_chi = NaN;
+scan.chi_tot = NaN;
 railed = any(abs(scan.volts) >= U.rail_fraction * afe.full_range);
 if railed || scan.chi_ucond_kmax <= U.kmin_cpm || ~any(krange) || ~isfinite(scan.dTdC)
     scan.chi_ucond = NaN;
@@ -98,5 +120,12 @@ if railed || scan.chi_ucond_kmax <= U.kmin_cpm || ~any(krange) || ~isfinite(scan
 end
 dk = mean(diff(k), 'omitnan');
 scan.chi_ucond = 6 * scan.ktemp * scan.dTdC^2 * dk * sum(scan.spectra.Pc_dCdz_k(krange), 'omitnan');
+
+% 5. the unresolved part (Alford and Pinkel 2000b)
+if scan.n2 > 0 && scan.chi_ucond > 0
+    chi_pe = scan.g * scan.alpha / scan.rho * scan.chi_ucond / scan.n2 * (1 + 1 / U.rrho^2);
+    scan.eps_chi = (2 * U.ap00b_gamma * U.ap00b_c)^(-1 / (U.ap00b_p + 1)) * chi_pe^(1 / (U.ap00b_p + 1));
+    scan.chi_tot = scan.chi_ucond / (U.ap00b_c * scan.eps_chi^U.ap00b_p);
+end
 
 end %end function

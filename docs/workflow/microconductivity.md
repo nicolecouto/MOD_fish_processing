@@ -7,13 +7,15 @@ In the setup yml the probe is an AFE channel of type `microcond`, usually named 
 volts (`epsi.c1_volt`) at L0 and L1, and `mod_scan_get_spectra.m` makes its raw spectrum
 (`spectra.c1_volt_f`) for each L2 scan. What's computed from it is decided by the channel type,
 not by the fish (`fish_flag`): any vehicle with a `microcond` channel, a fitted gain and real CTD
-T/S gets `microconductivity.<channel>_obs`, as any vehicle with an `fpo7` channel gets FP07 chi
+T/S gets `microconductivity.chi_obs`, `chi_tot` and `eps_chi`, as any vehicle with an `fpo7` channel gets FP07 chi
 ([FP07 calibration and chi](L2_calc_chi.md)).
 
 This is a port of MHA's v3 microconductivity chi (MOD_fish_lib
-`FastCTD_MATLAB/Dehysteresis_and_microconductivity/microconductivity/`), **chi only**: the
-correction for the unresolved part of the spectrum (`chi_tot`, `eps_chi`) waits for the
-stratification step - see [Not ported yet](#not-ported-yet).
+`FastCTD_MATLAB/Dehysteresis_and_microconductivity/microconductivity/`): the measured chi, and
+its correction for the unresolved part of the spectrum (`chi_tot`, `eps_chi`, Alford and Pinkel
+2000b). A vehicle has only one microconductivity probe, so L2's and the gridded data's
+`microconductivity` struct has no channel in its names (`microconductivity.chi_obs`, ...); with
+more than one `microcond` channel, L2 uses the first and warns.
 
 ## The chain
 
@@ -63,10 +65,47 @@ frequencies. Measured power = true power × `H2`, with three terms:
 4. `chi_ucond = 6 * ktemp * (dT/dC)^2 * dk * sum(Phi_dCdz)` from `ucond.kmin_cpm` to
    `kmax = min(ucond.kmax_cpm, ucond.fmax_hz/abs(w))`
 
-NaN for a railed scan. L2 gets `microconductivity.<ch>_obs` (the chi), `microconductivity.<ch>_obs_kmax`
-and the spectrum it integrated, `spectra.<ch>_dCdz_k` (and `spectra.k` when there's no FP07 chi);
-the grid gets `microconductivity.<ch>_obs` and `microconductivity.<ch>_obs_kmax`. kmax is far below
-the Batchelor wavenumber, so **this chi is an underestimate**, by a factor that grows with epsilon.
+NaN for a railed scan. kmax is far below the Batchelor wavenumber, so **this chi is an
+underestimate**, by a factor that grows with epsilon. Step 5 corrects for that.
+
+### 4. N^2 around the scan: `mod_scan_n2_local.m`
+
+The CTD samples that stay within `ucond.stratification_half_dz_m` of the scan-center depth,
+walking out from the scan center in time both ways (so only the scan's own cast); their sigma0
+sorted into a stable profile (a Thorpe sort, which takes out overturns - where the turbulence is);
+and a least-squares line of sorted sigma0 against depth: `N^2 = g/rho0 * d(sigma0)/dz`, never
+negative. Sorting only the window works the same in realtime as by profile (sorting the whole
+cast first is only possible by profile). A line over a depth
+window keeps one noisy sample or the fish's wobble from setting the gradient, and a window in
+meters doesn't depend on fall speed. NaN when the samples span less than half the window (the
+window runs off the end of the file or the cast).
+
+### 5. chi_tot and eps_chi (Alford and Pinkel 2000b), in `mod_scan_calc_chi_ucond.m`
+
+Assuming stratified turbulence with mixing efficiency gamma:
+
+- `chi_pe = g*alpha/rho * chi_obs/N^2 * (1 + 1/Rrho^2)`
+- `eps_chi = (2*gamma*c)^(-1/(p+1)) * chi_pe^(1/(p+1))`
+- `r = c * eps_chi^p` (the fraction of chi resolved), `chi_tot = chi_obs / r`
+
+alpha, rho and g are from GSW at the scan (legacy used g = 9.8 and rho = 1026); Rrho, gamma, c
+and p are yml values. NaN where N^2 <= 0. Each scan is corrected before gridding, as legacy
+corrected each sample: eps_chi goes as chi^1.67, so the mean of corrected scans isn't the
+correction of the mean.
+
+**The `chi_pe` expression is legacy's as written.** It isn't the textbook buoyancy flux,
+`(g*alpha)^2 * chi / (2*N^2)`; the two are equal only when `g*alpha*rho = 2`, i.e. alpha near
+2e-4 /K. MHA fit c (5e-5) with this form, so it's kept; ask MHA before changing either.
+
+**Outputs.** L2's `microconductivity` struct:
+- `chi_obs`, the measured chi
+- `chi_obs_kmax`
+- `chi_tot`
+- `eps_chi`
+- `n2`, the N^2 used
+
+L2 also keeps the spectrum it integrated, `spectra.<ch>_dCdz_k` (and `spectra.k` when there's no
+FP07 chi). The gridded data gets the same five as bin means of the corrected scans.
 
 ## Parameters: the yml's `ucond` block
 
@@ -84,6 +123,10 @@ A missing value makes the survey wait for parameters; it's never filled in silen
 | `rail_fraction` | 0.999 | A sample at this fraction of `full_range` or beyond means the probe is railed |
 | `kmin_cpm`, `kmax_cpm` | 1, 12.5 | Integration band |
 | `fmax_hz` | 50 | Never integrate past this frequency (`kmax <= fmax_hz/abs(w)`) |
+| `stratification_half_dz_m` | 10 | N^2 depth window: CTD samples within this of the scan's depth, on its cast |
+| `rrho` | 5 | Density ratio, one constant (legacy 5; MHA: the dependence on it is weak) |
+| `ap00b_gamma` | 0.2 | Mixing efficiency |
+| `ap00b_c`, `ap00b_p` | 5e-5, -0.4 | `r = c*eps^p`; Alford and Pinkel 2000b used c = 2.5e-5, MHA found 5e-5 for kmax = 12.5 cpm (Feb 2025) |
 
 ## Differences from legacy
 
@@ -98,7 +141,10 @@ A missing value makes the survey wait for parameters; it's never filled in silen
 | dC/dT = 0.1(1 + 0.006(T - 20)) | From GSW at the scan's SP, T, P |
 | Spectrum of the first difference | `(2*pi*k)^2`, the exact derivative (as FP07 chi) |
 | No EFE ADC filter correction | EFE ADC filter divided out on top of the SBE7 sinc^2 |
-| `chi_tot`, `eps_chi` (Alford and Pinkel 2000b, Rrho = 5) | Not yet |
+| N^2: density (`sw_pden`) smoothed over 500 CTD samples along the record (~31 s, ~70 m at 2.3 m/s, across turnarounds), differenced against pressure | A line of sigma0 vs depth within `stratification_half_dz_m` on the scan's cast |
+| Rrho computed, then overwritten with 5 | `rrho` from the yml (5) |
+| g = 9.8, rho = 1026, alpha from `sw_alpha` | GSW at the scan |
+| Corrected per 16 Hz sample | Corrected per scan |
 
 ## Test results
 
@@ -118,16 +164,49 @@ probe is railed at -2.5 V from 08:01 on: windows and scans after that are skippe
   different fall speeds (here the CTD `dzdt` at the scan center, legacy a smoothed `dPdt` mean
   over the window). With legacy's own 2 s windows and 0.5 s FFTs: median 1.34 (IQR 0.78-3.35).
 - An Epsi survey (26_1019_mako2_test2, 6 files) gives identical L2 with and without this change.
+- **chi_tot and eps_chi** (2026-10-21, same 319 scans before the probe railed):
+  - 318 have eps_chi; 1 has no N^2 (its window ran off the file).
+  - N^2 here vs legacy's: median ratio 1.21 over all scans (IQR 0.69-1.71), and 0.99 on fast scans
+    (`abs(w)` > 1 m/s, 109 scans). Most of the scatter is near the surface, where the fish spent
+    much of this stretch.
+  - eps_chi vs legacy's formula with legacy's N^2 and alpha, on the same chi_obs: median ratio
+    0.71 overall (IQR 0.40-1.76), 1.00 on fast scans; chi_tot median ratio 0.87. **The scan-by-scan
+    scatter is large:** only 42% of scans have eps_chi within a factor 2 of legacy's (57% below
+    20 dbar with `abs(w)` > 1 m/s; N^2 within 2x: 65% and 80%).
+  - All of the eps_chi difference is the N^2 difference: eps_chi ratio / (N^2 ratio)^-1.67 is
+    within 10% of 1 on every scan, so the formula port is exact. eps_chi goes as N^2^-1.67: a
+    factor 2 in N^2 is a factor 3.2 in eps_chi.
+  - N^2 depends strongly on the window, and no window matches legacy's along-record smoothing:
 
-## Not ported yet
+    | `stratification_half_dz_m` | N^2 within 2x of the 10 m one | within 2x of legacy (all / below 20 dbar, fast) |
+    |---|---|---|
+    | 2.5 | 53% | 42% / 69% |
+    | 5 | 82% | 51% / 73% |
+    | 10 | - | 65% / 80% |
+    | 20 | 93% | 62% / 78% |
+    | 35 | 61% | 63% / 72% |
 
-- **`chi_tot` and `eps_chi`** (`add_chi_microMHA_v3.m`, Alford and Pinkel 2000b): from the
-  measured chi, N^2 and Rrho, assuming gamma = 0.2, it estimates epsilon and corrects chi for the
-  unresolved part. It needs the stratification around each scan, the same open question as the
-  diffusivities; legacy hard-codes Rrho = 5 and smooths N^2 over 500 CTD samples.
+  - Sorting the window's density before the fit (Nicole: "find density around the scan, sort
+    it, and fit that") changed these by a few percent at most: eps_chi is small here (median
+    1e-8 W/kg), so the overturns are small. Legacy's N^2 isn't a truth to match - it's density
+    smoothed over 31 s along the record, across turnarounds and the surface - so this compares
+    two choices rather than validating one.
+  - The correction is large: chi_tot/chi_obs has median 13 (IQR 7-29).
+  - Median eps_chi is 1.2e-8 W/kg.
 
 ## Known limitations
 
+- **eps_chi and chi_tot are only as good as N^2**, and N^2 is the weak link: it changes by more
+  than 2x between reasonable windows on a fifth to a third of the scans (Test results), which is
+  3.2x or more in eps_chi. The window is a science choice, not settled here.
+- **To do, by profile:** when postprocessing by profile (`'by', 'profile'`), sort the whole
+  profile's density first, then take the window around each scan and fit (Nicole, 2026-10-21).
+  Realtime keeps the window-only sort, since it has one L1 file at a time. Nicole also asked
+  whether to smooth N^2 over 30 s instead, as legacy does; for now the depth window stays.
+- `ap00b_c` was fit for kmax = 12.5 cpm; where `fmax_hz/abs(w)` sets a lower kmax (abs(w) > 4 m/s)
+  the same c is used, as legacy does.
+- MHA's caveat on the method: eps_chi "seems to be somewhat high when N2 is low" and "should be
+  ... used with caution".
 - Whether `antialias_sinc_power` = 2 (SBE7's filter) and the EFE ADC filter should both be
   divided out: the note at the top says the SBE7 filter is on the analog board and the EFE
   digitizes its output, so both are applied. At 50 Hz they're 0.71 and 0.72.
@@ -137,6 +216,13 @@ probe is railed at -2.5 V from 08:01 on: windows and scans after that are skippe
   deployment isn't followed.
 
 ## History
+
+**2026-10-21 - chi_tot and eps_chi** (branch `main-fork`). Nicole: "Let's do microconductivity
+chi_tot and eps_chi." Her choices: N^2 per scan in L2 from the L1 CTD within a yml depth window, sorted
+before the fit (`mod_scan_n2_local.m`), Rrho a yml constant, and no channel in the names ("we will only ever have
+one microconductivity probe"): `microconductivity.chi_obs`, `.chi_obs_kmax`, `.chi_tot`,
+`.eps_chi`, `.n2`. New yml values `stratification_half_dz_m`, `rrho`, `ap00b_gamma`, `ap00b_c`,
+`ap00b_p`. Grid version 8. Tested as in Test results.
 
 **2026-10-21 - Names** (branch `main-fork`). `chi_ucond.(ch)`/`chi_ucond_kmax.(ch)` are now
 `microconductivity.<ch>_obs`/`microconductivity.<ch>_obs_kmax`, in L2 and the grid (the

@@ -196,8 +196,8 @@ L2's per-channel values are `<L2 name>_<channel>`:
     channel `<s>_obs`, `<s>_obs_kc`, `<s>_obs_coh_corr`, `<s>_obs_coh_corr_kc`, `<s>_mle`,
     `<s>_fom_obs_coh_corr`, `<s>_fom_mle`
   - `chi`: per fpo7 channel `<t>_obs`, `<t>_obs_kc`, `<t>_mle`
-  - `microconductivity`: per microcond channel `<c>_obs`, `<c>_obs_kmax`
-    ([Microconductivity chi](microconductivity.md))
+  - `microconductivity` (one probe, so no channel): `chi_obs`, `chi_obs_kmax`, `chi_tot`,
+    `eps_chi`, `n2` ([Microconductivity chi](microconductivity.md))
   - `qc`: per shear channel `<s>_coherence_a3_sum`
   e.g. `gridded.epsilon.final`, `gridded.chi.t1_obs`. `gridded.variables` names them the same way
   (`'epsilon.s1_mle'`).
@@ -824,4 +824,9 @@ commonly used function in matlab, so we need to call our data grid something els
 (`gridded.epsilon.final`, `gridded.variables`). The stage (`'grid'` in `'from'`/`'until'`), the
 yml's `grid` block (`z_bin_m`) and `MODprocess_grid` keep their names. An existing
 `processed/<run>/grid/` is no longer read or written; delete it when reprocessing.
+
+**2026-10-21 (night) - Microconductivity chi_tot and eps_chi** (branch `main-fork`). L2 and the
+gridded data's `microconductivity` struct is now `chi_obs`, `chi_obs_kmax`, `chi_tot`, `eps_chi`
+and `n2`, with no channel in the names (one probe). `grid_version` 8. See
+[Microconductivity chi](microconductivity.md).
 

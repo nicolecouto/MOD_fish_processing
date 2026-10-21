@@ -4,6 +4,34 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-21 - Microconductivity chi_tot and eps_chi (branch `main-fork`)
+
+Nicole: "Let's do microconductivity chi_tot and eps_chi." Her choices:
+- N^2 per scan in L2, from the L1 CTD around the scan.
+- Rrho is a yml constant.
+- "Since we will only ever have one microconductivity probe, we don't need the c1 prefix ... microconductivity.chi_obs, .chi_tot, .eps_chi".
+
+Changes:
+- New `mod_scan_n2_local.m`: the CTD samples within `ucond.stratification_half_dz_m` of the scan depth, walking out in time from the scan center (its own cast), sigma0 sorted into a stable profile (Nicole: "find density around the scan, sort it, and fit that" - works in realtime), then a line vs depth. NaN when the samples span less than half the window.
+- `mod_scan_calc_chi_ucond.m` step 5 is add_chi_microMHA_v3's correction: chi_pe -> eps_chi -> r -> chi_tot. alpha, rho and g come from GSW at the scan; Rrho, gamma, c and p from the yml.
+  - Flagged in the docs: legacy's chi_pe = g*alpha/rho*chi/N^2*(1+1/Rrho^2) is not (g*alpha)^2*chi/(2N^2); they agree only for g*alpha*rho = 2. It's kept as written, since MHA fit c with it.
+- L2 `microconductivity`: `chi_obs`, `chi_obs_kmax`, `chi_tot`, `eps_chi`, `n2`, with no channel in the names. With more than one microcond channel L2 warns and uses the first.
+- 5 new registry entries (`stratification_half_dz_m` 10, `rrho` 5, `ap00b_gamma` 0.2, `ap00b_c` 5e-5, `ap00b_p` -0.4); template regenerated.
+- Units L2/L3; `grid_version` 8.
+
+Tested in the scratchpad sandbox:
+- 25_0409 FCTD1, 319 scans before the probe railed: missing values make the survey wait; 318 eps_chi.
+- Against legacy's N^2 (500-sample smoothing, `sw_*`) and formula on the same chi_obs:
+  - N^2 ratio median 1.21, and 0.99 on scans with `abs(w)` > 1 m/s.
+  - eps_chi ratio median 0.72, and 1.01 on fast scans; chi_tot ratio 0.88.
+  - But the scan-by-scan scatter is large: only 42% of scans have eps_chi within 2x of legacy's (57% below 20 dbar and fast); Nicole pointed this out on the comparison plot after I'd called it agreement.
+  - All of the eps_chi difference is the N^2 difference: the formula port is exact to 10% on every scan, and eps_chi goes as N^2^-1.67.
+  - N^2 depends strongly on `stratification_half_dz_m` (5 m vs 10 m: 82% of scans within 2x; 35 m vs 10 m: 61%). None matches legacy better than 65%. Sorting changed these by a few percent at most (eps_chi ~1e-8 W/kg here, small overturns).
+  - chi_tot/chi_obs median 13.
+- Nicole: N2 should be plotted as log10 too, so the monitor now applies log10 to `n2`.
+- Nicole then asked about smoothing N^2 over 30 s, as legacy does. I pointed out that 30 s is ~70 m at FCTD speeds, varies with fall speed, and crosses turnarounds. She decided: "let's keep what we have for realtime. In the future when we do post-processing by profile, we should sort the whole profile first." That's noted under Known limitations in `docs/workflow/microconductivity.md`.
+- 26_1019_mako2_test2 Epsi L2 is identical before and after.
+
 ### 2026-10-21 - `gridded`, not `grid` (branch `main-fork`)
 
 Nicole: "grid is a somewhat commonly used function in matlab, so we need to call our data grid something else. Maybe just 'gridded'." Asked how far: "Data and folder". `processed/<run>/grid/grid.mat` is now `processed/<run>/gridded/gridded.mat` (`metadata.paths.gridded`); the struct is `gridded` in `MODprocess_grid` (its output), the monitor's loader, the folder README (level `gridded`), `MODutil_short_path`, the templates, `MODunits_L3` and the docs. The stage `'grid'`, the yml `grid` block and `MODprocess_grid` keep their names. Tested with the grouping change below (same sandbox runs).

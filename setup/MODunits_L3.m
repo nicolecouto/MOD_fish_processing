@@ -29,7 +29,7 @@ function u = MODunits_L3()
 % --- axes ---
 u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, metadata.PROCESS.latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
 u.z_bin_m = struct('unit', 'm', 'description', 'Depth bin size (grid.z_bin_m in the yml).');
-u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc). A grid from another version is rebinned from scratch.');
+u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2). A grid from another version is rebinned from scratch.');
 u.latitude = struct('unit', 'degrees N', 'description', 'From the L1 GPS fixes (gps.latitude) during the cast, 1 x ncast: the first fix for an Epsi downcast from the ship (platform ship, fish_flag EPSI - it free falls where it was dropped), else their mean; NaN if the cast has none.');
 u.longitude = struct('unit', 'degrees E', 'description', 'From the L1 GPS fixes (gps.longitude) during the cast, 1 x ncast, as latitude; NaN if the cast has none. A plain mean, so wrong for a cast that crosses 180 deg.');
 u.time = struct('unit', 'MATLAB datenum', 'description', 'Mean time of the cast''s CTD samples, 1 x ncast (the middle of the cast if it has none).');
@@ -76,8 +76,11 @@ u.epsilon.channel_fom_mle = struct('unit', 'dimensionless', 'description', 'Figu
 u.chi.channel_obs = struct('unit', 'degC^2/s', 'description', 'Direct integration of the deconvolved temperature-gradient spectrum, one fpo7 channel. Pattern: chi.<channel>_obs, e.g. chi.t1_obs.');
 u.chi.channel_obs_kc = struct('unit', 'cpm', 'description', 'The _obs noise-floor cutoff wavenumber. Pattern: chi.<channel>_obs_kc.');
 u.chi.channel_mle = struct('unit', 'degC^2/s', 'description', 'Batchelor-spectrum MLE fit. Pattern: chi.<channel>_mle.');
-u.microconductivity.channel_obs = struct('unit', 'degC^2/s', 'description', 'chi from one microconductivity channel (an underestimate, see MODunits_L2.m). Pattern: microconductivity.<channel>_obs, e.g. microconductivity.c1_obs.');
-u.microconductivity.channel_obs_kmax = struct('unit', 'cpm', 'description', 'The _obs upper integration bound. Pattern: microconductivity.<channel>_obs_kmax.');
+u.microconductivity.chi_obs = struct('unit', 'degC^2/s', 'description', 'Measured chi from the microconductivity probe (an underestimate; see MODunits_L2.m).');
+u.microconductivity.chi_obs_kmax = struct('unit', 'cpm', 'description', 'Upper integration bound of chi_obs.');
+u.microconductivity.chi_tot = struct('unit', 'degC^2/s', 'description', 'chi_obs corrected for the unresolved part (Alford and Pinkel 2000b), averaged after correcting each scan.');
+u.microconductivity.eps_chi = struct('unit', 'W/kg', 'description', 'Epsilon implied by chi_obs (Alford and Pinkel 2000b), averaged after correcting each scan.');
+u.microconductivity.n2 = struct('unit', 's^-2', 'description', 'Mean of the scans'' N^2 used for chi_tot/eps_chi.');
 u.qc.channel_coherence_a3_sum = struct('unit', 'Hz', 'description', 'Shear-a3 coherence integrated over coherence_fmin_hz to coherence_fmax_hz (a vibration-contamination diagnostic), one shear channel. Pattern: qc.<channel>_coherence_a3_sum.');
 
 % --- record ---

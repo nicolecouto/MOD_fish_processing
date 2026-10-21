@@ -58,6 +58,11 @@ ucond:
   kmin_cpm: 1
   kmax_cpm: 12.5
   fmax_hz: 50
+  stratification_half_dz_m: 10
+  rrho: 5
+  ap00b_gamma: 0.2
+  ap00b_c: 5e-05
+  ap00b_p: -0.4
 
 # Shear epsilon (only used when an AFE slot is shear)
 epsilon:
@@ -222,6 +227,15 @@ grid:
 #       is lower
 #   - fmax_hz: chi_ucond never integrates past this frequency [Hz]: kmax = min(kmax_cpm,
 #       fmax_hz/abs(w))
+#   - stratification_half_dz_m: N^2 for chi_tot/eps_chi: a line of sigma0 vs depth through
+#       the CTD samples within this many meters of each scan's depth, on its cast
+#       (mod_scan_n2_local.m)
+#   - rrho: Density ratio Rrho for chi_tot/eps_chi, one constant (add_chi_microMHA_v3.m: 5;
+#       the dependence on it is weak)
+#   - ap00b_gamma: Mixing efficiency gamma for eps_chi (Alford and Pinkel 2000b)
+#   - ap00b_c: Fraction-resolved constant c in r = c*eps^p (Alford and Pinkel 2000b used
+#       2.5e-5; MHA found 5e-5 for kmax = 12.5 cpm, Feb 2025)
+#   - ap00b_p: Power p in r = c*eps^p (Alford and Pinkel 2000b)
 #
 # epsilon - Shear epsilon (only used when an AFE slot is shear)
 #   - epsilon_final_source: Which epsilon estimate feeds chi_mle's epsilon input (mean

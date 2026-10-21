@@ -220,12 +220,17 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                       spectra.k(:, spectra.<t>_fc_index))
 %       .<t>_mle      - Batchelor-spectrum MLE fit, only where
 %                       epsilon.final is finite, NaN elsewhere
-%     microconductivity - chi from a microconductivity probe
-%                       (mod_scan_calc_chi_ucond.m):
-%       .<c>_obs      - [degC^2/s], an underestimate; NaN for a railed scan
-%       .<c>_obs_kmax - the upper integration bound [cpm]
+%     microconductivity - chi from the microconductivity probe (one probe,
+%                       so no channel in the names; mod_scan_calc_chi_ucond.m):
+%       .chi_obs      - [degC^2/s], the measured, underestimated chi; NaN
+%                       for a railed scan
+%       .chi_obs_kmax - its upper integration bound [cpm]
+%       .chi_tot      - [degC^2/s], chi_obs corrected for the unresolved
+%                       part (Alford and Pinkel 2000b)
+%       .eps_chi      - [W/kg], the epsilon that correction implies
+%       .n2           - [s^-2], the N^2 it used (mod_scan_n2_local.m)
 %       spectra.<c>_dCdz_k holds the conductivity-gradient spectrum it
-%       integrated.
+%       integrated (<c> is the probe's channel, e.g. c1).
 %     qc:
 %       .<s>_coherence_a3_sum - shear-a3 coherence integrated over
 %                       coherence_fmin_hz..coherence_fmax_hz [Hz], a
@@ -392,6 +397,21 @@ if have_ctd_ts
         end
     end
 end
+% There is only ever one microconductivity probe, so L2's microconductivity
+% struct has no channel names in it
+if numel(ucond_channels) > 1
+    warning('MODprocess_single_L1_to_L2:severalMicrocond', ...
+        'More than one microcond channel (%s) - only %s is used.', ...
+        strjoin(ucond_channels, ', '), ucond_channels{1});
+    ucond_channels = ucond_channels(1);
+end
+if ~isempty(ucond_channels)
+    yaml_file = '';
+    if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
+        yaml_file = metadata.paths.setup_yml;
+    end
+    metadata = MODsetup_validate_metadata(metadata, yaml_file, {'ucond_stratification_half_dz_m'});
+end
 
 dnum_all = tiled_scans.dnum;
 pressure_all = nan(nbscan, 1);
@@ -412,11 +432,10 @@ chi_mle_all = struct();
 for iC = 1:numel(chi_obs_channels)
     chi_mle_all.(chi_obs_channels{iC}) = nan(nbscan, 1);
 end
-chi_ucond_all = struct();
-chi_ucond_kmax_all = struct();
-for iC = 1:numel(ucond_channels)
-    chi_ucond_all.(ucond_channels{iC}) = nan(nbscan, 1);
-    chi_ucond_kmax_all.(ucond_channels{iC}) = nan(nbscan, 1);
+ucond_fields = {'chi_obs', 'chi_obs_kmax', 'chi_tot', 'eps_chi', 'n2'};
+ucond_all = struct();
+for iF = 1:numel(ucond_fields)
+    ucond_all.(ucond_fields{iF}) = nan(nbscan, 1);
 end
 epsilon_fields = {'epsilon_obs', 'epsilon_obs_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_coh_corr_kc', ...
     'epsilon_mle', 'fom', 'fom_mle', 'coherence_sum'};
@@ -478,9 +497,21 @@ for iScan = 1:nbscan
             uc_scan.T = temperature_all(iScan);
             uc_scan.P = pressure_all(iScan);
             uc_scan.volts = scan.epsi.([ch '_volt']);
-            scan_results{iScan}.ucond.(ch) = mod_scan_calc_chi_ucond(uc_scan, metadata, ch);
-            chi_ucond_all.(ch)(iScan) = scan_results{iScan}.ucond.(ch).chi_ucond;
-            chi_ucond_kmax_all.(ch)(iScan) = scan_results{iScan}.ucond.(ch).chi_ucond_kmax;
+            % stratification around the scan, for chi_tot and eps_chi
+            uc_scan.g = gsw_grav(metadata.PROCESS.latitude, pressure_all(iScan));
+            uc_scan.alpha = gsw_alpha(SR_all(iScan), gsw_CT_from_t(SR_all(iScan), ...
+                temperature_all(iScan), pressure_all(iScan)), pressure_all(iScan));
+            uc_scan.rho = gsw_rho(SR_all(iScan), gsw_CT_from_t(SR_all(iScan), ...
+                temperature_all(iScan), pressure_all(iScan)), pressure_all(iScan));
+            uc_scan.n2 = mod_scan_n2_local(ctd, center_dnum, ...
+                metadata.PROCESS.UCOND.stratification_half_dz_m, uc_scan.g);
+            out = mod_scan_calc_chi_ucond(uc_scan, metadata, ch);
+            scan_results{iScan}.ucond.(ch) = out;
+            ucond_all.chi_obs(iScan) = out.chi_ucond;
+            ucond_all.chi_obs_kmax(iScan) = out.chi_ucond_kmax;
+            ucond_all.chi_tot(iScan) = out.chi_tot;
+            ucond_all.eps_chi(iScan) = out.eps_chi;
+            ucond_all.n2(iScan) = uc_scan.n2;
         end
 
         if ~isempty(chi_obs_channels)
@@ -586,10 +617,10 @@ for iC = 1:numel(chi_obs_channels)
     L2data.chi.([ch '_obs_kc']) = chi_obs_kc_all.(ch);
     L2data.chi.([ch '_mle']) = chi_mle_all.(ch);
 end
-for iC = 1:numel(ucond_channels)
-    ch = ucond_channels{iC};
-    L2data.microconductivity.([ch '_obs']) = chi_ucond_all.(ch);
-    L2data.microconductivity.([ch '_obs_kmax']) = chi_ucond_kmax_all.(ch);
+if ~isempty(ucond_channels)
+    for iF = 1:numel(ucond_fields)
+        L2data.microconductivity.(ucond_fields{iF}) = ucond_all.(ucond_fields{iF});
+    end
 end
 L2data.spectra.f = scan_results{1}.spectra.f;
 
