@@ -256,23 +256,22 @@ class StartNewDeployment:
         self.ctd_box.pack(side='left')
         ttk.Button(ctd, text='Check CTD calibration', command=self.check_ctd_calibration).pack(side='left', padx=(6, 0))
         ttk.Label(ins, text='Profiling').grid(row=0, column=4, sticky='e', **pad)
-        prof = ttk.Frame(ins)
-        prof.grid(row=0, column=5, sticky='w', **pad)
-        ttk.Combobox(prof, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up', 'both'],
-                     state='readonly', width=6).pack(anchor='w')
-        ttk.Label(prof, text='direction to compute spectra', foreground='#777').pack(anchor='w')
+        ttk.Combobox(ins, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up', 'both'],
+                     state='readonly', width=6).grid(row=0, column=5, sticky='w', **pad)
         ttk.Label(ins, text='Winch spool').grid(row=0, column=6, sticky='e', **pad)
         self.spool_entry = ttk.Entry(ins, textvariable=self.var('winch_spool'), width=12)
         self.spool_entry.grid(row=0, column=7, sticky='w', **pad)
+        ttk.Label(ins, text='(direction to compute spectra)', foreground='#777').grid(
+            row=1, column=5, columnspan=3, sticky='nw', padx=pad['padx'], pady=(0, 4))
 
-        ttk.Label(ins, text='AFE slot', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=0, sticky='w', **pad)
-        ttk.Label(ins, text='Sensor', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=1, sticky='w', **pad)
-        ttk.Label(ins, text='Name', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=2, sticky='w', **pad)
-        ttk.Label(ins, text='Serial number', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=3, sticky='w', **pad)
-        ttk.Label(ins, text='Calibrated', font=('TkDefaultFont', 12, 'bold')).grid(row=1, column=4, columnspan=2,
+        ttk.Label(ins, text='AFE slot', font=('TkDefaultFont', 12, 'bold')).grid(row=2, column=0, sticky='w', **pad)
+        ttk.Label(ins, text='Sensor', font=('TkDefaultFont', 12, 'bold')).grid(row=2, column=1, sticky='w', **pad)
+        ttk.Label(ins, text='Name', font=('TkDefaultFont', 12, 'bold')).grid(row=2, column=2, sticky='w', **pad)
+        ttk.Label(ins, text='Serial number', font=('TkDefaultFont', 12, 'bold')).grid(row=2, column=3, sticky='w', **pad)
+        ttk.Label(ins, text='Calibrated', font=('TkDefaultFont', 12, 'bold')).grid(row=2, column=4, columnspan=2,
                                                                                   sticky='w', **pad)
         for i in range(1, 5):
-            r = i + 1
+            r = i + 2
             ttk.Label(ins, text='Slot %d (%s)' % (i, msf.BOARD_SLOT_NAMES[i - 1])).grid(
                 row=r, column=0, sticky='w', **pad)
             cb = ttk.Combobox(ins, textvariable=self.var('ch%d_type' % i, value='none'), state='readonly', width=16,
@@ -288,9 +287,9 @@ class StartNewDeployment:
             cl.grid(row=r, column=4, columnspan=3, sticky='w', **pad)
             self.cal_labels.append(cl)
         ttk.Label(ins, text='Slots 5-7 are always the accelerometers a1-a3.',
-                  foreground='#777').grid(row=6, column=0, columnspan=4, sticky='w', **pad)
+                  foreground='#777').grid(row=7, column=0, columnspan=4, sticky='w', **pad)
         chk = ttk.Frame(ins)
-        chk.grid(row=7, column=0, columnspan=6, sticky='w', **pad)
+        chk.grid(row=8, column=0, columnspan=6, sticky='w', **pad)
         self.extra_sn_entries = {}
         for k, label in (('fluor', 'Digital fluorometer'), ('alt', 'Altimeter')):
             ttk.Checkbutton(chk, text=label, variable=self.var(k, tk.BooleanVar, False)).pack(side='left', padx=(8, 2))
@@ -298,11 +297,11 @@ class StartNewDeployment:
             e = ttk.Entry(chk, textvariable=self.var(k + '_sn'), width=12)
             e.pack(side='left', padx=(2, 16))
             self.extra_sn_entries[k] = e
-        ttk.Label(ins, text='Latitude').grid(row=8, column=0, sticky='w', **pad)
+        ttk.Label(ins, text='Latitude').grid(row=9, column=0, sticky='w', **pad)
         ttk.Entry(ins, textvariable=self.var('latitude', value=self.config.get('latitude', '')),
-                  width=8).grid(row=8, column=1, sticky='w', **pad)
-        ttk.Label(ins, text='Compass SN').grid(row=8, column=2, sticky='e', **pad)
-        ttk.Entry(ins, textvariable=self.var('compass_sn'), width=12).grid(row=8, column=3, sticky='w', **pad)
+                  width=8).grid(row=9, column=1, sticky='w', **pad)
+        ttk.Label(ins, text='Compass SN').grid(row=9, column=2, sticky='e', **pad)
+        ttk.Entry(ins, textvariable=self.var('compass_sn'), width=12).grid(row=9, column=3, sticky='w', **pad)
 
         # Advanced (collapsed), in groups laid out two per row
         self.adv_shown = tk.BooleanVar(value=False)
