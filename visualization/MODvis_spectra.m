@@ -12,8 +12,7 @@ classdef MODvis_spectra < handle
     %     (one with no L2 yet says so). Files with no scans (on deck, the
     %     direction profile_dir doesn't trust, too slow) are marked
     %     "(0 scans)" in the list, the first file with scans opens first,
-    %     and a 0-scan file still shows its L1 time series. L2's CTD
-    %     spectra (P_f/T_f/C_f on f_ctd) aren't shown.
+    %     and a 0-scan file still shows its L1 time series.
     %   - Legacy MOD_fish_lib/EPSILOMETER Profile*.mat (e.g.
     %     data_for_reorg/epsi_mako/astral/profiles/*.mat): Profile.dnum/.pr/
     %     .f, Profile.Pt_volt_f/.Ps_volt_f/.Pa_g_f (each a struct keyed by
@@ -1342,8 +1341,7 @@ classdef MODvis_spectra < handle
                 return
             end
             % Frequency spectra on spectra.f only: [scans x numel(f)]. L2
-            % also holds the CTD spectra (P_f/T_f/C_f on their own f_ctd),
-            % f_ctd and *_fc_index - not shown here. Any *_k field is
+            % also holds *_fc_index - not shown here. Any *_k field is
             % wavenumber-domain (t1_Tg_k, s1_shear_k, ...) and belongs to
             % the wavenumber panel instead - see getWavChannelList.
             nf = numel(app.CurrentData.spectra.f);

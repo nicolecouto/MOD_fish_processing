@@ -300,10 +300,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %     CTD.name, .sample_per_record - only set when setup.yml's ctd: block
 %                                     declares .type/.sample_per_record
 %                                     respectively (independent of each
-%                                     other, and of compute_spectra/
-%                                     sample_rate below, which share the
-%                                     same ctd: block but land under
-%                                     PROCESS.* instead)
+%                                     other)
 %     CTD.SN                       - only set when setup.yml's
 %                                     instrument_manifest.ctd.sn is
 %                                     present and non-empty. Always
@@ -470,7 +467,7 @@ end
 
 %% Processing parameters - every value MODsetup_metadata_field_registry.m
 % knows about (spectral, profile_detection, chi, ucond, epsilon, grid, plus
-% afe.sample_rate and ctd.sample_rate/compute_spectra), copied from its
+% afe.sample_rate), copied from its
 % yaml_section.yaml_key to its metadata_path only when setup.yml declares
 % it. One loop over the registry, so a parameter added there is read here
 % with no second list to keep in step. Never defaulted here - a missing
@@ -577,11 +574,8 @@ if has_epsi
 end
 metadata.PROCESS.channels = channel_names;
 
-%% CTD - optional: not every deployment carries a CTD, and (since
-% compute_spectra/sample_rate below share this same yaml block) a
-% deployment can have a ctd: block without type/sample_per_record at all
-% (e.g. DeepSolo, whose only ctd: content is compute_spectra - read with the
-% other processing parameters above) - each field is read independently.
+%% CTD - optional: not every deployment carries a CTD, and type and
+% sample_per_record are each read independently.
 if isfield(yml, 'ctd') && isfield(yml.ctd, 'type')
     metadata.CTD.name = yml.ctd.type;
 end

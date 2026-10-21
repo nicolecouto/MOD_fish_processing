@@ -24,36 +24,16 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   than silently glossed over. No epsilon/chi/coherence either - this is
 %   deliberately the minimal first cut (PLAN.md Section 4): spectra only.
 %
-%   Also computes a spectrum for whichever of ctd.P/ctd.T/ctd.C the caller
-%   supplies in scan.ctd - deliberately by a DIFFERENT method than the
-%   epsi channels above, not just the same Welch average at a different
-%   rate. CTD samples far slower than epsi (e.g. 16 Hz SBE49 vs 320 Hz
-%   epsi), so one scan's worth of ctd data is only a handful of native
-%   samples (e.g. ~100 at 16 Hz over a ~6 s scan) - not enough to segment-
-%   average the way epsi's fft_length/fft_segments_per_scan does. Instead:
-%   a single periodogram per scan, no segments, no overlap, at ctd's own
-%   native Fs_ctd - see NOTES for why this isn't upsampled onto the epsi
-%   grid instead.
-%
 % INPUTS
 %   scan     - struct with:
 %                epsi - data.epsi already sliced to exactly one scan's
 %                       scan_length samples, by the caller
 %                       (MODprocess_single_L1_to_L2.m)
-%                ctd  - (optional) data.ctd time-window-selected to this
-%                       scan's span (MODprocess_single_L1_to_L2.m) - not
-%                       resampled/interpolated, just whichever native ctd
-%                       samples fall in the window. Absent P/T/C fields
-%                       (e.g. a P-only external CTD) are simply skipped,
-%                       the same way an epsi channel absent from
-%                       scan.epsi is skipped below.
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %                metadata.PROCESS.channels, metadata.PROCESS.fft_length (also
 %                the Hamming taper length - no separate zero-padding),
 %                metadata.PROCESS.fft_segments_per_scan,
-%                metadata.PROCESS.Fs_epsi, metadata.PROCESS.compute_ctd_spectra
-%                (gates whether metadata.PROCESS.Fs_ctd is even asked for -
-%                see OUTPUTS/NOTES), metadata.AFE.(channel).type
+%                metadata.PROCESS.Fs_epsi, metadata.AFE.(channel).type
 %                (to know each channel's field suffix - '_g' for acc,
 %                '_volt' for everything else - same acc-vs-everything-else
 %                split mod_efe_counts_to_volts_g.m
@@ -74,27 +54,12 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %                    't1_volt_f', 'a2_g_f', or a future 'c1_volt_f' for a
 %                    microconductivity channel), matching MOD_fish_lib's
 %                    Ps_volt_f/Pt_volt_f/Pa_g_f convention
-%     spectra.f_ctd - frequency vector [Hz], 1 x nfreq_ctd, shared across
-%                    every ctd channel below - a DIFFERENT vector from
-%                    spectra.f (different rate, different method - see
-%                    DESCRIPTION/NOTES). Present only if scan.ctd has at
-%                    least one of P/T/C AND metadata.PROCESS.compute_ctd_spectra
-%                    is true - absent entirely (no Fs_ctd asked for) whenever
-%                    setup.yml declares compute_ctd_spectra false, e.g. a
-%                    deployment whose CTD telemetry has no fixed, scan-
-%                    duration-relative sample rate (DeepSolo), even though
-%                    scan.ctd.P is populated there.
-%     spectra.P_f, spectra.T_f, spectra.C_f - single-periodogram power
-%                    spectrum for whichever of ctd.P/.T/.C is present and
-%                    non-empty in scan.ctd, 1 x nfreq_ctd each.
 %
 % CALLED BY
 %   MODprocess_single_L1_to_L2.m
 %
 % CALLS
-%   MODsetup_validate_metadata.m, mod_scan_length_from_segments.m,
-%   mod_scan_fft_seg_starts.m, mod_scan_welch_psd.m
-%   (MATLAB's Signal Processing Toolbox periodogram, detrend - ctd spectra)
+%   MODsetup_validate_metadata.m, mod_scan_fft_seg_starts.m, mod_scan_welch_psd.m
 %
 % NOTES
 %   Each epsi channel's spectrum is Welch-averaged by hand
@@ -127,24 +92,6 @@ function scan = mod_scan_get_spectra(scan, metadata)
 %   h_freq transfer-function division and fc1/fc2 band integration that
 %   function also did - both need calibration/filter machinery this repo
 %   doesn't have yet.
-%
-%   ctd spectra are NOT computed the same way, on purpose. Two options
-%   were considered and rejected: (1) interpolating ctd.P/T/C onto the
-%   epsi grid so the same Welch machinery applies - rejected because no
-%   interpolation method can put real spectral content above ctd's own
-%   Nyquist (e.g. 8 Hz for a 16 Hz SBE49) into the series; anything above
-%   that in the resulting spectrum would be a pure interpolation artifact,
-%   not ocean signal. (2) downsampling epsi to ctd's rate - rejected
-%   because it would defeat the entire purpose of epsi's high sample rate
-%   for the epsi channels themselves. Instead, ctd channels get a single
-%   periodogram from whichever native-rate samples actually fall in the
-%   scan's time window (see docs/concepts/spectral_windowing.md's "CTD
-%   spectra" section) - genuinely different dof/overlap properties than
-%   the epsi spectra above, not just "the same thing at a different rate."
-%   nfft is fixed per deployment (N_ctd, derived from the scan's known
-%   duration and Fs_ctd, not from how many raw samples actually landed in
-%   this particular scan) so every scan's ctd frequency vector matches,
-%   which matters once a caller stacks P_f/T_f/C_f across scans.
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -192,40 +139,5 @@ for iC = 1:numel(metadata.PROCESS.channels)
 end
 
 scan.spectra.f = f(:)';
-
-%% ctd.P/T/C: single periodogram at native Fs_ctd - see NOTES above
-% compute_ctd_spectra is an explicit per-deployment setup.yml flag (not
-% inferred from vehicle_name/fish_flag - see
-% MODsetup_metadata_field_registry.m's compute_ctd_spectra entry), only
-% ever asked for when there's actual ctd data on this scan to consider.
-% False for a deployment whose CTD telemetry has no fixed, scan-duration-
-% relative sample rate (e.g. DeepSolo's sparse ~60-120s external pressure
-% telemetry - a scan window there holds 0-1 native samples, not "a
-% handful," so Fs_ctd/N_ctd would have no meaning) - Fs_ctd is then never
-% even asked for, rather than prompting/erroring for a value that
-% wouldn't be usable anyway.
-if isfield(scan, 'ctd') && ~isempty(scan.ctd)
-    metadata = MODsetup_validate_metadata(metadata, yaml_file, {'compute_ctd_spectra'});
-    if metadata.PROCESS.compute_ctd_spectra
-        metadata = MODsetup_validate_metadata(metadata, yaml_file, {'Fs_ctd'});
-        Fs_ctd = metadata.PROCESS.Fs_ctd;
-        N_epsi = mod_scan_length_from_segments(fft_length, fft_segments_per_scan);
-        N_ctd = round(N_epsi / Fs_epsi * Fs_ctd);
-
-        f_ctd = [];
-        ctd_channels = {'P', 'T', 'C'};
-        for iC = 1:numel(ctd_channels)
-            ch = ctd_channels{iC};
-            if ~isfield(scan.ctd, ch) || isempty(scan.ctd.(ch))
-                continue
-            end
-            [Pxx, f_ctd] = periodogram(detrend(scan.ctd.(ch)(:)), [], N_ctd, Fs_ctd, 'psd');
-            scan.spectra.([ch '_f']) = Pxx(:)';
-        end
-        if ~isempty(f_ctd)
-            scan.spectra.f_ctd = f_ctd(:)';
-        end
-    end
-end
 
 end %end function

@@ -56,9 +56,9 @@ classdef MODvis_spectra_L0 < handle
     %     is a row: 1 x Nf for one scan, M x Nf for M scans, one shared f.
     %     Also callable without the dialog: app.exportScans('all', outfile).
     %     A file with CTD data also gets the same scans' CTD spectra
-    %     (E.ctd), every ctd vector, computed as L2 does: one detrended
-    %     periodogram per scan at the CTD's own rate (too few samples per
-    %     window for Welch segments), with its own E.ctd.f.
+    %     (E.ctd), every ctd vector: one detrended periodogram per scan at
+    %     the CTD's own rate (too few samples per window for Welch
+    %     segments), with its own E.ctd.f.
     %
     % INPUTS
     %   target - (optional) an L0 .mat file or a folder of them. Default:
@@ -945,11 +945,10 @@ classdef MODvis_spectra_L0 < handle
         end
 
         function ctd = ctdSpectra(app, dnum_start, dnum_end, window_s)
-            % CTD spectra of each scan [dnum_start, dnum_end], as
-            % mod_scan_get_spectra.m does at L2: CTD samples far slower than
-            % epsi, so one detrended periodogram per scan at the CTD's own
-            % rate, nfft fixed from the window length so every scan shares
-            % one f. [] if the file has no CTD vectors.
+            % CTD spectra of each scan [dnum_start, dnum_end]: CTD samples
+            % far slower than epsi, so one detrended periodogram per scan at
+            % the CTD's own rate, nfft fixed from the window length so every
+            % scan shares one f. [] if the file has no CTD vectors.
             ctd = [];
             items = app.signalList();
             fields = erase(items(startsWith(items, 'ctd.')), 'ctd.');
@@ -1020,8 +1019,7 @@ classdef MODvis_spectra_L0 < handle
             %                   taper, detrend, Fs, Fs_measured, df
             %   epsi_conversion - the file's counts <-> volts/g record
             %   ctd           - (when the file has CTD data) the same scans'
-            %                   CTD spectra, computed as L2 does
-            %                   (mod_scan_get_spectra.m): one detrended
+            %                   CTD spectra: one detrended
             %                   periodogram per scan of the CTD samples in
             %                   its time window, at the CTD's own rate, not
             %                   interpolated onto epsi:

@@ -49,7 +49,7 @@ Reads a deployment's `setup.yml` and returns a `metadata` struct:
 
 Also saves `metadata.mat` into `meta/` alongside `setup.yml` - a portable deployment record with `paths` stripped out, so it means the same thing on any machine. Re-derive `metadata.paths` by calling `MODsetup_read_yaml` again rather than trusting a stale `metadata.mat`.
 
-Processing parameters (spectral, profile_detection, chi, epsilon, grid, `afe.sample_rate`, `ctd.sample_rate`/`compute_spectra`) are read by one loop over `MODsetup_metadata_field_registry.m`: each registry entry is copied from its `yaml_section.yaml_key` to its `metadata_path` when the yml declares it. A parameter added to the registry is read with no other change.
+Processing parameters (spectral, profile_detection, chi, epsilon, grid, `afe.sample_rate`) are read by one loop over `MODsetup_metadata_field_registry.m`: each registry entry is copied from its `yaml_section.yaml_key` to its `metadata_path` when the yml declares it. A parameter added to the registry is read with no other change.
 
 **Derived values** - not in the yml, but needed by later steps - are added by `MODsetup_add_derived_metadata.m`, which `MODprocess_all_L0_to_L1` and `MODprocess_all_L1_to_L2` both call at the start (and after rereading the yml): the AFE electronics filters (`MODsetup_define_filters.m`) and the probe fits listed in `MODsetup_probe_fits.m`: the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat` and the microconductivity `volts_to_S_per_m` gain from `meta/ucond_calibration.mat`. So metadata straight from `MODsetup_read_yaml` works in any session. `meta/metadata.mat` is only a record: the next `MODsetup_read_yaml` call rewrites it without the fit.
 

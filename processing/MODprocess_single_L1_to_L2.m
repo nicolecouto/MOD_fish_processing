@@ -166,10 +166,6 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   field per shear/fpo7/acc channel (see
 %                   mod_scan_get_spectra.m; key already includes the '_f'
 %                   domain suffix, e.g. 't1_volt_f', 'a2_g_f')
-%     spectra.f_ctd, spectra.P_f, spectra.T_f, spectra.C_f - ctd single-
-%                   periodogram spectra (see mod_scan_get_spectra.m),
-%                   nbscan x nfreq_ctd each - present only for whichever
-%                   of P/T/C this deployment's ctd actually has.
 %     spectra.k              - wavenumber matrix [cpm], nbscan x nfreq,
 %                   k = f / abs(w) - depends on scan (via w) but not on
 %                   channel, so one shared matrix rather than a copy per
@@ -455,7 +451,6 @@ for iScan = 1:nbscan
 
     scan = struct();
     scan.epsi = slice_epsi(epsi, idx0, idx1);
-    scan.ctd = slice_ctd_by_time(ctd, epsi.dnum(idx0), epsi.dnum(idx1));
     scan_results{iScan} = mod_scan_get_spectra(scan, metadata);
 
     if have_ctd
@@ -624,7 +619,7 @@ if ~isempty(ucond_channels)
 end
 L2data.spectra.f = scan_results{1}.spectra.f;
 
-channels = setdiff(fieldnames(scan_results{1}.spectra), {'f', 'f_ctd'}, 'stable');
+channels = setdiff(fieldnames(scan_results{1}.spectra), {'f'}, 'stable');
 nfreq = numel(L2data.spectra.f);
 for iC = 1:numel(channels)
     ch = channels{iC};
@@ -633,9 +628,6 @@ for iC = 1:numel(channels)
         Pmat(iScan, :) = scan_results{iScan}.spectra.(ch);
     end
     L2data.spectra.(ch) = Pmat;
-end
-if isfield(scan_results{1}.spectra, 'f_ctd')
-    L2data.spectra.f_ctd = scan_results{1}.spectra.f_ctd;
 end
 
 % Deconvolved temperature-gradient spectrum + noise-floor cutoff index,
@@ -722,26 +714,6 @@ for iF = 1:numel(fn)
     v = epsi.(field);
     if isnumeric(v) && isvector(v) && numel(v) >= idx1
         epsi_chunk.(field) = v(idx0:idx1);
-    end
-end
-end
-
-%% Slice every numeric-vector field of ctd to samples whose dnum falls in
-% [t0, t1] - a time-based selection, not an index range, since ctd's
-% native sample rate/timing doesn't line up with epsi's (see
-% mod_scan_get_spectra.m's NOTES for why this isn't interpolated instead).
-function ctd_chunk = slice_ctd_by_time(ctd, t0, t1)
-ctd_chunk = struct();
-if isempty(ctd) || ~isfield(ctd, 'dnum') || isempty(ctd.dnum)
-    return
-end
-mask = ctd.dnum >= t0 & ctd.dnum <= t1;
-fn = fieldnames(ctd);
-for iF = 1:numel(fn)
-    field = fn{iF};
-    v = ctd.(field);
-    if isnumeric(v) && isvector(v) && numel(v) == numel(ctd.dnum)
-        ctd_chunk.(field) = v(mask);
     end
 end
 end

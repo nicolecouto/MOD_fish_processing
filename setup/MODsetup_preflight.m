@@ -16,16 +16,14 @@ function [report, metadata] = MODsetup_preflight(run_yml, prompt, varargin)
 %   Which registry parameters are needed (MODsetup_metadata_field_registry.m,
 %   by yaml_section) depends on the stages:
 %     - L0: none
-%     - L1: afe, ctd, spectral, profile_detection. L0->L1 resolves the
+%     - L1: afe, spectral, profile_detection. L0->L1 resolves the
 %       electronics filters (fft_length/Fs_epsi, MODsetup_define_filters.m)
 %       even on a CTD-only vehicle, and detects the profiling direction.
 %     - casts: profile_detection
-%     - L2: afe, ctd, spectral, profile_detection, plus chi if an AFE slot
+%     - L2: afe, spectral, profile_detection, plus chi if an AFE slot
 %       is type fpo7 and epsilon if one is type shear (types matched
 %       ignoring case, as processing does)
 %     - grid: grid
-%     Exception: ctd.sample_rate (Fs_ctd) only when ctd.compute_spectra is
-%     true.
 %   A run that takes its L1 from another run (run.L1_from) doesn't run L0
 %   or L1.
 %
@@ -321,7 +319,7 @@ if isfield(metadata, 'AFE') && isstruct(metadata.AFE)
 end
 sections = {};
 if ismember('L1', stages)
-    sections = [sections, {'afe', 'ctd', 'spectral', 'profile_detection'}];
+    sections = [sections, {'afe', 'spectral', 'profile_detection'}];
 end
 if any(ismember({'L1', 'L2'}, stages)) && any(strcmpi(types, 'microcond'))
     sections{end+1} = 'ucond'; % gain fit at L1, chi at L2
@@ -330,7 +328,7 @@ if ismember('casts', stages)
     sections = [sections, {'profile_detection'}];
 end
 if ismember('L2', stages)
-    sections = [sections, {'afe', 'ctd', 'spectral', 'profile_detection'}];
+    sections = [sections, {'afe', 'spectral', 'profile_detection'}];
     if any(strcmpi(types, 'fpo7'))
         sections{end+1} = 'chi';
     end
@@ -342,12 +340,6 @@ if ismember('grid', stages)
     sections{end+1} = 'grid';
 end
 names = {registry(ismember({registry.yaml_section}, unique(sections))).name};
-% Fs_ctd is only read when CTD spectra are on (mod_scan_get_spectra.m)
-compute_ctd_spectra = isfield(metadata, 'PROCESS') && isfield(metadata.PROCESS, 'compute_ctd_spectra') ...
-    && logical(metadata.PROCESS.compute_ctd_spectra);
-if ~compute_ctd_spectra
-    names = setdiff(names, {'Fs_ctd'}, 'stable');
-end
 end
 
 %% Readable summary when called without an output

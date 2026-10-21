@@ -52,8 +52,7 @@ run's own `L1/`, the `L1_from` run's `L1/`, or `profiles_L1/` for `profiles_L2/`
   and says why there are no scans. A folder with no L2 yet says so and names the step that makes it.
 - **Row 1, pressure:** the L1 pressure at full rate as dots, with the L2 scan pressures on top as
   circles. Click either to pick the nearest scan.
-- **Spectrum panels:** frequency and wavenumber are always log-log. Only the epsi channels are
-  shown; L2's CTD spectra (`P_f`, `T_f`, `C_f` on `f_ctd`) aren't.
+- **Spectrum panels:** frequency and wavenumber are always log-log.
 
 ![Example MODvis_spectra.m window, ASTRAL Profile100 scan 159](../concepts/images/MODvis_spectra_example.png)
 
@@ -147,7 +146,7 @@ app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup
     | `ctd.spectra.<field>`, `ctd.f` | when the file has CTD data: the same scans' CTD spectra, every ctd vector (L0: `T_raw`, `C_raw`, ... counts; L1: `P`, `T`, `C`, `SP`, ...), M × Nf_ctd, with their own frequencies `ctd.f` (0 to Fs_ctd/2) |
     | `ctd.units`, `ctd.n_samples`, `ctd.settings` | e.g. `dbar^2/Hz`, `(S/m)^2/Hz`, `counts^2/Hz`; M × 1 CTD samples per scan; `Fs_ctd` (measured over the file), `nfft`, `df`, `detrend` |
 
-    The CTD is computed as L2 does (`mod_scan_get_spectra.m`): it samples far slower than epsi
+    The CTD samples far slower than epsi
     (16 Hz SBE49 - about 160 samples in a 10 s window, fewer than one 1024-point segment), so each
     scan gets one linearly detrended periodogram of the CTD samples in its time window, at the
     CTD's own rate, not interpolated onto epsi. nfft = window length × Fs_ctd, the same for every

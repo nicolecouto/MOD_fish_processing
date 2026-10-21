@@ -315,13 +315,12 @@ the optional `ctd.type` and `ctd.sample_per_record`.
 button in the monitor app) prints the run's plan (which yml, where raw, L0 and L1 come from, where output
 goes - see [Processing runs](#processing-runs)) and checks every registry parameter the stages
 about to run need, for this manifest:
-- L1: `afe`, `ctd`, `spectral`, `profile_detection` (L0 → L1 needs `fft_length`/`Fs_epsi` even on
+- L1: `afe`, `spectral`, `profile_detection` (L0 → L1 needs `fft_length`/`Fs_epsi` even on
   a CTD-only vehicle, and detects the profiling direction);
 - casts: `profile_detection`;
-- L2: `afe`, `ctd`, `spectral`, `profile_detection`, plus `chi` with an fpo7 slot and `epsilon`
+- L2: `afe`, `spectral`, `profile_detection`, plus `chi` with an fpo7 slot and `epsilon`
   with a shear slot;
-- `ctd.sample_rate` only when `ctd.compute_spectra` is true. The grid stage needs the `grid`
-  section.
+- The grid stage needs the `grid` section.
 - Sensor types are matched ignoring case, the same way processing matches them.
 
 It also reports problems: a `calibrations_root` that isn't a folder here (asked for in
