@@ -66,8 +66,8 @@ accelerometers. Reference lines on it:
   or `acquisition/config.yml`'s `calibrations_root` (this computer's setting) when that path isn't mounted. The fc/kc
   cutoffs and the Batchelor/Panchev overlays come from L2's `chi.t*_obs_kc`, `t*_fc_index` and
   `epsilon.s*_obs_kc`, renamed to the legacy names on load.
-- **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits,
-  each drawn solid at Δ²/12/(Fs/2) and dashed at Δ²/(Fs/2), plus the accelerometer sensor noise
+- **Bit noise** (any file with `f_sample_epsi`): flat ADC quantization-noise floors for 24/20/16 bits,
+  each drawn solid at Δ²/12/(f_sample/2) and dashed at Δ²/(f_sample/2), plus the accelerometer sensor noise
   at (20e-6)² g²/Hz - see
   [ADC bit noise](../concepts/spectral_filtering_and_noise_floors.md#adc-bit-noise-reference-lines).
   All channels share one axes but not one ADC step size, so the dropdown under the "Bit noise"
@@ -115,12 +115,12 @@ app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup
   taper (Hann/Hamming) and per-segment detrend (linear/constant/none). Changing one recomputes
   and redraws. Name-value arguments only set the starting values, which match the liveplot: nfft
   1024, 10 s, 50% overlap, Hann. Detrend defaults to linear, like this repo's L2 spectra.
-- The window's times and length, the active settings, Fs (nominal, and measured from the
+- The window's times and length, the active settings, f_sample (nominal, and measured from the
   timestamps), number of segments, dof and df are printed above the spectrum, so a screenshot
   records them. dof (1.9 × segments) is only shown at 50% overlap, where that rule holds.
 - **Bit noise**: the dropdown picks **which channel's ADC LSB** the 24/20/16-bit lines use (t1/t2
   unipolar 2.5 V; s1/s2 bipolar 2.5 V, 4x higher; a1-a3 in g via 0.4 V/g). For an N-bit ADC,
-  Δ = LSB × 2^(24-N), solid at Δ²/12/(Fs/2), dashed at Δ²/(Fs/2). The ADXL accelerometer
+  Δ = LSB × 2^(24-N), solid at Δ²/12/(f_sample/2), dashed at Δ²/(f_sample/2). The ADXL accelerometer
   sensor noise, (20e-6)² g²/Hz, is a separate checkbox - it's a property of the sensor, not the ADC.
 - The checkbox column is color-keyed to every curve, so there's no legend. Grid lines and ticks
   are at whole decades only.
@@ -135,21 +135,21 @@ app = MODvis_spectra_L0('/path/to/L0', 'metadata', metadata);   % re-apply setup
     | Field | Contents |
     |---|---|
     | `spectra.t1_volt`, `.s1_volt`, `.a1_g`, ... | PSD, one row per scan: 1 × Nf for one scan, M × Nf for all |
-    | `f` | 1 × Nf frequency [Hz], 0 to Fs/2, shared by every scan and channel |
+    | `f` | 1 × Nf frequency [Hz], 0 to f_sample/2, shared by every scan and channel |
     | `units.<field>` | `V^2/Hz` or `g^2/Hz` |
     | `scan.i0`, `scan.i1` | M × 1 sample indices into the L0 file's `epsi` (`epsi.t1_volt(i0:i1)` is the scan); also `scan.dnum_start`/`dnum_end` |
     | `file`, `folder` | the L0 file the spectra came from |
     | `nseg.<field>`, `dof.<field>` | M × 1 Welch segments used (NaN segments skipped; none left → all-NaN row), dof = 1.9 × nseg (NaN unless 50% overlap) |
-    | `noise.<field>` | flat floors [same units as the spectra]: `bit24`/`bit20`/`bit16` = Δ²/12/(Fs/2), `bit24_full_lsb`/... = Δ²/(Fs/2), `lsb`, and `adxl` for accelerometers |
-    | `settings` | `nfft`, `window_s`, `window_samples`, `overlap_pct`, `taper`, `detrend`, `Fs`, `Fs_measured`, `df` |
+    | `noise.<field>` | flat floors [same units as the spectra]: `bit24`/`bit20`/`bit16` = Δ²/12/(f_sample/2), `bit24_full_lsb`/... = Δ²/(f_sample/2), `lsb`, and `adxl` for accelerometers |
+    | `settings` | `nfft`, `window_s`, `window_samples`, `overlap_pct`, `taper`, `detrend`, `f_sample_epsi`, `f_sample_measured_epsi`, `df` |
     | `epsi_conversion`, `README`, `exported` | the file's counts ↔ volts/g record, a plain-text description, export time |
-    | `ctd.spectra.<field>`, `ctd.f` | when the file has CTD data: the same scans' CTD spectra, every ctd vector (L0: `T_raw`, `C_raw`, ... counts; L1: `P`, `T`, `C`, `SP`, ...), M × Nf_ctd, with their own frequencies `ctd.f` (0 to Fs_ctd/2) |
-    | `ctd.units`, `ctd.n_samples`, `ctd.settings` | e.g. `dbar^2/Hz`, `(S/m)^2/Hz`, `counts^2/Hz`; M × 1 CTD samples per scan; `Fs_ctd` (measured over the file), `nfft`, `df`, `detrend` |
+    | `ctd.spectra.<field>`, `ctd.f` | when the file has CTD data: the same scans' CTD spectra, every ctd vector (L0: `T_raw`, `C_raw`, ... counts; L1: `P`, `T`, `C`, `SP`, ...), M × Nf_ctd, with their own frequencies `ctd.f` (0 to f_sample_ctd/2) |
+    | `ctd.units`, `ctd.n_samples`, `ctd.settings` | e.g. `dbar^2/Hz`, `(S/m)^2/Hz`, `counts^2/Hz`; M × 1 CTD samples per scan; `f_sample_ctd` (measured over the file), `nfft`, `df`, `detrend` |
 
     The CTD samples far slower than epsi
     (16 Hz SBE49 - about 160 samples in a 10 s window, fewer than one 1024-point segment), so each
     scan gets one linearly detrended periodogram of the CTD samples in its time window, at the
-    CTD's own rate, not interpolated onto epsi. nfft = window length × Fs_ctd, the same for every
+    CTD's own rate, not interpolated onto epsi. nfft = window length × f_sample_ctd, the same for every
     scan; a scan with a NaN or under 2 samples is an all-NaN row.
 
     ```matlab

@@ -17,7 +17,7 @@ function [report, metadata] = MODsetup_preflight(run_yml, prompt, varargin)
 %   by yaml_section) depends on the stages:
 %     - L0: none
 %     - L1: afe, spectral, profile_detection. L0->L1 resolves the
-%       electronics filters (fft_length/Fs_epsi, MODsetup_define_filters.m)
+%       electronics filters (fft_length/f_sample_epsi, MODsetup_define_filters.m)
 %       even on a CTD-only vehicle, and detects the profiling direction.
 %     - casts: profile_detection
 %     - L2: afe, spectral, profile_detection, plus chi if an AFE slot
@@ -237,7 +237,7 @@ end
 
 %% Shear probes with no calibration file get no epsilon; shear needs the
 % charge-amp response for epsilon (MODsetup_define_filters.m only warns and
-% leaves the correction out). The filter check needs fft_length/Fs_epsi, so
+% leaves the correction out). The filter check needs fft_length/f_sample_epsi, so
 % it runs only once nothing is missing.
 function report = check_shear(report, metadata)
 channels = {};

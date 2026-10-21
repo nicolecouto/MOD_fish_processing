@@ -1,7 +1,7 @@
-function noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, fs, electronics_filter, thermistor_coefs, amp_coefs)
+function noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, f_sample, electronics_filter, thermistor_coefs, amp_coefs)
 % mod_scan_fpo7_modeled_noise_f        Part of MOD_fish_processing
 %
-% noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, fs, electronics_filter, thermistor_coefs, amp_coefs)
+% noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, f_sample, electronics_filter, thermistor_coefs, amp_coefs)
 %
 % DESCRIPTION
 %   Theoretical FP07 electronic noise floor (Johnson/thermal noise +
@@ -18,7 +18,7 @@ function noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, fs, electronics_f
 %   electronics/ADC anti-alias filter. Both signal and noise pass through
 %   that downstream filter on their way to being recorded, so:
 %
-%     noise_f_modeled = electronics_filter .* fpo7_noise_f(f, T, fs, ...)
+%     noise_f_modeled = electronics_filter .* fpo7_noise_f(f, T, f_sample, ...)
 %
 %   Deliberately NOT also multiplied by the FP07 thermal-rolloff filter
 %   (mod_scan_fpo7_transfer_function.m), unlike how a real temperature
@@ -64,7 +64,7 @@ function noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, fs, electronics_f
 %   T                  - local water temperature [degC], scalar. The real,
 %                         in-situ value for this scan/segment (e.g. from
 %                         CTD) - NOT a fixed placeholder.
-%   fs                 - sample rate [Hz], scalar. Required, not defaulted -
+%   f_sample                 - sample rate [Hz], scalar. Required, not defaulted -
 %                         varies by electronics generation/deployment (e.g.
 %                         MADRE-era 325 Hz vs. some SOM-era 320 Hz
 %                         deployments). Not currently used by either noise
@@ -142,7 +142,7 @@ function noise_f_modeled = mod_scan_fpo7_modeled_noise_f(f, T, fs, electronics_f
 %     1. Johnson (thermal) noise: vn^2 = 4*kB*T*R - already the flat/white
 %        power spectral density [V^2/Hz] by the standard Johnson-Nyquist
 %        formula, used directly (fixed 2026-09-22: an earlier version of
-%        this code divided by the Nyquist bandwidth fs/2 here, a units
+%        this code divided by the Nyquist bandwidth f_sample/2 here, a units
 %        error that made this term inversely, and unphysically, proportional
 %        to sample rate).
 %     2. Amplifier noise: the first-stage amp's own input voltage noise,
@@ -260,12 +260,12 @@ if ~isequal(size(electronics_filter), size(f))
         mat2str(size(electronics_filter)), mat2str(size(f)));
 end
 
-noise_f = fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs);
+noise_f = fpo7_noise_f(f, T, f_sample, thermistor_coefs, amp_coefs);
 noise_f_modeled = electronics_filter .* noise_f;
 
 end %end function
 
-function noise_f = fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs)
+function noise_f = fpo7_noise_f(f, T, f_sample, thermistor_coefs, amp_coefs)
 % Theoretical FP07 electronic noise (Johnson/thermal + amplifier noise),
 % referred to the amplifier's input (upstream of the AFE electronics/ADC
 % filter - see the parent function's DESCRIPTION for why that filter is
@@ -275,9 +275,9 @@ function noise_f = fpo7_noise_f(f, T, fs, thermistor_coefs, amp_coefs)
 % in the parent function's INPUTS/NOTES, not duplicated here.
 
 %% Validate required, non-defaultable inputs (see parent NOTES - do not silently default these)
-if nargin < 3 || isempty(fs)
+if nargin < 3 || isempty(f_sample)
     error('mod_scan_fpo7_modeled_noise_f:missingFs', ...
-        'fs (sample rate [Hz]) is required and is not defaulted - it varies by electronics generation/deployment.');
+        'f_sample (sample rate [Hz]) is required and is not defaulted - it varies by electronics generation/deployment.');
 end
 
 if any(f(:) == 0)
@@ -338,7 +338,7 @@ R = thermistor_coefs.R25 * Rt_R25;
 % 4*kB*T*R IS the noise power spectral density (V^2/Hz) by the standard
 % Johnson-Nyquist formula - it's already a per-Hz quantity, not a total
 % power over some bandwidth that needs dividing down. An earlier version of
-% this code divided by the Nyquist bandwidth (fs/2) here, which was a units
+% this code divided by the Nyquist bandwidth (f_sample/2) here, which was a units
 % error: it made this term inversely proportional to sample rate, with no
 % physical basis (Johnson noise from a resistor doesn't depend on how fast
 % you sample it) - see parent function's NOTES.

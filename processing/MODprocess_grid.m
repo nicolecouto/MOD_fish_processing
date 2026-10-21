@@ -29,8 +29,9 @@ function gridded = MODprocess_grid(metadata, by)
 %       the same names: gridded.epsilon.final, gridded.epsilon.s1_obs,
 %       gridded.chi.t1_mle, ...): each scan of the cast (its center in
 %       the cast) fills every bin of its footprint - from the shallowest
-%       to the deepest L1 CTD depth during the scan (N_epsi/Fs_epsi long),
-%       so a 6.4 s scan at 3.8 m/s spans about 24 m - and a bin is the
+%       to the deepest L1 CTD depth during the scan
+%       (n_samples_scan_epsi/f_sample_epsi long), so a 6.4 s scan at
+%       3.8 m/s spans about 24 m - and a bin is the
 %       mean of the scans covering it (about 2 with 50% overlap). A bin
 %       no scan covers is NaN, and n_scans says how many scans cover each
 %       bin. Only casts in the
@@ -117,7 +118,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 10; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi); 10: each scan fills its footprint, n_scans counts the scans covering a bin. A grid from another version rebins every cast.
+GRID_VERSION = 11; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi); 10: each scan fills its footprint, n_scans counts the scans covering a bin; 11: L2's f_sample_epsi, n_samples_scan_epsi (were Fs_epsi, N_epsi). A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -354,8 +355,9 @@ end
 scans = struct('dnum', [], 'pressure', [], 'half_s', []);
 turb = struct();
 for i = 1:numel(L2_files)
-    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', 'N_epsi', 'Fs_epsi', ...
-        'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum'}, turbulence_groups()]);
+    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', 'n_samples_scan_epsi', 'f_sample_epsi', ...
+        'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum', 'Fs_epsi', 'N_epsi'}, ...
+        turbulence_groups()]); % the old names only to tell an old L2 file (scan_values)
     if ~isfield(s, 'dnum') || isempty(s.dnum) || ~isfield(s, 'pressure')
         continue
     end
@@ -367,8 +369,8 @@ for i = 1:numel(L2_files)
     scans.dnum = [scans.dnum; s.dnum(keep)];
     scans.pressure = [scans.pressure; s.pressure(keep)];
     half_s = NaN; % no scan length: the scan's center bin only
-    if isfield(s, 'N_epsi') && isfield(s, 'Fs_epsi')
-        half_s = s.N_epsi / s.Fs_epsi / 2;
+    if isfield(s, 'n_samples_scan_epsi') && isfield(s, 'f_sample_epsi')
+        half_s = s.n_samples_scan_epsi / s.f_sample_epsi / 2;
     end
     scans.half_s = [scans.half_s; repmat(half_s, nnz(keep), 1)];
     [values, source] = scan_values(s);
@@ -494,10 +496,11 @@ function [v, source] = scan_values(s)
 v = struct();
 source = '';
 n = numel(s.dnum);
-if any(isfield(s, {'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum'}))
+if any(isfield(s, {'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum', 'Fs_epsi', 'N_epsi'}))
     error('MODprocess_grid:oldL2Layout', ...
-        ['An L2 file has the old flat layout (epsilon_obs, chi_obs, ...), from before ' ...
-         '2026-10-21. Reprocess L2 (delete processed/<run>/L2/ or reset the survey) and grid again.']);
+        ['An L2 file is from before 2026-10-21 (flat epsilon_obs, chi_obs, ... or Fs_epsi/N_epsi, ' ...
+         'now f_sample_epsi/n_samples_scan_epsi). Reprocess L2 (delete processed/<run>/L2/ or reset ' ...
+         'the survey) and grid again.']);
 end
 if isfield(s, 'epsilon') && isfield(s.epsilon, 'final_source')
     source = char(s.epsilon.final_source);

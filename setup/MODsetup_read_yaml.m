@@ -157,7 +157,7 @@ function metadata = MODsetup_read_yaml(setup_yml)
 %                                     keys, sorted numerically by N (not
 %                                     from yaml field order). {} (empty)
 %                                     when manifest.has_epsi is false.
-%     PROCESS.Fs_epsi               - Hz, nominal EFE board sample rate,
+%     PROCESS.f_sample_epsi               - Hz, nominal EFE board sample rate,
 %                                     from setup.yml's afe.sample_rate.
 %                                     NOT set at all if the key is absent -
 %                                     see NOTES below on why this function

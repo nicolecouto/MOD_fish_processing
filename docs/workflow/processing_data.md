@@ -190,8 +190,9 @@ L2's per-channel values are `<L2 name>_<channel>`:
   flat 120 m. A maximum that repeats exactly counts as pegged, since a real range varies, so a bin
   with no bottom in range is NaN. yaw and spin are headings and aren't gridded.
 - **Scans**: each scan of the cast (its center in the cast) fills every bin of its footprint, from
-  the shallowest to the deepest L1 CTD depth during the scan (`N_epsi`/`Fs_epsi` long), and a bin
-  is the mean of the scans covering it: `viscosity_kinematic` (`nu`),
+  the shallowest to the deepest L1 CTD depth during the scan
+  (`n_samples_scan_epsi`/`f_sample_epsi` long), and a bin is the mean of the scans covering it:
+  `viscosity_kinematic` (`nu`),
   `diffusivity_thermal_molecular` (`ktemp`), and L2's four turbulence structs under the same
   names, each leaf `<channel>_<variant>`:
   - `epsilon`: `final` (and per cast `final_source`, which epsilon `final` is), and per shear
@@ -315,7 +316,7 @@ the optional `ctd.type` and `ctd.sample_per_record`.
 button in the monitor app) prints the run's plan (which yml, where raw, L0 and L1 come from, where output
 goes - see [Processing runs](#processing-runs)) and checks every registry parameter the stages
 about to run need, for this manifest:
-- L1: `afe`, `spectral`, `profile_detection` (L0 → L1 needs `fft_length`/`Fs_epsi` even on
+- L1: `afe`, `spectral`, `profile_detection` (L0 → L1 needs `fft_length`/`f_sample_epsi` even on
   a CTD-only vehicle, and detects the profiling direction);
 - casts: `profile_detection`;
 - L2: `afe`, `spectral`, `profile_detection`, plus `chi` with an fpo7 slot and `epsilon`
@@ -852,3 +853,10 @@ most bins were white. Now a scan fills every bin it spans (its L1 CTD depths dur
 bins it shares with the next scan are averaged, and `n_scans` counts the scans covering a bin
 (Nicole chose this over interpolating between scan centers: no values are made up). `grid_version`
 10.
+
+**2026-10-21 (night) - Sample-rate names** (branch `main-fork`). Nicole: "What do you suppose the s in
+Fs_ctd and Fs_epsi stand for? I think sampling." `Fs_epsi`, `N_epsi` and `Fs_ctd` are now
+`f_sample_epsi`, `n_samples_scan_epsi` and `f_sample_ctd` (in L2, `metadata.PROCESS` and the L0/L1
+`epsi_conversion` record; the yml key is still `afe.sample_rate`), and sample-rate variables are
+`f_sample`. `grid_version` 11. Remake L0, L1 and L2: an old L2 file stops the grid and
+MODvis_spectra with "reprocess L2", and MODvis_spectra_L0 asks to remake an old L0/L1 file.

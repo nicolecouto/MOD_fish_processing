@@ -96,7 +96,7 @@ flowchart LR
 | `MODprocess_single_modraw_to_L0.m` | modraw_file, (metadata) → L0_data | Parses one raw file: `$`-block regex match, header decode, counts/hex → per-type structs; EFE counts → volts/g + `epsi_conversion`; `$DCAL` → `ctd_cal` |
 | `mod_L0_ctd_calibration.m` | text, source → cal | SBE calibration from a `$DCAL` block or a `.CAL` file, by name |
 | `MODprocess_reset_survey.m` | survey_folder → deleted | Deletes a survey's `L0/`, `processed/` and `meta/ctd_calibration.mat` (asks first) so it's reprocessed from raw - after a CTD calibration change stops the worker |
-| `MODsetup_default_efe.m` | → efe | The standard EFE board (slot names, types, full range, ADC config, Fs, acc constants) - what L0 uses without metadata |
+| `MODsetup_default_efe.m` | → efe | The standard EFE board (slot names, types, full range, ADC config, f_sample_epsi, acc constants) - what L0 uses without metadata |
 | `mod_efe_conversion.m` | n_slots, (metadata) → conversion | Per-channel counts ↔ volts/g record: names, config, exact scale/offset, plain-text recovery instructions |
 | `mod_efe_counts_to_volts_g.m` / `mod_efe_volts_g_to_counts.m` | epsi, metadata / conversion → epsi | EFE counts → `<name>_volt`/`<name>_g`, and the exact inverse |
 | `MODvis_spectra_L0.m` | browses L0 folder | Quick-look: timeseries rows, click → EFE spectrum of that window vs ADC bit noise; no setup.yml needed, all spectral settings editable |
@@ -145,7 +145,7 @@ flowchart LR
 | `MODprocess_single_L1_to_L2.m` | data, metadata, PressureTimeseries → L2data | Thin wrapper around `mod_L2_tile_scans.m` |
 | `mod_L2_tile_scans.m` | epsi, ctd, metadata, PressureTimeseries → L2data | 50%-overlap scan tiling, direction-gated by `profile_dir` (down/up/both), shared with postprocess |
 | `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Raw Welch spectrum per AFE channel (`mod_scan_welch_psd.m`, per-segment detrend) - `acc`→`_g`, everything else→`_volt`, uncorrected |
-| `mod_scan_welch_psd.m` | x, fft_length, seg_starts, Fs, (taper, detrend) → Pxx, f | Welch average with each segment detrended on its own - shared by `mod_scan_get_spectra.m` and `MODvis_spectra_L0.m` |
+| `mod_scan_welch_psd.m` | x, fft_length, seg_starts, f_sample, (taper, detrend) → Pxx, f | Welch average with each segment detrended on its own - shared by `mod_scan_get_spectra.m` and `MODvis_spectra_L0.m` |
 | `MODvis_timeseries.m` | browses L0/L1/L2/Profile folder | Any dnum-carrying struct, up to 6 rows, dual y-axis |
 | `MODvis_spectra.m` | browses an L2 folder or a run folder, with the matching L1 (`MODutil_level_folders.m`: the run's own, the `L1_from` run's, or `profiles_L1/`) | Click a point → that scan's raw spectrum, all channels |
 | `MODvis_twist_timeseries.m` | TwistTimeseries → live axes | Cable-twist count for fin adjustment during the cast; spool changes and survey starts on the cruise count |
@@ -243,7 +243,7 @@ flowchart LR
 | `mod_scan_calc_chi_obs.m` | scan, metadata, channel, noise_coefs → scan | Direct-integration chi - needs real onboard CTD T |
 | `toolbox/theoretical_spectra/batchelor_spectrum.m` | epsilon, chi, nu, ktemp, k → Psg | Theoretical Batchelor (1959) temperature-gradient spectrum |
 | `mod_scan_calc_chi_mle.m` | scan, metadata, channel, noise_coefs → scan | Batchelor-spectrum MLE fit - now wired in, fed by epsilon below |
-| `mod_scan_ucond_electronics_filter.m` | f, ucond, Fs_epsi, ADCfilter → H2 | Microconductivity electronics: SBE pre-emphasis, SBE7 anti-alias, EFE ADC ([Microconductivity chi](microconductivity.md)) |
+| `mod_scan_ucond_electronics_filter.m` | f, ucond, f_sample_epsi, ADCfilter → H2 | Microconductivity electronics: SBE pre-emphasis, SBE7 anti-alias, EFE ADC ([Microconductivity chi](microconductivity.md)) |
 | `mod_scan_calc_chi_ucond.m` | scan, metadata, channel → scan | Microconductivity chi: conductivity-gradient spectrum integrated from kmin_cpm to kmax (an underestimate) |
 | `mod_scan_shear_transfer_function.m` | f, w, lc → H | Oakey (1982) shear-probe dynamic-response filter |
 | `mod_scan_shear_volts_to_shear_spectrum.m` | scan, metadata, channel → scan | Raw shear volts spectrum → shear wavenumber spectrum |

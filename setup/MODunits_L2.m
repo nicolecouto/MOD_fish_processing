@@ -74,8 +74,8 @@ u.spectra_channel_shear_co_k = struct('unit', 's^-2/cpm', 'description', 'Cohere
 u.fft_length = struct('unit', 'samples', 'description', 'Welch-segment FFT length used to build every spectrum this L2data holds (setup.yml spectral.fft_length).');
 u.fft_segments_per_scan = struct('unit', 'count', 'description', 'Number of Welch segments averaged per scan (setup.yml spectral.fft_segments_per_scan).');
 u.dof = struct('unit', 'dimensionless', 'description', 'Spectral degrees of freedom, 1.9*fft_segments_per_scan (Nuttall 1971, processing/scans/mod_scan_dof.m).');
-u.Fs_epsi = struct('unit', 'Hz', 'description', 'Epsi sample rate this L2data was tiled at.');
-u.N_epsi = struct('unit', 'samples', 'description', 'Scan length in samples, derived from fft_length/fft_segments_per_scan.');
+u.f_sample_epsi = struct('unit', 'Hz', 'description', 'Epsi sample rate this L2data was tiled at.');
+u.n_samples_scan_epsi = struct('unit', 'samples', 'description', 'Scan length in samples, derived from fft_length/fft_segments_per_scan.');
 u.scan_step = struct('unit', 'samples', 'description', 'Step between consecutive scan starts (accounts for scan_overlap).');
 
 u.provenance = struct('unit', 'n/a (record)', 'description', 'What this file was made from (MODutil_provenance.m): the L1 file (.files - processed/<run>/L1/<name>.mat, or the L1_from run''s; for profiles_L2 the profiles_L1 Profile####.mat), the yml (.yml) and its SHA-256 when read (.yml_sha256), .run, .survey, .made_utc and the code commit (.code). Paths are relative to the survey folder.');

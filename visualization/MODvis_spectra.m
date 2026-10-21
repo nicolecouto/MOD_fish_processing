@@ -5,9 +5,10 @@ classdef MODvis_spectra < handle
     %   - This repo's own L2/profile output (MODprocess_single/all_L1_to_L2.m,
     %     MODprocess_single/all_L1_to_L2_profiles.m): dnum, pressure,
     %     spectra.f, spectra.(channel)_f [nbscan x nfreq], nfft, dof,
-    %     Fs_epsi, N_epsi. Raw per-channel context (rows 2-3) is pulled
-    %     from the L1 file with the same name (MODutil_level_folders.m:
-    %     the run's L1/, the run.L1_from run's L1/, or profiles_L1/ for
+    %     f_sample_epsi, n_samples_scan_epsi. Raw per-channel context
+    %     (rows 2-3) is pulled from the L1 file with the same name
+    %     (MODutil_level_folders.m: the run's L1/, the run.L1_from run's
+    %     L1/, or profiles_L1/ for
     %     profiles_L2/). Pick an L2 folder or a processed/<run>/ folder
     %     (one with no L2 yet says so). Files with no scans (on deck, the
     %     direction profile_dir doesn't trust, too slow) are marked
@@ -120,7 +121,7 @@ classdef MODvis_spectra < handle
         % sensor noise, the same levels MODSOM_liveplot's Faster_app.py
         % draws on its live spectra - see BitNoiseBits below and
         % plotBitNoiseLines. Unlike PhysChannelOrder these need only
-        % Fs_epsi, so they show for both file formats. Their own group
+        % f_sample_epsi, so they show for both file formats. Their own group
         % ("Bit noise" divider) under the raw channels in SpecCheckPanel's
         % first column.
         BitNoiseOrder cell = {'bit24_noise_f','bit20_noise_f','bit16_noise_f','accel_noise_f'}
@@ -288,10 +289,10 @@ classdef MODvis_spectra < handle
         % a1-a3 in g). The LSB comes from the L1 file's epsi_conversion
         % (mod_efe_conversion.m), or the standard EFE if it has none.
         % With delta = LSB*2^(24-N), each bit depth is drawn twice
-        % in one color, flat over 0..Fs_epsi/2 (one-sided, like
+        % in one color, flat over 0..f_sample_epsi/2 (one-sided, like
         % periodogram's 'psd' in mod_scan_get_spectra.m): solid at the
-        % quantization-noise mean square delta^2/12 / (Fs/2), dashed at
-        % delta^2 / (Fs/2). Colors match Faster_app.py's light theme.
+        % quantization-noise mean square delta^2/12 / (f_sample/2), dashed at
+        % delta^2 / (f_sample/2). Colors match Faster_app.py's light theme.
         BitNoiseBits = [24 20 16]
         BitNoiseColors = [90 90 90; 180 60 60; 60 140 60]./255
         % Accelerometer sensor noise from the accelerometer documentation,
@@ -886,6 +887,12 @@ classdef MODvis_spectra < handle
                 uialert(app.Fig, "Failed to load: " + fp + newline + ME.message, "Load error");
                 return;
             end
+            if ~isfield(S, 'Profile') && any(isfield(S, {'Fs_epsi', 'N_epsi'}))
+                uialert(app.Fig, "This L2 file is from before 2026-10-21 (Fs_epsi/N_epsi, now " + ...
+                    "f_sample_epsi/n_samples_scan_epsi). Reprocess L2: delete processed/<run>/L2/ " + ...
+                    "or reset the survey.", "Old L2 file");
+                return;
+            end
 
             % Carry the selection across profiles by depth rather than by
             % index - profiles have different scan counts, so the same
@@ -1030,11 +1037,11 @@ classdef MODvis_spectra < handle
             app.ChannelCheck.t1_noise_shifted_f.Visible = ~isempty(pu.noise_coefs) && any(strcmp(l2_channels, 't1_volt_f'));
             app.ChannelCheck.t2_noise_shifted_f.Visible = ~isempty(pu.noise_coefs) && any(strcmp(l2_channels, 't2_volt_f'));
             hasTempFs = isfield(app.CurrentData,'temperature') && ~isempty(app.CurrentData.temperature) ...
-                && isfield(app.CurrentData,'Fs_epsi') && isfinite(app.CurrentData.Fs_epsi);
+                && isfield(app.CurrentData,'f_sample_epsi') && isfinite(app.CurrentData.f_sample_epsi);
             app.ChannelCheck.fpo7_noise_modeled_f.Visible = ~isempty(pu.noise_coefs) && hasTempFs;
 
-            % Bit-noise floors need only Fs_epsi (see plotBitNoiseLines).
-            hasFs = isfield(app.CurrentData,'Fs_epsi') && isfinite(app.CurrentData.Fs_epsi);
+            % Bit-noise floors need only f_sample_epsi (see plotBitNoiseLines).
+            hasFs = isfield(app.CurrentData,'f_sample_epsi') && isfinite(app.CurrentData.f_sample_epsi);
             for i = 1:numel(app.BitNoiseOrder)
                 app.ChannelCheck.(app.BitNoiseOrder{i}).Visible = hasFs;
             end
@@ -1469,8 +1476,9 @@ classdef MODvis_spectra < handle
             % (Profile.pr/.f/.Pt_volt_f.(ch)/.Ps_volt_f.(ch)/.Pa_g_f.(ch),
             % Profile.Meta_Data.PROCESS/.AFE) into this class's own
             % CurrentData shape (dnum/pressure/spectra.f/spectra.(ch)_f/
-            % N_epsi/Fs_epsi/nfft/dof), so every other method (getChannelList,
-            % plotRow, plotSpectrum, scanWindow, ...) can stay format-agnostic.
+            % n_samples_scan_epsi/f_sample_epsi/nfft/dof), so every other
+            % method (getChannelList, plotRow, plotSpectrum, scanWindow,
+            % ...) can stay format-agnostic.
             S2 = struct();
             S2.dnum = Profile.dnum(:);
             S2.pressure = Profile.pr(:);
@@ -1501,20 +1509,20 @@ classdef MODvis_spectra < handle
             end
             S2.nfft = app.getFieldOr(Profile, 'nfft', NaN);
             dof = NaN;
-            Fs_epsi = NaN;
+            f_sample_epsi = NaN;
             if isfield(Meta_Data, 'PROCESS') && isstruct(Meta_Data.PROCESS)
                 dof = app.getFieldOr(Meta_Data.PROCESS, 'dof', NaN);
-                Fs_epsi = app.getFieldOr(Meta_Data.PROCESS, 'Fs_epsi', NaN);
+                f_sample_epsi = app.getFieldOr(Meta_Data.PROCESS, 'Fs_epsi', NaN); % MOD_fish_lib's name
             end
-            if isnan(Fs_epsi) && isfield(Meta_Data, 'AFE') && isstruct(Meta_Data.AFE)
+            if isnan(f_sample_epsi) && isfield(Meta_Data, 'AFE') && isstruct(Meta_Data.AFE)
                 % Real legacy files never carry Meta_Data.PROCESS.Fs_epsi -
                 % Meta_Data.AFE.FS is the confirmed fallback (same one
                 % SpectraExplorerApp.m already uses).
-                Fs_epsi = app.getFieldOr(Meta_Data.AFE, 'FS', NaN);
+                f_sample_epsi = app.getFieldOr(Meta_Data.AFE, 'FS', NaN);
             end
             S2.dof = dof;
-            S2.Fs_epsi = Fs_epsi;
-            S2.N_epsi = (dof - 1) * S2.nfft;
+            S2.f_sample_epsi = f_sample_epsi;
+            S2.n_samples_scan_epsi = (dof - 1) * S2.nfft;
 
             % --- FPO7 noise-floor checkboxes (fpo7_noise_f/
             % t1_noise_shifted_f/t2_noise_shifted_f/fpo7_noise_modeled_f -
@@ -2462,10 +2470,10 @@ classdef MODvis_spectra < handle
 
         function [t0, t1] = scanWindow(app, idx)
             t0 = []; t1 = [];
-            if ~isfield(app.CurrentData,'N_epsi') || ~isfield(app.CurrentData,'Fs_epsi')
+            if ~isfield(app.CurrentData,'n_samples_scan_epsi') || ~isfield(app.CurrentData,'f_sample_epsi')
                 return
             end
-            half_days = (app.CurrentData.N_epsi / 2) / app.CurrentData.Fs_epsi / 86400;
+            half_days = (app.CurrentData.n_samples_scan_epsi / 2) / app.CurrentData.f_sample_epsi / 86400;
             center = app.GlobalDnum(idx);
             t0 = center - half_days;
             t1 = center + half_days;
@@ -2602,8 +2610,8 @@ classdef MODvis_spectra < handle
             end
 
             scanlen_s = NaN;
-            if isfield(app.CurrentData,'N_epsi') && isfield(app.CurrentData,'Fs_epsi')
-                scanlen_s = app.CurrentData.N_epsi / app.CurrentData.Fs_epsi;
+            if isfield(app.CurrentData,'n_samples_scan_epsi') && isfield(app.CurrentData,'f_sample_epsi')
+                scanlen_s = app.CurrentData.n_samples_scan_epsi / app.CurrentData.f_sample_epsi;
             end
             nfft = app.getFieldOr(app.CurrentData, 'nfft', app.getFieldOr(app.CurrentData, 'fft_length', NaN));
             dof  = app.getFieldOr(app.CurrentData, 'dof', NaN);
@@ -2689,7 +2697,7 @@ classdef MODvis_spectra < handle
             % rather than re-derived, since the guard conditions are
             % identical (needs bench noise_coefs for context even though
             % the modeled floor itself doesn't use them directly, plus
-            % local temperature and Fs_epsi).
+            % local temperature and f_sample_epsi).
             for i = 1:numel(app.ModeledFreqCutoffOrder)
                 app.CurrentData.(app.ModeledFreqCutoffOrder{i}) = [];
             end
@@ -2709,7 +2717,7 @@ classdef MODvis_spectra < handle
             % to the original array; f(valid(fc_idx)) would be a bug (valid
             % is logical, so valid(fc_idx) evaluates to true/false, and
             % f(true) silently reads f(1), not the intended bin)
-            fs = app.CurrentData.Fs_epsi;
+            f_sample = app.CurrentData.f_sample_epsi;
             electronics_filter = mod_scan_adc_filter(f(valid), 'sinc4').^2;
 
             hasK = isfield(app.CurrentData.spectra, 'k') && ~isempty(app.CurrentData.spectra.k) ...
@@ -2734,7 +2742,7 @@ classdef MODvis_spectra < handle
                     if iScan > numel(app.CurrentData.temperature); break; end
                     T = app.CurrentData.temperature(iScan);
                     if ~isfinite(T); continue; end
-                    noise_f = mod_scan_fpo7_modeled_noise_f(f(valid), T, fs, electronics_filter);
+                    noise_f = mod_scan_fpo7_modeled_noise_f(f(valid), T, f_sample, electronics_filter);
                     medspec = smoothdata(Pt_volt_f(iScan, valid)', 'movmean', app.NSmoothFSpectrum);
                     fc_idx = mod_scan_fpo7_cutoff_search(f(valid), medspec, noise_f, ...
                         app.ModeledCutoffSNmin, app.ModeledCutoffNskip, app.ModeledCutoffContamFreqHz);
@@ -2795,8 +2803,8 @@ classdef MODvis_spectra < handle
             % SpecAxes (see BitNoiseBits), from f's lowest nonzero bin to
             % its highest (Nyquist). Each bit depth's SpecLines entry is
             % its [solid dashed] pair, so one checkbox toggles both.
-            fs = app.getFieldOr(app.CurrentData, 'Fs_epsi', NaN);
-            if ~isfinite(fs) || isempty(f)
+            f_sample = app.getFieldOr(app.CurrentData, 'f_sample_epsi', NaN);
+            if ~isfinite(f_sample) || isempty(f)
                 return
             end
             fEnds = [f(1) f(end)];
@@ -2805,8 +2813,8 @@ classdef MODvis_spectra < handle
                 ch = app.BitNoiseOrder{i};
                 delta2 = (c.scale * 2^(app.BitNoiseConversion.bit_counts - app.BitNoiseBits(i)))^2;
                 clr = app.getSignalColor(ch);
-                hSolid = loglog(app.SpecAxes, fEnds, delta2/12/(fs/2) * [1 1], '-', 'Color', clr, 'LineWidth', 1);
-                hDashed = loglog(app.SpecAxes, fEnds, delta2/(fs/2) * [1 1], '--', 'Color', clr, 'LineWidth', 1);
+                hSolid = loglog(app.SpecAxes, fEnds, delta2/12/(f_sample/2) * [1 1], '-', 'Color', clr, 'LineWidth', 1);
+                hDashed = loglog(app.SpecAxes, fEnds, delta2/(f_sample/2) * [1 1], '--', 'Color', clr, 'LineWidth', 1);
                 h = [hSolid hDashed];
                 set(h, 'Visible', app.ChannelOn.(ch));
                 app.SpecLines.(ch) = h;
@@ -2863,8 +2871,8 @@ classdef MODvis_spectra < handle
                         return
                     end
                     T  = app.CurrentData.temperature(idx);
-                    fs = app.getFieldOr(app.CurrentData, 'Fs_epsi', NaN);
-                    if ~isfinite(T) || ~isfinite(fs)
+                    f_sample = app.getFieldOr(app.CurrentData, 'f_sample_epsi', NaN);
+                    if ~isfinite(T) || ~isfinite(f_sample)
                         return
                     end
                     Pxx = nan(size(f));
@@ -2874,7 +2882,7 @@ classdef MODvis_spectra < handle
                     % mod_scan_adc_filter.m) - legacy Profile files carry
                     % no metadata.AFE.(ch).ADCfilter to read this from.
                     electronics_filter = mod_scan_adc_filter(f(valid), 'sinc4').^2;
-                    Pxx(valid) = mod_scan_fpo7_modeled_noise_f(f(valid), T, fs, electronics_filter);
+                    Pxx(valid) = mod_scan_fpo7_modeled_noise_f(f(valid), T, f_sample, electronics_filter);
             end
         end
 

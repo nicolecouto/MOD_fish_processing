@@ -37,7 +37,7 @@ function metadata = MODprocess_L1_apply_ucond_calibration(L1_dir, metadata, Pres
 % INPUTS
 %   L1_dir             - folder of L1 .mat files (top-level epsi and ctd)
 %   metadata           - from MODsetup_read_yaml.m. Uses PROCESS.channels,
-%                        PROCESS.Fs_epsi, AFE.(ch).type/.ADCfilter/.full_range,
+%                        PROCESS.f_sample_epsi, AFE.(ch).type/.ADCfilter/.full_range,
 %                        PROCESS.UCOND, PROFILES.profile_dir/
 %                        .speedLim_scan_m_s/.ctd_gap_factor,
 %                        PROCESS.epsi_gap_factor
@@ -81,10 +81,10 @@ end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
     {'ucond_gain_fit_window_s', 'ucond_gain_fit_fmax_hz', 'ucond_gain_fit_max', 'ucond_rail_fraction', ...
      'ucond_preemphasis_R22_ohm', 'ucond_preemphasis_R24_ohm', 'ucond_preemphasis_R25_ohm', ...
-     'ucond_preemphasis_C19_F', 'ucond_antialias_sinc_power', 'Fs_epsi', ...
+     'ucond_preemphasis_C19_F', 'ucond_antialias_sinc_power', 'f_sample_epsi', ...
      'profile_dir', 'speedLim_scan_m_s', 'ctd_gap_factor', 'epsi_gap_factor'});
 U = metadata.PROCESS.UCOND;
-Fs_epsi = metadata.PROCESS.Fs_epsi;
+f_sample_epsi = metadata.PROCESS.f_sample_epsi;
 
 [epsi, ctd] = concat_L1(L1_dir, cellfun(@(ch) [ch '_volt'], ucond_channels, 'UniformOutput', false));
 if isempty(epsi.dnum) || isempty(ctd.dnum)
@@ -104,10 +104,10 @@ for iC = 1:numel(ucond_channels)
         if any(isnan(C)) || any(isnan(V)) || any(abs(V) >= U.rail_fraction * metadata.AFE.(ch).full_range)
             continue
         end
-        Fs_ctd = 1 / (86400 * median(diff(ctd.dnum(rc(iW, 1):rc(iW, 2)))));
-        [P_C, f_C] = periodogram(detrend(C), hann(numel(C)), numel(C), Fs_ctd);
-        [P_V, f_V] = periodogram(detrend(V), hann(numel(V)), numel(V), Fs_epsi);
-        H2 = mod_scan_ucond_electronics_filter(f_V, U, Fs_epsi, adc_filter(metadata.AFE.(ch)));
+        f_sample_ctd = 1 / (86400 * median(diff(ctd.dnum(rc(iW, 1):rc(iW, 2)))));
+        [P_C, f_C] = periodogram(detrend(C), hann(numel(C)), numel(C), f_sample_ctd);
+        [P_V, f_V] = periodogram(detrend(V), hann(numel(V)), numel(V), f_sample_epsi);
+        H2 = mod_scan_ucond_electronics_filter(f_V, U, f_sample_epsi, adc_filter(metadata.AFE.(ch)));
         band_C = f_C > 0 & f_C <= U.gain_fit_fmax_hz;
         band_V = f_V > 0 & f_V <= U.gain_fit_fmax_hz;
         gain(iW) = sqrt(mean(P_C(band_C)) / mean(P_V(band_V) ./ H2(band_V)));

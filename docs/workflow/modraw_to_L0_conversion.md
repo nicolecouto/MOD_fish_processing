@@ -68,7 +68,7 @@ Four small functions share the work, so the numbers live in exactly one place:
 
 | Function | Does |
 |---|---|
-| `setup/MODsetup_default_efe.m` | The standard EFE board: slot order, type, full range, ADC config, plus `Fs_epsi` (320 Hz), 24 bits, gain 1, and the accelerometer's 0.9 V zero-g offset and 0.4 V/g sensitivity |
+| `setup/MODsetup_default_efe.m` | The standard EFE board: slot order, type, full range, ADC config, plus `f_sample_epsi` (320 Hz), 24 bits, gain 1, and the accelerometer's 0.9 V zero-g offset and 0.4 V/g sensitivity |
 | `processing/mod_efe_conversion.m` | Builds the per-channel record: name, config, and the exact linear map `value = counts * scale + offset`. Starts from the standard board and takes whatever metadata supplies; anything metadata leaves out falls back to that **slot's** default |
 | `processing/mod_efe_counts_to_volts_g.m` | `channel1..N` counts → `<name>_volt` / `<name>_g`, returns the record |
 | `processing/mod_efe_volts_g_to_counts.m` | Exact inverse - recovers the integer counts |
@@ -85,7 +85,7 @@ Standard EFE board:
 
 - `README` - plain text: how to read the record and recover counts, with every channel's formula written out with its numbers, e.g. `s1 (slot 3, Bipolar, full_range 2.5 V): counts = (s1_volt + 2.5) * 2^23/2.5`. Type `disp(L0_data.epsi_conversion.README)`.
 - `channel.(name)` - per channel: `slot`, `field`, `unit`, `type`, `full_range`, `ADCconf`, `scale` [unit/count], `offset` [unit], `how_to_recover_counts`, and where the name and config came from (`name_source`, `config_source`).
-- `channels` (names in slot order), `source`, `Fs_epsi` (and its source), `bit_counts`, `gain`, `acc_offset_V`, `acc_factor_V_per_g`.
+- `channels` (names in slot order), `source`, `f_sample_epsi` (and its source), `bit_counts`, `gain`, `acc_offset_V`, `acc_factor_V_per_g`.
 
 `scale` is also one ADC LSB in the channel's own units, which is what the bit-noise lines in `MODvis_spectra_L0.m` / `MODvis_spectra.m` use.
 

@@ -10,8 +10,8 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %   which calls this first, then loops over the indices this returns to
 %   slice data and compute everything else per scan).
 %
-%   Tiles epsi into N_epsi-sample scans overlapping by scan_overlap
-%   (scan_step = (1-scan_overlap)*N_epsi) - N_epsi (scan_length) is derived
+%   Tiles epsi into n_samples_scan_epsi-sample scans overlapping by scan_overlap
+%   (scan_step = (1-scan_overlap)*n_samples_scan_epsi) - n_samples_scan_epsi (scan_length) is derived
 %   from fft_length/fft_segments_per_scan
 %   (processing/scans/mod_scan_length_from_segments.m), not itself a yaml-
 %   configurable field. Also derives the within-scan fft segment start
@@ -38,7 +38,7 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %       modProcess_extract_profile.m - never by the realtime per-file
 %       path), any candidate scan window whose samples span more than one
 %       segment_id is skipped - the profile-cut generalization of "a
-%       trailing partial window that doesn't reach a full N_epsi samples
+%       trailing partial window that doesn't reach a full n_samples_scan_epsi samples
 %       is dropped, not padded" (see NOTES). Absent epsi.segment_id, this
 %       check is a no-op, so realtime-mode behavior is unchanged.
 %
@@ -49,8 +49,8 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %              modProcess_extract_profile.m) - see DESCRIPTION.
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %              metadata.PROCESS.fft_length, .fft_segments_per_scan
-%              (together derive N_epsi/scan_length, dof, and
-%              fft_seg_starts - see OUTPUTS), .scan_overlap, .Fs_epsi,
+%              (together derive n_samples_scan_epsi/scan_length, dof, and
+%              fft_seg_starts - see OUTPUTS), .scan_overlap, .f_sample_epsi,
 %              and, with PressureTimeseries, PROFILES.profile_dir,
 %              PROFILES.speedLim_scan_m_s and PROFILES.ctd_gap_factor.
 %   PressureTimeseries - (optional) struct with dnum, dPdt_smoothed (from
@@ -66,7 +66,7 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 % OUTPUTS
 %   tiled_scans - struct with, for each kept scan:
 %     idx0, idx1 - nbscan x 1 each, absolute sample bounds into epsi for
-%                  this scan (idx1 = idx0 + N_epsi - 1)
+%                  this scan (idx1 = idx0 + n_samples_scan_epsi - 1)
 %     dnum       - nbscan x 1, scan center time [datenum] - a byproduct of
 %                  the same validity loop that computes idx0/idx1 (needed
 %                  to check direction/segment gating), kept here rather
@@ -76,9 +76,9 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 %                  same for every scan, so this is not stacked per scan. A
 %                  given scan's absolute per-segment start indices are
 %                  idx0 + fft_seg_starts - 1.
-%     fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, scan_step -
+%     fft_length, fft_segments_per_scan, dof, f_sample_epsi, n_samples_scan_epsi, scan_step -
 %                  provenance. fft_segments_per_scan is the actual
-%                  yaml-configurable input; N_epsi (scan_length) is
+%                  yaml-configurable input; n_samples_scan_epsi (scan_length) is
 %                  derived from it and fft_length
 %                  (processing/scans/mod_scan_length_from_segments.m), and dof
 %                  from fft_segments_per_scan alone (processing/scans/mod_scan_dof.m).
@@ -97,7 +97,7 @@ function tiled_scans = mod_L2_tile_scans(epsi, metadata, PressureTimeseries)
 % NOTES
 %   File-boundary/segment-boundary coverage gaps (a partial window at the
 %   end of the record - or, when epsi.segment_id is present, at any
-%   internal gap - that doesn't reach a full N_epsi samples) is dropped,
+%   internal gap - that doesn't reach a full n_samples_scan_epsi samples) is dropped,
 %   not padded from beyond the boundary. In realtime mode this is an
 %   accepted, documented limitation (see MODprocess_single_L1_to_L2.m); in
 %   profile-cut mode it only ever triggers at a genuine timestamp gap
@@ -112,7 +112,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'fft_length', 'fft_segments_per_scan', 'scan_overlap', 'Fs_epsi'});
+    {'fft_length', 'fft_segments_per_scan', 'scan_overlap', 'f_sample_epsi'});
 
 if nargin < 3
     PressureTimeseries = [];
@@ -147,13 +147,13 @@ have_segment_id = isfield(epsi, 'segment_id') && ~isempty(epsi.segment_id);
 
 fft_length = metadata.PROCESS.fft_length;
 fft_segments_per_scan = metadata.PROCESS.fft_segments_per_scan;
-Fs_epsi = metadata.PROCESS.Fs_epsi;
-N_epsi = mod_scan_length_from_segments(fft_length, fft_segments_per_scan);
-scan_step = round((1 - metadata.PROCESS.scan_overlap) * N_epsi);
+f_sample_epsi = metadata.PROCESS.f_sample_epsi;
+n_samples_scan_epsi = mod_scan_length_from_segments(fft_length, fft_segments_per_scan);
+scan_step = round((1 - metadata.PROCESS.scan_overlap) * n_samples_scan_epsi);
 dof = mod_scan_dof(fft_segments_per_scan);
 fft_seg_starts = mod_scan_fft_seg_starts(fft_length, fft_segments_per_scan);
 
-tiled_scans = empty_tiled_scans(fft_length, fft_segments_per_scan, dof, Fs_epsi, N_epsi, ...
+tiled_scans = empty_tiled_scans(fft_length, fft_segments_per_scan, dof, f_sample_epsi, n_samples_scan_epsi, ...
     scan_step, fft_seg_starts);
 
 if isempty(epsi) || ~isfield(epsi, 'dnum') || isempty(epsi.dnum)
@@ -161,11 +161,11 @@ if isempty(epsi) || ~isfield(epsi, 'dnum') || isempty(epsi.dnum)
 end
 
 n_samples = numel(epsi.dnum);
-if n_samples < N_epsi
+if n_samples < n_samples_scan_epsi
     return % too short for even one scan
 end
 
-scan_starts = 1:scan_step:(n_samples - N_epsi + 1);
+scan_starts = 1:scan_step:(n_samples - n_samples_scan_epsi + 1);
 nbscan_candidate = numel(scan_starts);
 
 idx0_all = nan(nbscan_candidate, 1);
@@ -181,7 +181,7 @@ keep = false(nbscan_candidate, 1);
 % both get NaN, which counts as neither down nor up, rather than being
 % nearest-matched to a potentially far-distant, meaningless sample.
 if have_direction_gate
-    centers = epsi.dnum(scan_starts + floor(N_epsi / 2) - 1);
+    centers = epsi.dnum(scan_starts + floor(n_samples_scan_epsi / 2) - 1);
     centers = centers(:);
     dPdt = nan(nbscan_candidate, 1);
     if numel(pt_dnum) >= 2
@@ -205,7 +205,7 @@ end
 
 for iScan = 1:nbscan_candidate
     idx0 = scan_starts(iScan);
-    idx1 = idx0 + N_epsi - 1;
+    idx1 = idx0 + n_samples_scan_epsi - 1;
 
     if have_segment_id
         seg_window = epsi.segment_id(idx0:idx1);
@@ -214,7 +214,7 @@ for iScan = 1:nbscan_candidate
         end
     end
 
-    center_idx = idx0 + floor(N_epsi / 2) - 1;
+    center_idx = idx0 + floor(n_samples_scan_epsi / 2) - 1;
     center_dnum = epsi.dnum(center_idx);
 
     if have_direction_gate && ~direction_ok(iScan)
@@ -235,8 +235,8 @@ end %end function
 
 %% Empty-scan-count output shape, so callers get consistent fields even
 % when there are no kept scans.
-function tiled_scans = empty_tiled_scans(fft_length, fft_segments_per_scan, dof, Fs_epsi, ...
-    N_epsi, scan_step, fft_seg_starts)
+function tiled_scans = empty_tiled_scans(fft_length, fft_segments_per_scan, dof, f_sample_epsi, ...
+    n_samples_scan_epsi, scan_step, fft_seg_starts)
 tiled_scans.idx0 = [];
 tiled_scans.idx1 = [];
 tiled_scans.dnum = [];
@@ -244,7 +244,7 @@ tiled_scans.fft_seg_starts = fft_seg_starts;
 tiled_scans.fft_length = fft_length;
 tiled_scans.fft_segments_per_scan = fft_segments_per_scan;
 tiled_scans.dof = dof;
-tiled_scans.Fs_epsi = Fs_epsi;
-tiled_scans.N_epsi = N_epsi;
+tiled_scans.f_sample_epsi = f_sample_epsi;
+tiled_scans.n_samples_scan_epsi = n_samples_scan_epsi;
 tiled_scans.scan_step = scan_step;
 end

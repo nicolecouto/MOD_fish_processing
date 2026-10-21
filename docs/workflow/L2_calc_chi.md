@@ -55,7 +55,7 @@ This is the one term the whole branch is about. A physical FP07 bead can't insta
 metadata = MODsetup_define_filters(metadata)   % via MODsetup_add_derived_metadata.m, right after MODsetup_read_yaml.m
 ```
 
-Ports the rest of `MOD_fish_lib`'s `get_filters_SOM.m` - everything that depends only on `f` (from `metadata.PROCESS.fft_length`/`.Fs_epsi`) and `metadata.AFE.(ch)`, not on per-scan fall speed, so (unlike Module 2's thermal rolloff) it's a genuine deployment-level constant, resolved once and persisted the same way `volts_to_C` is:
+Ports the rest of `MOD_fish_lib`'s `get_filters_SOM.m` - everything that depends only on `f` (from `metadata.PROCESS.fft_length`/`.f_sample_epsi`) and `metadata.AFE.(ch)`, not on per-scan fall speed, so (unlike Module 2's thermal rolloff) it's a genuine deployment-level constant, resolved once and persisted the same way `volts_to_C` is:
 
 - **fpo7**: `electronics_filter = H_adc²`, where `H_adc = (sinc(f/(2*f(end))))⁴` is the AFE's sinc⁴ ADC anti-alias response (`metadata.AFE.(ch).ADCfilter`, defaulted to `'sinc4'` by `MODsetup_read_yaml.m` if the yaml doesn't specify one) - matches `get_filters_SOM.m`'s `H.electFPO7.^2` term inside `H.FPO7`.
 - **shear**: `electronics_filter = (H_ca .* H_adc)²`, where `H_ca` is the probe's charge-amp response, interpolated from a network-analysis measurement (`cap1nFres200Meg_5KohmInput.mat`, vendored from `MOD_fish_lib` into `calibrations_root/SHEAR/` - see "Calibration file" below). Missing file → warning, channel left without `electronics_filter`, same "missing calibration is not exceptional" convention as shear's `.cal`/fpo7's `.volts_to_C`.

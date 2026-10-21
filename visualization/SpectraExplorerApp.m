@@ -396,16 +396,16 @@ classdef SpectraExplorerApp < handle
             % without computing any spectra (fast index arithmetic only).
             Meta_Data = app.Profile.Meta_Data;
             try
-                Fs_epsi = Meta_Data.PROCESS.Fs_epsi;
+                f_sample_epsi = Meta_Data.PROCESS.Fs_epsi;
             catch
-                Fs_epsi = Meta_Data.AFE.FS;
+                f_sample_epsi = Meta_Data.AFE.FS;
             end
             dof    = Meta_Data.PROCESS.dof;
             nfft   = Meta_Data.PROCESS.nfft;
-            N_epsi = (dof - 1) * nfft;
-            Fs_ctd = Meta_Data.PROCESS.Fs_ctd;
-            tscan  = N_epsi / Fs_epsi;
-            N_ctd  = tscan * Fs_ctd - mod(tscan * Fs_ctd, 2);
+            n_samples_scan_epsi = (dof - 1) * nfft;
+            f_sample_ctd = Meta_Data.PROCESS.Fs_ctd;
+            tscan  = n_samples_scan_epsi / f_sample_epsi;
+            n_samples_ctd = tscan * f_sample_ctd - mod(tscan * f_sample_ctd, 2);
 
             LCTD  = length(app.Profile.ctd.P);
             LEPSI = length(app.Profile.epsi.time_s);
@@ -415,14 +415,14 @@ classdef SpectraExplorerApp < handle
             for k = 1:nScans
                 Pr = app.Profile.pr(k);
                 [~, indP] = min(abs(app.Profile.ctd.P - Pr));
-                ics = indP - N_ctd/2;
-                ice = indP + N_ctd/2 - 1;
+                ics = indP - n_samples_ctd/2;
+                ice = indP + n_samples_ctd/2 - 1;
 
                 ind_Pr_epsi = find( ...
                     app.Profile.epsi.dnum < app.Profile.ctd.dnum(indP), 1, 'last');
                 if isempty(ind_Pr_epsi), continue; end
-                iss = ind_Pr_epsi - N_epsi/2;
-                ise = ind_Pr_epsi + N_epsi/2 - 1;
+                iss = ind_Pr_epsi - n_samples_scan_epsi/2;
+                ise = ind_Pr_epsi + n_samples_scan_epsi/2 - 1;
 
                 if ics > 0 && ice <= LCTD && iss > 0 && ise <= LEPSI
                     valid(k) = true;

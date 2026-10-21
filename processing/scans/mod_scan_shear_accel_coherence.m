@@ -32,7 +32,7 @@ function scan = mod_scan_shear_accel_coherence(scan, metadata, channel)
 %                  epsi.a3_g           - accelerometer channel 'a3' raw
 %                        time series, same length
 %   metadata   - metadata struct (from MODsetup_read_yaml.m). Uses:
-%                  metadata.PROCESS.fft_length, .Fs_epsi
+%                  metadata.PROCESS.fft_length, .f_sample_epsi
 %                  metadata.PROCESS.EPSILON.coherence_fmin_hz,
 %                    .coherence_fmax_hz - band the diagnostic sum
 %                    integrates over (see OUTPUTS)
@@ -45,7 +45,7 @@ function scan = mod_scan_shear_accel_coherence(scan, metadata, channel)
 %     spectra.(channel)_coh_a3     - magnitude-squared coherence vs. f,
 %                              same shape as spectra.f (assumed identical
 %                              frequency grid to mscohere's own output at
-%                              the same fft_length/Fs_epsi - same trust
+%                              the same fft_length/f_sample_epsi - same trust
 %                              MODsetup_define_filters.m's NOTES already
 %                              document for a dummy pwelch call). Empty if
 %                              either channel is missing from scan.epsi
@@ -72,10 +72,10 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
-    {'fft_length', 'Fs_epsi', 'coherence_fmin_hz', 'coherence_fmax_hz'});
+    {'fft_length', 'f_sample_epsi', 'coherence_fmin_hz', 'coherence_fmax_hz'});
 
 fft_length = metadata.PROCESS.fft_length;
-Fs_epsi = metadata.PROCESS.Fs_epsi;
+f_sample_epsi = metadata.PROCESS.f_sample_epsi;
 fmin = metadata.PROCESS.EPSILON.coherence_fmin_hz;
 fmax = metadata.PROCESS.EPSILON.coherence_fmax_hz;
 
@@ -91,7 +91,7 @@ end
 
 noverlap = round(0.5 * fft_length); % matches mod_scan_fft_seg_starts.m's hardcoded 50% overlap
 [Cxy, fe] = mscohere(detrend(scan.epsi.(shear_field)), detrend(scan.epsi.(accel_field)), ...
-    fft_length, noverlap, fft_length, Fs_epsi);
+    fft_length, noverlap, fft_length, f_sample_epsi);
 
 scan.spectra.(coh_field) = Cxy(:)';
 scan.spectra.([coh_field '_sum']) = sum(Cxy(fe > fmin & fe < fmax)) * mean(diff(fe), 'omitnan');

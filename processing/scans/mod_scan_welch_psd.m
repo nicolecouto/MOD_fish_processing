@@ -1,7 +1,7 @@
-function [Pxx, f] = mod_scan_welch_psd(x, fft_length, seg_starts, Fs, taper, detrend_type)
+function [Pxx, f] = mod_scan_welch_psd(x, fft_length, seg_starts, f_sample, taper, detrend_type)
 % mod_scan_welch_psd        Part of MOD_fish_processing
 %
-% [Pxx, f] = mod_scan_welch_psd(x, fft_length, seg_starts, Fs, taper, detrend_type)
+% [Pxx, f] = mod_scan_welch_psd(x, fft_length, seg_starts, f_sample, taper, detrend_type)
 %
 % DESCRIPTION
 %   Welch-averaged one-sided power spectral density, with each segment
@@ -17,7 +17,7 @@ function [Pxx, f] = mod_scan_welch_psd(x, fft_length, seg_starts, Fs, taper, det
 %                  zero-padding)
 %   seg_starts   - 1-based start index of each segment in x (e.g. from
 %                  mod_scan_fft_seg_starts.m); every segment must fit in x
-%   Fs           - sample rate [Hz]
+%   f_sample           - sample rate [Hz]
 %   taper        - (optional) 'hamming' (default) or 'hann'
 %   detrend_type - (optional) per-segment detrend: 'linear' (default),
 %                  'constant' (remove the mean), or 'none'
@@ -67,7 +67,7 @@ for iSeg = 1:nseg
             error('mod_scan_welch_psd:unknownDetrend', ...
                 'Unknown detrend "%s" - use linear, constant or none.', detrend_type);
     end
-    [Pseg, f] = periodogram(seg, window, fft_length, Fs, 'psd');
+    [Pseg, f] = periodogram(seg, window, fft_length, f_sample, 'psd');
     if isempty(Pxx)
         Pxx = Pseg;
     else
