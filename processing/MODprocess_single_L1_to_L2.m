@@ -224,6 +224,14 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %                   fpo7 channel in chi_obs_channels (see chi_obs above) -
 %                   computed only for scans where L2data.epsilon_final
 %                   (above) is finite. NaN for every scan otherwise.
+%     chi_ucond.(channel), chi_ucond_kmax.(channel) - microconductivity
+%                   chi [degC^2/s] and the upper integration bound [cpm],
+%                   nbscan x 1, one field per microcond channel with a
+%                   fitted metadata.AFE.(channel).volts_to_S_per_m
+%                   (MODprocess_L1_apply_ucond_calibration.m) AND real CTD
+%                   T/S - see mod_scan_calc_chi_ucond.m. NaN for a railed
+%                   scan. spectra.(channel)_dCdz_k holds the
+%                   conductivity-gradient spectrum it integrated.
 %     epsilon_obs.(channel), .epsilon_obs_kc.(channel),
 %     epsilon_obs_coh_corr.(channel), .epsilon_obs_coh_corr_kc.(channel),
 %     epsilon_mle.(channel), .fom.(channel), .fom_mle.(channel),
@@ -263,7 +271,8 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %   channels with a resolved volts_to_C calibration), mod_scan_calc_chi_mle.m
 %   (only for scans with a finite epsilon estimate),
 %   mod_scan_calc_epsilon.m (only for shear channels with a resolved
-%   Sv calibration), MODsetup_validate_metadata.m
+%   Sv calibration), mod_scan_calc_chi_ucond.m (only for microcond
+%   channels with a fitted gain), MODsetup_validate_metadata.m
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -384,6 +393,21 @@ if have_ctd_ts
     end
 end
 
+% Which microconductivity channels can get chi_ucond: those with a fitted
+% gain (MODprocess_L1_apply_ucond_calibration.m) and an electronics
+% response (MODsetup_define_filters.m), with CTD T/S for dT/dC and ktemp
+ucond_channels = {};
+if have_ctd_ts
+    for iC = 1:numel(metadata.PROCESS.channels)
+        ch = metadata.PROCESS.channels{iC};
+        if isfield(metadata.AFE, ch) && strcmpi(metadata.AFE.(ch).type, 'microcond') ...
+                && isfield(metadata.AFE.(ch), 'volts_to_S_per_m') ...
+                && isfield(metadata.AFE.(ch), 'electronics_filter')
+            ucond_channels{end+1} = ch; %#ok<AGROW>
+        end
+    end
+end
+
 dnum_all = tiled_scans.dnum;
 pressure_all = nan(nbscan, 1);
 w_all = nan(nbscan, 1);
@@ -402,6 +426,12 @@ end
 chi_mle_all = struct();
 for iC = 1:numel(chi_obs_channels)
     chi_mle_all.(chi_obs_channels{iC}) = nan(nbscan, 1);
+end
+chi_ucond_all = struct();
+chi_ucond_kmax_all = struct();
+for iC = 1:numel(ucond_channels)
+    chi_ucond_all.(ucond_channels{iC}) = nan(nbscan, 1);
+    chi_ucond_kmax_all.(ucond_channels{iC}) = nan(nbscan, 1);
 end
 epsilon_fields = {'epsilon_obs', 'epsilon_obs_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_coh_corr_kc', ...
     'epsilon_mle', 'fom', 'fom_mle', 'coherence_sum'};
@@ -441,7 +471,7 @@ for iScan = 1:nbscan
         nu = visc(SR_all(iScan), temperature_all(iScan), pressure_all(iScan));
         nu_all(iScan) = nu;
 
-        if ~isempty(chi_obs_channels)
+        if ~isempty(chi_obs_channels) || ~isempty(ucond_channels)
             % Local variable deliberately NOT named "ktemp" - it would
             % shadow the toolbox/seawater/ktemp.m function itself once
             % assigned, breaking the call on every scan after the first
@@ -450,6 +480,25 @@ for iScan = 1:nbscan
             % in that scope).
             ktemp_scan = ktemp(SP_all(iScan), SR_all(iScan), temperature_all(iScan), pressure_all(iScan));
             ktemp_all(iScan) = ktemp_scan;
+        end
+
+        for iC = 1:numel(ucond_channels)
+            ch = ucond_channels{iC};
+            uc_scan = struct();
+            uc_scan.spectra.f = scan_results{iScan}.spectra.f;
+            uc_scan.spectra.Pc_volt_f = scan_results{iScan}.spectra.([ch '_volt_f']);
+            uc_scan.w = w_all(iScan);
+            uc_scan.ktemp = ktemp_scan;
+            uc_scan.SP = SP_all(iScan);
+            uc_scan.T = temperature_all(iScan);
+            uc_scan.P = pressure_all(iScan);
+            uc_scan.volts = scan.epsi.([ch '_volt']);
+            scan_results{iScan}.ucond.(ch) = mod_scan_calc_chi_ucond(uc_scan, metadata, ch);
+            chi_ucond_all.(ch)(iScan) = scan_results{iScan}.ucond.(ch).chi_ucond;
+            chi_ucond_kmax_all.(ch)(iScan) = scan_results{iScan}.ucond.(ch).chi_ucond_kmax;
+        end
+
+        if ~isempty(chi_obs_channels)
             for iC = 1:numel(chi_obs_channels)
                 ch = chi_obs_channels{iC};
                 volt_field = [ch '_volt_f'];
@@ -542,6 +591,11 @@ for iF = 1:numel(epsilon_fields)
         L2data.(field).(ch) = epsilon_all_by_field.(field).(ch);
     end
 end
+for iC = 1:numel(ucond_channels)
+    ch = ucond_channels{iC};
+    L2data.chi_ucond.(ch) = chi_ucond_all.(ch);
+    L2data.chi_ucond_kmax.(ch) = chi_ucond_kmax_all.(ch);
+end
 L2data.spectra.f = scan_results{1}.spectra.f;
 
 channels = setdiff(fieldnames(scan_results{1}.spectra), {'f', 'f_ctd'}, 'stable');
@@ -589,6 +643,25 @@ if ~isempty(chi_obs_channels)
         end
     end
     L2data.spectra.k = k_mat;
+end
+
+% Conductivity-gradient wavenumber spectrum per microconductivity channel -
+% what mod_scan_calc_chi_ucond.m integrated. k is the same f/abs(w) as
+% above, so it's only filled here when there's no FP07 chi.
+for iC = 1:numel(ucond_channels)
+    ch = ucond_channels{iC};
+    dCdz_mat = nan(nbscan, nfreq);
+    k_mat = nan(nbscan, nfreq);
+    for iScan = 1:nbscan
+        if isfield(scan_results{iScan}, 'ucond') && isfield(scan_results{iScan}.ucond, ch)
+            dCdz_mat(iScan, :) = scan_results{iScan}.ucond.(ch).spectra.Pc_dCdz_k;
+            k_mat(iScan, :) = scan_results{iScan}.ucond.(ch).spectra.k;
+        end
+    end
+    L2data.spectra.([ch '_dCdz_k']) = dCdz_mat;
+    if ~isfield(L2data.spectra, 'k')
+        L2data.spectra.k = k_mat;
+    end
 end
 
 % Raw and coherence-cleaned shear wavenumber spectra, per shear channel

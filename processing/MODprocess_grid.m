@@ -110,7 +110,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 5; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom. A grid from another version rebins every cast.
+GRID_VERSION = 6; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -453,7 +453,8 @@ end
 % epsilon_obs_coh_corr_kc before epsilon_obs
 function kinds = channel_kinds()
 kinds = {'epsilon_obs_coh_corr_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_kc', 'epsilon_obs', ...
-    'epsilon_mle', 'fom_mle', 'fom', 'coherence_sum', 'chi_obs_kc', 'chi_obs', 'chi_mle'};
+    'epsilon_mle', 'fom_mle', 'fom', 'coherence_sum', 'chi_obs_kc', 'chi_obs', 'chi_mle', ...
+    'chi_ucond_kmax', 'chi_ucond'};
 end
 
 %% Per-scan values from an L2 file, as nscan x 1 columns, and its

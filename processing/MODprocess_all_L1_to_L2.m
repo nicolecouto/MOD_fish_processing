@@ -100,7 +100,8 @@ function [L2_files, problems, processed] = MODprocess_all_L1_to_L2(L1_dir, metad
 %   file rather than producing nothing.
 %
 %   The derived values not in the yml - the AFE electronics filters and
-%   the FP07 volts_to_C fit from meta/fpo7_calibration.mat - are added here
+%   the probe fits (FP07 volts_to_C from meta/fpo7_calibration.mat,
+%   microconductivity volts_to_S_per_m from meta/ucond_calibration.mat) - are added here
 %   (MODsetup_add_derived_metadata.m), so metadata straight from
 %   MODsetup_read_yaml.m, in any session, gets FP07 chi and the
 %   electronics correction.

@@ -64,7 +64,7 @@ accelerometers. Reference lines on it:
   - see [From raw volts to a trustworthy wavenumber spectrum](../concepts/spectral_filtering_and_noise_floors.md#4-where-the-noise-floor-comes-in).
   Shaded up to 3x (the cutoff search's `SN_min`). For L2 the bench noise is
   `FPO7/FPO7_benchnoise.mat` under the run's `paths.calibrations_root` (from `meta/metadata.mat`),
-  or a `MOD_fish_calibrations` clone next to this repo when that path isn't mounted. The fc/kc
+  or `acquisition/config.yml`'s `calibrations_root` (this computer's setting) when that path isn't mounted. The fc/kc
   cutoffs and the Batchelor/Panchev overlays come from L2's `chi_obs_kc`, `t*_fc_index` and
   `epsilon_obs_kc`, renamed to the legacy names on load.
 - **Bit noise** (any file with `Fs_epsi`): flat ADC quantization-noise floors for 24/20/16 bits,

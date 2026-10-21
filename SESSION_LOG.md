@@ -4,6 +4,20 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-20 - Microconductivity chi, nothing hard-coded (branch `main-fork`)
+
+Nicole: "where do we decide to look for s1/s2 data and process epsilon? ... We need a path for fctd when there is a c1 channel ... Have they been ported over yet?" Answer: L2 picks epsilon/chi from each channel's `AFE.type` (shear with Sv, fpo7 with volts_to_C), not from the fish; MHA's microconductivity chi was not ported. After a read-through of MHA's v3 chain, Nicole chose: pre-emphasis and gain applied in the L2 spectrum, chi only (eps_chi/chi_tot wait for stratification), the pre-emphasis circuit values in the yml ("they are for Remove preemphasis filter, following Steve Anderson and Alford/Pinkel 2000"; nothing in MOD_fish_calibrations), and "we don't want to hardcode ANYTHING in the repo unless it is totally necessary".
+- New: `MODprocess_L1_apply_ucond_calibration.m` (gain vs CTD C, PROVENANCE `FCTD_ucon_cal.m`), `mod_scan_ucond_electronics_filter.m` (pre-emphasis + SBE7 sinc^p + EFE ADC), `mod_scan_calc_chi_ucond.m` (PROVENANCE `DoOneChi_MHA_v3.m`), `setup/MODsetup_probe_fits.m` (FP07 and microconductivity fits share the L0 -> L1 save/refit and the reload in `MODsetup_add_derived_metadata.m`).
+- yml `ucond` block (12 registry entries, template regenerated, preflight needs it when a channel is `microcond`). `gain_fit_window_s` suggested 30, not legacy's 100: FCTD upcasts here last ~50 s. `rail_fraction` added after the test data turned out railed at -2.5 V from 08:01.
+- L2 `chi_ucond.(ch)`, `chi_ucond_kmax.(ch)`, `spectra.(ch)_dCdz_k`; grid `chi_ucond_<ch>`, `chi_ucond_kmax_<ch>`, `grid_version` 6. The monitor doesn't log10 `_kmax` fields.
+- Hard-coding audit of this session's earlier commits: `MODvis_spectra` guessed `<repo>/../MOD_fish_calibrations` for the bench noise; it now uses `acquisition/config.yml`'s `calibrations_root`. Pre-existing, not changed: `MODprocess_L1_apply_fpo7_calibration.m`'s `MIN_FIT_POINTS = 30` and despike windows.
+- Tested in a scratchpad sandbox:
+  - 25_0409 FCTD1 dye survey, 24 raw files: missing `ucond` values make the survey wait. Gain 1.571 S/m per V (8 windows, std 0.17). 320 of 1041 scans with chi_ucond.
+  - Against legacy `DoOneChi_MHA_v3.m` on the same L1: median ratio 1.10 (fast scans 1.14, IQR 0.90-1.37).
+  - 26_1019_mako2_test2 (6 files): L2 identical to HEAD's.
+  - `checkcode` clean on the new files; `mkdocs build --strict` passes.
+  - Details in `docs/workflow/microconductivity.md`.
+
 ### 2026-10-20 - Start script: "Worker did NOT start" (branch `main-fork`)
 
 Nicole: the start window said "Worker stopped. Press any key to close" after a refused start - "Is it really stopped?" - then "Make the script say 'Worker did NOT start' with a message and instructions for how to kill the process."

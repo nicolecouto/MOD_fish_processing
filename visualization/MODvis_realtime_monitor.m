@@ -658,7 +658,7 @@ classdef MODvis_realtime_monitor < handle
                     unit = app.Grid.variables(k).unit;
                 end
             end
-            if startsWith(name, {'epsilon', 'chi'}) && ~contains(name, '_kc')
+            if startsWith(name, {'epsilon', 'chi'}) && ~contains(name, {'_kc', '_kmax'})
                 v(v <= 0) = NaN;
                 v = log10(v);
                 label = sprintf('log10 %s [%s]', name, unit);

@@ -35,7 +35,7 @@ u.temperature = struct('unit', 'degC', 'description', 'CTD in-situ temperature a
 u.salinity = struct('unit', 'psu (PSS-78)', 'description', 'CTD Practical Salinity (ctd.SP) at scan center, interpolated - same have_ctd_ts condition as temperature.');
 u.SR = struct('unit', 'g/kg', 'description', 'Reference Salinity at scan center, gsw_SR_from_SP(salinity) (interpolated from ctd.SR the same way) - see docs/concepts/units_and_seawater.md for why SR (not exact Absolute Salinity) is used throughout.');
 u.nu = struct('unit', 'm^2/s', 'description', 'Kinematic viscosity at scan center (toolbox/seawater/visc.m) - feeds epsilon (mod_scan_calc_epsilon.m) and chi_mle.');
-u.ktemp = struct('unit', 'm^2/s', 'description', 'Thermal diffusivity at scan center (toolbox/seawater/ktemp.m) - only populated when chi_obs_channels is non-empty, NaN otherwise.');
+u.ktemp = struct('unit', 'm^2/s', 'description', 'Thermal diffusivity at scan center (toolbox/seawater/ktemp.m) - only populated when there is FP07 or microconductivity chi, NaN otherwise.');
 u.epsilon_final = struct('unit', 'W/kg', 'description', 'Only when epsilon is computed (no shear probes: no field). Per-scan epsilon actually fed to chi_mle - mean (omitting NaN) across shear channels of whichever variant epsilon_final_source selects (epsilon_mle or epsilon_obs_coh_corr).');
 u.epsilon_final_source = struct('unit', 'n/a (string)', 'description', 'Which variant epsilon_final actually is this run - ''epsilon_mle'' or ''epsilon_co''; written only with epsilon_final (L2 files made before 2026-10-17 have '''' when epsilon was never computed). Resolved once from metadata.PROCESS.EPSILON.epsilon_final_source; an unrecognized/invalid value there falls back to ''epsilon_co'', made visible here instead of silent.');
 
@@ -43,6 +43,10 @@ u.epsilon_final_source = struct('unit', 'n/a (string)', 'description', 'Which va
 u.chi_obs = struct('unit', 'degC^2/s', 'description', 'Direct-integration thermal variance dissipation rate. Pattern: chi_obs.(channel), one field per fpo7 channel with both a resolved volts_to_C AND real CTD T/SP - struct has no fields at all otherwise.');
 u.chi_obs_kc = struct('unit', 'cpm', 'description', 'Noise-floor cutoff wavenumber used for chi_obs''s integration. Same pattern as chi_obs.');
 u.chi_mle = struct('unit', 'degC^2/s', 'description', 'Batchelor-spectrum MLE-fit chi. Same pattern as chi_obs; additionally requires a finite per-scan epsilon.');
+
+% --- per-channel patterns (chi, microcond channels) ---
+u.chi_ucond = struct('unit', 'degC^2/s', 'description', 'chi from microconductivity (mod_scan_calc_chi_ucond.m): 6*ktemp*(dT/dC)^2 times the conductivity-gradient spectrum integrated from ucond.kmin_cpm to chi_ucond_kmax. An underestimate - kmax is far below the Batchelor wavenumber (no Alford/Pinkel 2000b correction yet). Pattern: chi_ucond.(channel), one field per microcond channel with a fitted volts_to_S_per_m and real CTD T/SP.');
+u.chi_ucond_kmax = struct('unit', 'cpm', 'description', 'Upper integration bound used for chi_ucond, min(ucond.kmax_cpm, ucond.fmax_hz/abs(w)). Same pattern as chi_ucond.');
 
 % --- per-channel patterns (epsilon, shear channels) ---
 u.epsilon_obs = struct('unit', 'W/kg', 'description', 'Direct-integration epsilon from the raw shear spectrum (eps1_mmp/epsilon2_correct port). Pattern: epsilon_obs.(channel), one field per shear channel with a resolved metadata.AFE.(channel).cal.');
@@ -56,10 +60,11 @@ u.coherence_sum = struct('unit', 'Hz (magnitude-squared coherence integrated ove
 
 % --- spectra (shared axes + per-channel patterns) ---
 u.spectra_f = struct('unit', 'Hz', 'description', 'Frequency vector, shared across all scans and channels, 1 x nfreq.');
-u.spectra_channel_f = struct('unit', 'V^2/Hz (fpo7/shear) or g^2/Hz (accel)', 'description', 'Raw power spectrum. Pattern: spectra.(channel)_f, nbscan x nfreq, one field per configured shear/fpo7/acc channel.');
-u.spectra_k = struct('unit', 'cpm', 'description', 'Wavenumber matrix, k = f / abs(w) - nbscan x nfreq. Only populated when chi_obs_channels is non-empty (byproduct of that computation).');
+u.spectra_channel_f = struct('unit', 'V^2/Hz (every non-acc channel) or g^2/Hz (accel)', 'description', 'Raw power spectrum. Pattern: spectra.(channel)_f, nbscan x nfreq, one field per configured channel.');
+u.spectra_k = struct('unit', 'cpm', 'description', 'Wavenumber matrix, k = f / abs(w) - nbscan x nfreq. Only populated when there is FP07 or microconductivity chi (byproduct of that computation).');
 u.spectra_channel_Tg_k = struct('unit', 'degC^2/m /cpm', 'description', 'Deconvolved temperature-gradient wavenumber spectrum. Pattern: spectra.(channel)_Tg_k, one field per fpo7 channel in chi_obs_channels.');
 u.spectra_channel_fc_index = struct('unit', 'index (dimensionless)', 'description', 'Noise-floor cutoff index into spectra.f/.k/.(channel)_f. Pattern: spectra.(channel)_fc_index, one field per fpo7 channel in chi_obs_channels.');
+u.spectra_channel_dCdz_k = struct('unit', '(S/m)^2/m^2 /cpm', 'description', 'Conductivity-gradient wavenumber spectrum after the gain and electronics response (what chi_ucond integrates). Pattern: spectra.(channel)_dCdz_k, one field per microcond channel with chi_ucond.');
 u.spectra_channel_shear_k = struct('unit', 's^-2/cpm', 'description', 'Raw shear wavenumber spectrum. Pattern: spectra.(channel)_shear_k, one field per shear channel.');
 u.spectra_channel_shear_co_k = struct('unit', 's^-2/cpm', 'description', 'Coherence-cleaned shear wavenumber spectrum. Same pattern as spectra.(channel)_shear_k.');
 

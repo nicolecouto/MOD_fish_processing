@@ -40,8 +40,8 @@ classdef MODvis_spectra < handle
     %     (BitNoiseOrder - bit noise uses the ADC LSB of whichever
     %     channel is picked in the "Bit noise" dropdown), FPO7 noise
     %     floors (L2: the run's FPO7_benchnoise.mat, found through
-    %     processed/<run>/meta/metadata.mat's calibrations_root or a
-    %     MOD_fish_calibrations clone next to this repo), the fc/kc
+    %     processed/<run>/meta/metadata.mat's calibrations_root or
+    %     acquisition/config.yml's calibrations_root), the fc/kc
     %     cutoffs and the Batchelor/Panchev overlays (L2's chi_obs, *_kc,
     %     *_fc_index and epsilon fields mapped by normalizeL2). The
     %     frequency and wavenumber panels are always loglog.
@@ -1378,8 +1378,9 @@ classdef MODvis_spectra < handle
             % (MODprocess_single_L1_to_L2.m): <calibrations_root>/FPO7/
             % FPO7_benchnoise.mat, calibrations_root from the run's
             % meta/metadata.mat (processed/<run>/L2 -> processed/<run>/meta).
-            % Off the ship that path (DEV1's) usually isn't mounted, so a
-            % MOD_fish_calibrations clone next to this repo is tried next.
+            % Off the ship that path (DEV1's) usually isn't mounted, so
+            % this computer's calibrations_root (acquisition/config.yml)
+            % is tried next.
             coefs = [];
             roots = {};
             meta_file = fullfile(fileparts(char(L2_dir)), 'meta', 'metadata.mat');
@@ -1390,8 +1391,13 @@ classdef MODvis_spectra < handle
                 catch
                 end
             end
-            repo = fileparts(fileparts(mfilename('fullpath')));
-            roots{end+1} = fullfile(fileparts(repo), 'MOD_fish_calibrations');
+            cfg = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'acquisition', 'config.yml');
+            if isfile(cfg)
+                tok = regexp(fileread(cfg), '(?m)^calibrations_root:\s*([^#\r\n]*)', 'tokens', 'once');
+                if ~isempty(tok)
+                    roots{end+1} = strtrim(strrep(strrep(tok{1}, '"', ''), '''', ''));
+                end
+            end
             for i = 1:numel(roots)
                 f = fullfile(char(roots{i}), 'FPO7', 'FPO7_benchnoise.mat');
                 if isfile(f)

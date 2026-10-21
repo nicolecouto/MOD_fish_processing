@@ -193,7 +193,8 @@ L2's per-channel values are `<L2 name>_<channel>`:
   `diffusivity_thermal_molecular` (`ktemp`), `epsilon_final`, and, per channel, every form of epsilon and chi:
   `epsilon_obs_<ch>`, `epsilon_obs_coh_corr_<ch>`, `epsilon_mle_<ch>`, their cutoffs
   `epsilon_obs_kc_<ch>` and `epsilon_obs_coh_corr_kc_<ch>`, `fom_<ch>`, `fom_mle_<ch>`,
-  `coherence_sum_<ch>`, `chi_obs_<ch>`, `chi_mle_<ch>` and `chi_obs_kc_<ch>`. Per cast,
+  `coherence_sum_<ch>`, `chi_obs_<ch>`, `chi_mle_<ch>` and `chi_obs_kc_<ch>`; per microconductivity
+  channel `chi_ucond_<ch>` and `chi_ucond_kmax_<ch>` ([Microconductivity chi](microconductivity.md)). Per cast,
   `epsilon_final_source` says which epsilon `epsilon_final` is.
   - A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m bins and a scan
     every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts have scans.
@@ -792,3 +793,11 @@ different forms of epsilon and chi."
   - On another Mac: stop it there.
 - An error: "Worker stopped with an error (above)".
 - A normal stop: "Worker stopped".
+
+**2026-10-20 (night) - Microconductivity chi in L2 and the grid** (branch `main-fork`). Nicole
+asked where s1/s2 and epsilon are decided (each channel's type in the yml, not the fish) and for
+a path for FCTD microconductivity (`c1`). L0 → L1 fits the `microcond` channel's gain
+(`meta/ucond_calibration.mat`), L2 adds `chi_ucond.(ch)` and `chi_ucond_kmax.(ch)`, and the grid
+`chi_ucond_<ch>` and `chi_ucond_kmax_<ch>`; `grid_version` is now 6. The cruise yml gets a
+`ucond` block, needed whenever a channel is `microcond`. See
+[Microconductivity chi](microconductivity.md).

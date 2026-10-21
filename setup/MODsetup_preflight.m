@@ -315,19 +315,22 @@ end
 %% Registry names the stages need, for this run's manifest
 function names = needed_parameters(metadata, stages)
 registry = MODsetup_metadata_field_registry();
+types = {};
+if isfield(metadata, 'AFE') && isstruct(metadata.AFE)
+    types = cellfun(@(ch) metadata.AFE.(ch).type, fieldnames(metadata.AFE), 'UniformOutput', false);
+end
 sections = {};
 if ismember('L1', stages)
     sections = [sections, {'afe', 'ctd', 'spectral', 'profile_detection'}];
+end
+if any(ismember({'L1', 'L2'}, stages)) && any(strcmpi(types, 'microcond'))
+    sections{end+1} = 'ucond'; % gain fit at L1, chi at L2
 end
 if ismember('casts', stages)
     sections = [sections, {'profile_detection'}];
 end
 if ismember('L2', stages)
     sections = [sections, {'afe', 'ctd', 'spectral', 'profile_detection'}];
-    types = {};
-    if isfield(metadata, 'AFE') && isstruct(metadata.AFE)
-        types = cellfun(@(ch) metadata.AFE.(ch).type, fieldnames(metadata.AFE), 'UniformOutput', false);
-    end
     if any(strcmpi(types, 'fpo7'))
         sections{end+1} = 'chi';
     end

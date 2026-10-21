@@ -76,18 +76,21 @@ flowchart LR
     L1ALL -->|if L1 has GPS| GPS["MODprocess_L1_make_<br/>gps_timeseries.m"]
     GPS --> GPSOUT[("meta/gps_<br/>time_series.mat")]
     PTSOUT -.->|if real onboard CTD| FPO7CAL["MODprocess_L1_apply_<br/>fpo7_calibration.m"]
+    PTSOUT -.->|"if real onboard CTD<br/>+ microcond channel"| UCAL["MODprocess_L1_apply_<br/>ucond_calibration.m"]
   end
 
   L0OUT --> L1ALL
   METAOUT --> L1ALL
   FPO7CAL -.saves volts_to_C.-> FPO7OUT[("meta/fpo7_<br/>calibration.mat")]
   FPO7OUT -.-> DEFFILT
+  UCAL -.saves volts_to_S_per_m.-> UCOUT[("meta/ucond_<br/>calibration.mat")]
+  UCOUT -.-> DEFFILT
 ```
 
 | Function | In → out | Role |
 |---|---|---|
 | `MODsetup_read_yaml.m` | setup_yml → metadata | Resolves AFE/CTD/altimeter manifest, calibration lookups, `has_epsi`/`has_isap`/... flags (no `has_vnav`: twist follows the data) |
-| `MODsetup_add_derived_metadata.m` | metadata → metadata | Adds what isn't in the yml: electronics filters (`MODsetup_define_filters.m`) and the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat`. Called by the L0 → L1 and L1 → L2 drivers |
+| `MODsetup_add_derived_metadata.m` | metadata → metadata | Adds what isn't in the yml: electronics filters (`MODsetup_define_filters.m`) and the probe fits listed in `MODsetup_probe_fits.m` - FP07 `volts_to_C` (`meta/fpo7_calibration.mat`) and microconductivity `volts_to_S_per_m` (`meta/ucond_calibration.mat`). Called by the L0 → L1 and L1 → L2 drivers |
 | `MODsetup_define_filters.m` | metadata → metadata | Resolves each channel's fixed electronics/ADC transfer function once per deployment |
 | `MODprocess_all_modraw_to_L0.m` | raw_dir, L0_dir → L0_files | Batch orchestrator; skips already-converted files. Gives a file without `$DCAL` the `SBE/<SN>.CAL` calibration, keeps one calibration per survey (`meta/ctd_calibration.mat`) and stops processing if it changes All three per-file drivers take `'newest_min_redo_s'` and `'continue_on_error'` (`MODutil_needs_redo.m`) for realtime use |
 | `MODprocess_single_modraw_to_L0.m` | modraw_file, (metadata) → L0_data | Parses one raw file: `$`-block regex match, header decode, counts/hex → per-type structs; EFE counts → volts/g + `epsi_conversion`; `$DCAL` → `ctd_cal` |
@@ -106,6 +109,7 @@ flowchart LR
 | `MODprocess_L1_accumulate_twist_timeseries.m` | L1_cache, meta_dir → TwistTimeseries | Re-chains per-file twist counts into one continuous survey count, from 0 at the survey start (no spool resets) - whenever L1 has twist (raw VNAV), not set by the yml |
 | `MODprocess_cruise_twist.m` | processed_root → TwistTimeseries | The cruise twist count: every on-spool survey's count joined at 1 s, restarting at each winch spool change (`MODprocess_find_spool_swaps.m`); `Processed/twist/twist_time_series.mat`, run by the worker after every pass |
 | `MODprocess_L1_apply_fpo7_calibration.m` | L1_dir, metadata, PressureTimeseries → metadata | In-situ volts→°C fit against real CTD T - only if real onboard CTD |
+| `MODprocess_L1_apply_ucond_calibration.m` | L1_dir, metadata, PressureTimeseries → metadata | Microconductivity gain [S/m per V] against the CTD conductivity - only if real onboard CTD and a `microcond` channel ([Microconductivity chi](microconductivity.md)) |
 
 ## Realtime: L1 → L2 (per file), live viz
 
@@ -239,6 +243,8 @@ flowchart LR
 | `mod_scan_calc_chi_obs.m` | scan, metadata, channel, noise_coefs → scan | Direct-integration chi - needs real onboard CTD T |
 | `toolbox/theoretical_spectra/batchelor_spectrum.m` | epsilon, chi, nu, ktemp, k → Psg | Theoretical Batchelor (1959) temperature-gradient spectrum |
 | `mod_scan_calc_chi_mle.m` | scan, metadata, channel, noise_coefs → scan | Batchelor-spectrum MLE fit - now wired in, fed by epsilon below |
+| `mod_scan_ucond_electronics_filter.m` | f, ucond, Fs_epsi, ADCfilter → H2 | Microconductivity electronics: SBE pre-emphasis, SBE7 anti-alias, EFE ADC ([Microconductivity chi](microconductivity.md)) |
+| `mod_scan_calc_chi_ucond.m` | scan, metadata, channel → scan | Microconductivity chi: conductivity-gradient spectrum integrated from kmin_cpm to kmax (an underestimate) |
 | `mod_scan_shear_transfer_function.m` | f, w, lc → H | Oakey (1982) shear-probe dynamic-response filter |
 | `mod_scan_shear_volts_to_shear_spectrum.m` | scan, metadata, channel → scan | Raw shear volts spectrum → shear wavenumber spectrum |
 | `mod_scan_shear_accel_coherence.m` | scan, metadata, channel → scan | Coherence vs. accelerometer channel a3, for spectrum cleaning |

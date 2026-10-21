@@ -51,7 +51,7 @@ Also saves `metadata.mat` into `meta/` alongside `setup.yml` - a portable deploy
 
 Processing parameters (spectral, profile_detection, chi, epsilon, grid, `afe.sample_rate`, `ctd.sample_rate`/`compute_spectra`) are read by one loop over `MODsetup_metadata_field_registry.m`: each registry entry is copied from its `yaml_section.yaml_key` to its `metadata_path` when the yml declares it. A parameter added to the registry is read with no other change.
 
-**Derived values** - not in the yml, but needed by later steps - are added by `MODsetup_add_derived_metadata.m`, which `MODprocess_all_L0_to_L1` and `MODprocess_all_L1_to_L2` both call at the start (and after rereading the yml): the AFE electronics filters (`MODsetup_define_filters.m`) and the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat`. So metadata straight from `MODsetup_read_yaml` works in any session. `meta/metadata.mat` is only a record: the next `MODsetup_read_yaml` call rewrites it without the fit.
+**Derived values** - not in the yml, but needed by later steps - are added by `MODsetup_add_derived_metadata.m`, which `MODprocess_all_L0_to_L1` and `MODprocess_all_L1_to_L2` both call at the start (and after rereading the yml): the AFE electronics filters (`MODsetup_define_filters.m`) and the probe fits listed in `MODsetup_probe_fits.m`: the FP07 `volts_to_C` fit from `meta/fpo7_calibration.mat` and the microconductivity `volts_to_S_per_m` gain from `meta/ucond_calibration.mat`. So metadata straight from `MODsetup_read_yaml` works in any session. `meta/metadata.mat` is only a record: the next `MODsetup_read_yaml` call rewrites it without the fit.
 
 Deliberately minimal: it only resolves the fields this L0→L1 step actually uses. It does not yet build the grouped `metadata.manifest.shear_channels`/`.fpo7_channels`-style lists from PLAN.md Section 5 - nothing downstream needs those yet. Add fields as later steps need them, not preemptively.
 
@@ -287,7 +287,7 @@ Options for realtime use (the worker, `MODprocess_deployment.m`, sets them; the 
 
 - `'newest_min_redo_s'` (default 0) - above 0, the newest file is redone only when it's out of date, and at most once per that many seconds (`MODutil_needs_redo.m`, shared by all three per-file drivers), so a growing raw file isn't redone - with everything after it - on every pass.
 - `'continue_on_error'` (default false) - true: a file that fails is returned in `problems` (`.file`, `.stage`, `.identifier`, `.message`) and the next file is done; `processed` lists the files (re)done.
-- `'fpo7_refit_new_files'` (default 0, refit every call) - N: refit the FP07 calibration only once N more L1 files exist than at the last fit (the fit reads every L1 file). `meta/fpo7_calibration.mat` records `n_L1_files`.
+- `'fpo7_refit_new_files'` (default 0, refit every call) - N: refit the FP07 calibration (and the microconductivity gain) only once N more L1 files exist than at the last fit (the fit reads every L1 file). `meta/fpo7_calibration.mat` and `meta/ucond_calibration.mat` record `n_L1_files`.
 
 Also where the external-CTD read-once-and-slice-per-file logic lives (`slice_external_ctd`, a local subfunction) - see "External CTD (DeepSolo, Wirewalker)" above.
 
@@ -295,7 +295,7 @@ At the end of every call, also calls `MODprocess_L1_accumulate_twist_timeseries`
 
 Also, if any L1 file has CTD pressure (the data decide, not the yml), calls `MODprocess_L1_make_pressure_timeseries` + `mod_L1_detect_profiling_direction` once to build/update `meta/pressure_time_series.mat` - see "`MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`" above.
 
-**Update (branch `chi_processing`):** if that CTD is the *onboard* one (SBE49 or SBE41; no external-CTD file - stricter than the "any CTD data" check above, since that also covers DeepSolo's P-only external CTD; until 2026-10-18 this was `metadata.CTD.cal` non-empty), also calls `MODprocess_L1_apply_fpo7_calibration.m` right after `PressureTimeseries` is built, and saves the result (`metadata.AFE.(channel).volts_to_C`, with each probe's SN) to `meta/fpo7_calibration.mat` - also recorded in `meta/metadata.mat` via `MODsetup_save_metadata.m` - see [FP07 calibration and chi](L2_calc_chi.md).
+**Update (branch `chi_processing`):** if that CTD is the *onboard* one (SBE49 or SBE41; no external-CTD file - stricter than the "any CTD data" check above, since that also covers DeepSolo's P-only external CTD; until 2026-10-18 this was `metadata.CTD.cal` non-empty), also calls `MODprocess_L1_apply_fpo7_calibration.m` right after `PressureTimeseries` is built, and saves the result (`metadata.AFE.(channel).volts_to_C`, with each probe's SN) to `meta/fpo7_calibration.mat` - also recorded in `meta/metadata.mat` via `MODsetup_save_metadata.m` - see [FP07 calibration and chi](L2_calc_chi.md). With a `microcond` channel it also fits that channel's gain against the CTD conductivity (`MODprocess_L1_apply_ucond_calibration.m` -> `metadata.AFE.(channel).volts_to_S_per_m`, saved to `meta/ucond_calibration.mat`) - see [Microconductivity chi](microconductivity.md). Both fits go through the same save/reload code, listed in `setup/MODsetup_probe_fits.m`.
 
 If a needed parameter is missing and the operator saves the prompted value to the yml (`MODsetup_validate_metadata:yamlUpdated`), this function rereads the yml and retries, the same way `MODprocess_all_L1_to_L2` does. Run unattended (`matlab -batch`) it can't prompt, so check the yml first with `MODsetup_preflight` (see [Processing data](processing_data.md#metadata)).
 
@@ -329,6 +329,14 @@ figure; plot(data.epsi.time_s, data.epsi.s1_volt);  % shear channel, volts
 - **Depth/salinity near zero at the start of a deployment is expected, not a bug.** The first raw file of a cast is often recorded on deck with the CTD in air - conductivity ≈ 0 gives salinity ≈ 0 via `gsw_SP_from_C`, and pressure ≈ 0 gives depth ≈ 0. This resolves once the instrument is in the water.
 
 ## History
+
+**2026-10-20 - Microconductivity gain** (branch `main-fork`). For a `microcond` channel,
+`MODprocess_all_L0_to_L1.m` also fits the gain [S/m per V] against the CTD conductivity
+(`MODprocess_L1_apply_ucond_calibration.m`), saved to `meta/ucond_calibration.mat` and reloaded by
+`MODsetup_add_derived_metadata.m`. The FP07 fit's save/reload helpers now serve both fits
+(`setup/MODsetup_probe_fits.m`); the saved FP07 file is unchanged. Its parameters are the yml's
+`ucond` block. Tested on the 25_0409 FCTD1 dye survey and an Epsi survey - see
+[Microconductivity chi](microconductivity.md).
 
 **2026-10-18 - GPS track** (branch `main-fork`). `MODprocess_all_L0_to_L1.m` writes
 `meta/gps_time_series.mat` (`dnum`, `latitude`, `longitude`; sorted, each time once) whenever an

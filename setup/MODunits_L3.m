@@ -28,7 +28,7 @@ function u = MODunits_L3()
 % --- axes ---
 u.z = struct('unit', 'm, positive down', 'description', 'Depth bin centers, nz x 1: (k - 0.5) * z_bin_m. A bin holds depths from (k-1)*z_bin_m to k*z_bin_m: L1 ctd.z for the CTD samples, -gsw_z_from_p(pressure, metadata.PROCESS.latitude) for the scans (L1 ctd.z uses a GPS latitude when there is one - a difference far below a bin).');
 u.z_bin_m = struct('unit', 'm', 'description', 'Depth bin size (grid.z_bin_m in the yml).');
-u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom). A grid from another version is rebinned from scratch.');
+u.grid_version = struct('unit', 'n/a', 'description', 'Version of MODprocess_grid.m that made the grid (2: with C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi). A grid from another version is rebinned from scratch.');
 u.latitude = struct('unit', 'degrees N', 'description', 'From the L1 GPS fixes (gps.latitude) during the cast, 1 x ncast: the first fix for an Epsi downcast from the ship (platform ship, fish_flag EPSI - it free falls where it was dropped), else their mean; NaN if the cast has none.');
 u.longitude = struct('unit', 'degrees E', 'description', 'From the L1 GPS fixes (gps.longitude) during the cast, 1 x ncast, as latitude; NaN if the cast has none. A plain mean, so wrong for a cast that crosses 180 deg.');
 u.time = struct('unit', 'MATLAB datenum', 'description', 'Mean time of the cast''s CTD samples, 1 x ncast (the middle of the cast if it has none).');
@@ -71,6 +71,8 @@ u.coherence_sum_channel = struct('unit', 'Hz', 'description', 'Mean of the scans
 u.chi_obs_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans'' chi_obs (direct integration) for one fpo7 channel in the bin, nz x ncast. Pattern: chi_obs_<channel>, e.g. chi_obs_t1.');
 u.chi_obs_kc_channel = struct('unit', 'cpm', 'description', 'Mean of the scans'' chi_obs noise-floor cutoff wavenumber, nz x ncast. Pattern: chi_obs_kc_<channel>.');
 u.chi_mle_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans'' chi_mle (Batchelor-spectrum MLE fit) for one fpo7 channel in the bin, nz x ncast. Pattern: chi_mle_<channel>.');
+u.chi_ucond_channel = struct('unit', 'degC^2/s', 'description', 'Mean of the scans'' chi_ucond (microconductivity; an underestimate, see MODunits_L2.m) for one microcond channel in the bin, nz x ncast. Pattern: chi_ucond_<channel>, e.g. chi_ucond_c1.');
+u.chi_ucond_kmax_channel = struct('unit', 'cpm', 'description', 'Mean of the scans'' chi_ucond upper integration bound, nz x ncast. Pattern: chi_ucond_kmax_<channel>.');
 
 % --- record ---
 u.variables = struct('unit', 'n/a (struct array)', 'description', 'name, unit and description of each gridded field present (from this registry).');

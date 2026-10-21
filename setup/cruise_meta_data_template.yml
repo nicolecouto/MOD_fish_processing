@@ -44,6 +44,21 @@ chi:
   chi_mle_end_search: 1000
   contam_freq_hz: .inf
 
+# Microconductivity chi (only used when an AFE slot is microcond)
+ucond:
+  preemphasis_R22_ohm: 266.1
+  preemphasis_R24_ohm: 1000000
+  preemphasis_R25_ohm: 577000
+  preemphasis_C19_F: 1e-06
+  antialias_sinc_power: 2
+  gain_fit_window_s: 30
+  gain_fit_fmax_hz: 2
+  gain_fit_max: 100
+  rail_fraction: 0.999
+  kmin_cpm: 1
+  kmax_cpm: 12.5
+  fmax_hz: 50
+
 # Shear epsilon (only used when an AFE slot is shear)
 epsilon:
   epsilon_final_source: 'epsilon_mle'
@@ -177,6 +192,36 @@ grid:
 #       it. Inf = no known contamination line for this deployment (no cap applied) - the
 #       historical/default behavior. See docs/workflow/L2_calc_chi.md,
 #       "Contamination-frequency cap" for how a real value is derived.
+#
+# ucond - Microconductivity chi (only used when an AFE slot is microcond)
+#   - preemphasis_R22_ohm: Pre-emphasis circuit R22 [ohm], for removing the pre-emphasis
+#       filter following Steve Anderson and Alford/Pinkel 2000
+#       (mod_scan_ucond_electronics_filter.m)
+#   - preemphasis_R24_ohm: Pre-emphasis circuit R24 [ohm], for removing the pre-emphasis
+#       filter following Steve Anderson and Alford/Pinkel 2000
+#   - preemphasis_R25_ohm: Pre-emphasis circuit R25 [ohm], for removing the pre-emphasis
+#       filter following Steve Anderson and Alford/Pinkel 2000
+#   - preemphasis_C19_F: Pre-emphasis circuit C19 [F], for removing the pre-emphasis filter
+#       following Steve Anderson and Alford/Pinkel 2000
+#   - antialias_sinc_power: Anti-alias correction of the power spectrum, sinc(f/f_Nyquist)^p
+#       (DoOneChi_MHA_v3.m: p = 2, the SBE7 electronics per Alford/Pinkel 2000). 0 = none.
+#       The EFE ADC filter is applied as for every channel, on top of this.
+#   - gain_fit_window_s: Window length [s] for fitting the microconductivity gain to the CTD
+#       conductivity (MODprocess_L1_apply_ucond_calibration.m). Windows lie inside one
+#       steady profile, so this must be shorter than a profile: FCTD upcasts at ~2.3 m/s
+#       over 100 m last ~50 s (legacy FCTD_ucon_cal.m used 100 s across turnarounds).
+#   - gain_fit_fmax_hz: Gain fit matches the spectral levels of microconductivity and CTD
+#       conductivity from 0 to this frequency [Hz]
+#   - gain_fit_max: Gain fit: windows giving a gain above this [S/m per V] are left out of
+#       the mean
+#   - rail_fraction: A gain-fit window or scan is skipped when any microconductivity sample
+#       is at or beyond this fraction of the channel's full_range (the signal is railed)
+#   - kmin_cpm: Low-wavenumber integration bound [cpm] for chi_ucond
+#       (mod_scan_calc_chi_ucond.m)
+#   - kmax_cpm: High-wavenumber integration bound [cpm] for chi_ucond, unless fmax_hz/abs(w)
+#       is lower
+#   - fmax_hz: chi_ucond never integrates past this frequency [Hz]: kmax = min(kmax_cpm,
+#       fmax_hz/abs(w))
 #
 # epsilon - Shear epsilon (only used when an AFE slot is shear)
 #   - epsilon_final_source: Which epsilon estimate feeds chi_mle's epsilon input (mean

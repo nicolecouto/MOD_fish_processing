@@ -56,6 +56,10 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   meta/metadata.mat via MODsetup_save_metadata.m). This is the calibration
 %   mod_scan_calc_chi_obs.m needs; MODsetup_add_derived_metadata.m loads it
 %   back for later steps. Deployments without a real CTD never get it.
+%   The same goes for each microconductivity channel's gain
+%   (MODprocess_L1_apply_ucond_calibration.m -> volts_to_S_per_m,
+%   meta/ucond_calibration.mat); both fits are listed in
+%   MODsetup_probe_fits.m.
 %
 % INPUTS
 %   L0_dir        - full path to a folder of L0 .mat files
@@ -77,7 +81,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %                      with its error. true (the realtime worker): the file
 %                      is recorded in problems and the next file is done.
 %     'fpo7_refit_new_files' (this driver only) - default 0: the FP07
-%                      volts->degC fit is redone on every call. N > 0 (the
+%                      volts->degC fit (and the microconductivity gain) is
+%                      redone on every call. N > 0 (the
 %                      realtime worker): redone only once N more L1 files
 %                      exist than at the last fit (or if there's no fit
 %                      yet), since it reads every L1 file.
@@ -102,7 +107,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   MODprocess_L1_make_pressure_timeseries.m, mod_L1_detect_profiling_direction.m
 %   (only when this deployment has CTD data)
 %   MODprocess_L1_make_time_index.m (unconditional - see below)
-%   MODprocess_L1_apply_fpo7_calibration.m, MODsetup_save_metadata.m
+%   MODsetup_probe_fits.m: MODprocess_L1_apply_fpo7_calibration.m,
+%   MODprocess_L1_apply_ucond_calibration.m, MODsetup_save_metadata.m
 %   (only when the CTD data are from the onboard CTD)
 %   MODsetup_read_yaml.m (only to reread the yml after a prompted value is
 %   saved to it - MODsetup_validate_metadata.m's yamlUpdated)
@@ -285,27 +291,48 @@ if has_ctd
         % though it passed the has_ctd check above.
         % Gated on PressureTimeseries.dnum being non-empty too since the
         % fit needs is_down, just computed above.
-        if has_onboard_ctd && fpo7_refit_due(metadata.paths.L1_meta, numel(L1_cache), opts.fpo7_refit_new_files)
-            % Refit from scratch: the fit loaded by MODsetup_add_derived_metadata
-            % is set aside, so a channel that can't be refit isn't saved again
-            % as if it were new (save_fpo7_calibration keeps it, with its old time)
-            [metadata, previous_fit] = set_aside_fpo7_fits(metadata);
-            metadata = MODprocess_L1_apply_fpo7_calibration(L1_dir, metadata, PressureTimeseries);
-            metadata = save_fpo7_calibration(metadata, previous_fit, numel(L1_cache));
-            MODsetup_save_metadata(metadata, metadata.paths.meta, ...
-                'fpo7_calibration', mfilename('fullpath'));
+        % The microconductivity gain is fit against the CTD conductivity
+        % the same way, on the same cadence (MODsetup_probe_fits.m).
+        if has_onboard_ctd
+            for fit = MODsetup_probe_fits()
+                if ~probe_refit_due(metadata, fit, numel(L1_cache), opts.fpo7_refit_new_files)
+                    continue
+                end
+                % Refit from scratch: the fit loaded by MODsetup_add_derived_metadata
+                % is set aside, so a channel that can't be refit isn't saved again
+                % as if it were new (save_probe_fit keeps it, with its old time)
+                [metadata, previous_fit] = set_aside_probe_fits(metadata, fit);
+                while true
+                    try
+                        metadata = fit.fit_function(L1_dir, metadata, PressureTimeseries);
+                        break
+                    catch ME
+                        % A prompted value was saved to the yml - reread it and retry
+                        if ~strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
+                            rethrow(ME)
+                        end
+                        metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
+                        [metadata, previous_fit] = set_aside_probe_fits(metadata, fit);
+                    end
+                end
+                metadata = save_probe_fit(metadata, fit, previous_fit, numel(L1_cache));
+                MODsetup_save_metadata(metadata, metadata.paths.meta, ...
+                    fit.name, mfilename('fullpath'));
+            end
         end
     end
 end
 
 end %end function
 
-%% Is an FP07 refit due? Always when every_n is 0 or there's no saved fit;
-% otherwise once n_L1_files has grown by every_n since the saved fit.
-function tf = fpo7_refit_due(meta_dir, n_L1_files, every_n)
-tf = true;
-cal_file = fullfile(meta_dir, 'fpo7_calibration.mat');
-if every_n <= 0 || ~isfile(cal_file)
+%% Is a refit of this probe fit due? Never when no channel is of its type;
+% always when every_n is 0 or there's no saved fit; otherwise once
+% n_L1_files has grown by every_n since the saved fit.
+function tf = probe_refit_due(metadata, fit, n_L1_files, every_n)
+tf = any(cellfun(@(ch) isfield(metadata.AFE, ch) && strcmpi(metadata.AFE.(ch).type, fit.type), ...
+    metadata.PROCESS.channels));
+cal_file = fullfile(metadata.paths.L1_meta, fit.file);
+if ~tf || every_n <= 0 || ~isfile(cal_file)
     return
 end
 saved = load(cal_file);
@@ -314,31 +341,32 @@ if isfield(saved, 'n_L1_files')
 end
 end
 
-%% Remove every fpo7 channel's volts_to_C before a refit; return what was
-% removed (volts_to_C.(ch)) so save_fpo7_calibration can keep it for a
-% channel that can't be refit
-function [metadata, previous] = set_aside_fpo7_fits(metadata)
+%% Remove every channel's fit (fit.field) for channels of fit.type before a
+% refit; return what was removed (previous.(ch)) so save_probe_fit can
+% keep it for a channel that can't be refit
+function [metadata, previous] = set_aside_probe_fits(metadata, fit)
 previous = struct();
 for iC = 1:numel(metadata.PROCESS.channels)
     ch = metadata.PROCESS.channels{iC};
-    if strcmpi(metadata.AFE.(ch).type, 'fpo7') && isfield(metadata.AFE.(ch), 'volts_to_C')
-        previous.(ch) = metadata.AFE.(ch).volts_to_C;
-        metadata.AFE.(ch) = rmfield(metadata.AFE.(ch), 'volts_to_C');
+    if strcmpi(metadata.AFE.(ch).type, fit.type) && isfield(metadata.AFE.(ch), fit.field)
+        previous.(ch) = metadata.AFE.(ch).(fit.field);
+        metadata.AFE.(ch) = rmfield(metadata.AFE.(ch), fit.field);
     end
 end
 end
 
-%% Save every fpo7 channel's volts_to_C fit, with its probe SN, to
-% meta/fpo7_calibration.mat - where MODsetup_add_derived_metadata.m loads
-% it from in any later session or after a yml reread. Fields:
-% volts_to_C.(ch) = [slope, intercept], sn.(ch) = probe SN as char ('' if
-% none), fitted.(ch) = UTC time of that channel's fit, n_L1_files = how many
-% L1 files there were (for 'fpo7_refit_new_files'). A channel that
+%% Save every fit.type channel's fit, with its probe SN, to meta/<fit.file>
+% - where MODsetup_add_derived_metadata.m loads it from in any later
+% session or after a yml reread. Variables: <fit.field>.(ch) = the fit
+% (fpo7_calibration.mat: volts_to_C = [slope, intercept];
+% ucond_calibration.mat: volts_to_S_per_m), sn.(ch) = probe SN as char (''
+% if none), fitted.(ch) = UTC time of that channel's fit, n_L1_files = how
+% many L1 files there were (for 'fpo7_refit_new_files'). A channel that
 % couldn't be refit this time keeps its previous fit and fit time (with a
 % warning). Written to a temp file and moved into place, so a reader never
 % sees half a file.
-function metadata = save_fpo7_calibration(metadata, previous, n_L1_files)
-cal_file = fullfile(metadata.paths.L1_meta, 'fpo7_calibration.mat');
+function metadata = save_probe_fit(metadata, fit, previous, n_L1_files)
+cal_file = fullfile(metadata.paths.L1_meta, fit.file);
 old_fitted = struct();
 if isfile(cal_file)
     old = load(cal_file);
@@ -347,37 +375,39 @@ if isfile(cal_file)
     end
 end
 now_utc = char(datetime('now', 'TimeZone', 'UTC', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-volts_to_C = struct();
+out = struct();
 sn = struct();
 fitted = struct();
 for iC = 1:numel(metadata.PROCESS.channels)
     ch = metadata.PROCESS.channels{iC};
     a = metadata.AFE.(ch);
-    if ~strcmpi(a.type, 'fpo7')
+    if ~strcmpi(a.type, fit.type)
         continue
     end
-    if isfield(a, 'volts_to_C')
+    if isfield(a, fit.field)
         fitted.(ch) = now_utc;
     elseif isfield(previous, ch)
-        metadata.AFE.(ch).volts_to_C = previous.(ch);
+        metadata.AFE.(ch).(fit.field) = previous.(ch);
         fitted.(ch) = '';
         if isfield(old_fitted, ch)
             fitted.(ch) = old_fitted.(ch);
         end
-        warning('MODprocess_all_L0_to_L1:fpo7NotRefit', ...
-            '%s: FP07 fit could not be redone this time - keeping the previous fit (from %s).', ch, fitted.(ch));
+        warning('MODprocess_all_L0_to_L1:probeNotRefit', ...
+            '%s: %s fit could not be redone this time - keeping the previous fit (from %s).', ...
+            ch, fit.type, fitted.(ch));
     else
         continue
     end
-    volts_to_C.(ch) = metadata.AFE.(ch).volts_to_C;
+    out.(ch) = metadata.AFE.(ch).(fit.field);
     sn.(ch) = '';
     if isfield(a, 'SN')
         sn.(ch) = char(string(a.SN));
     end
 end
-if ~isempty(fieldnames(volts_to_C))
+if ~isempty(fieldnames(out))
+    S = struct(fit.field, out, 'sn', sn, 'fitted', fitted, 'n_L1_files', n_L1_files);
     tmp_file = [tempname(metadata.paths.L1_meta) '.mat'];
-    save(tmp_file, 'volts_to_C', 'sn', 'fitted', 'n_L1_files');
+    save(tmp_file, '-struct', 'S');
     movefile(tmp_file, cal_file, 'f');
 end
 end

@@ -30,6 +30,10 @@ function metadata = MODsetup_define_filters(metadata)
 %             probe's charge-amp response (interpolated from a
 %             network-analysis .mat, see NOTES) - matches H.shear
 %     acc   - electronics_filter = H_adc^2 (gain 1, matches H.electAccel)
+%     microcond - electronics_filter = |H_pre|^2 * sinc^p * H_adc^2: the
+%             SBE pre-emphasis circuit and legacy chi's anti-alias
+%             correction (mod_scan_ucond_electronics_filter.m), with the
+%             circuit values from the yml's ucond block
 %
 %   Deliberately NOT ported: the old "Tdiff" analog-differentiator term
 %   (H.Tdiff in get_filters_SOM.m) - confirmed via MOD_fish_lib's actual
@@ -42,7 +46,8 @@ function metadata = MODsetup_define_filters(metadata)
 %   metadata - metadata struct (from MODsetup_read_yaml.m). Uses:
 %              metadata.PROCESS.fft_length/.Fs_epsi/.channels,
 %              metadata.AFE.(ch).type/.ADCfilter,
-%              metadata.paths.calibrations_root (shear only)
+%              metadata.paths.calibrations_root (shear only),
+%              metadata.PROCESS.UCOND (microcond only)
 %
 % OUTPUTS
 %   metadata - same struct, with metadata.AFE.(ch).electronics_filter
@@ -60,7 +65,8 @@ function metadata = MODsetup_define_filters(metadata)
 %   needs no L0/L1 data)
 %
 % CALLS
-%   mod_scan_adc_filter.m
+%   mod_scan_adc_filter.m, mod_scan_ucond_electronics_filter.m,
+%   MODsetup_validate_metadata.m
 %
 % NOTES
 %   f is derived via a cheap dummy pwelch call (zeros(fft_length,1), same fft_length/
@@ -85,6 +91,13 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
     yaml_file = metadata.paths.setup_yml;
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'fft_length', 'Fs_epsi'});
+types = cellfun(@(ch) metadata.AFE.(ch).type, ...
+    intersect(metadata.PROCESS.channels, fieldnames(metadata.AFE), 'stable'), 'UniformOutput', false);
+if any(strcmpi(types, 'microcond'))
+    metadata = MODsetup_validate_metadata(metadata, yaml_file, ...
+        {'ucond_preemphasis_R22_ohm', 'ucond_preemphasis_R24_ohm', 'ucond_preemphasis_R25_ohm', ...
+         'ucond_preemphasis_C19_F', 'ucond_antialias_sinc_power'});
+end
 
 fft_length = metadata.PROCESS.fft_length;
 Fs_epsi = metadata.PROCESS.Fs_epsi;
@@ -124,6 +137,10 @@ for iC = 1:numel(metadata.PROCESS.channels)
 
         case {'acc', 'accel'}
             metadata.AFE.(ch).electronics_filter = H_adc.^2;
+
+        case 'microcond'
+            metadata.AFE.(ch).electronics_filter = mod_scan_ucond_electronics_filter( ...
+                f, metadata.PROCESS.UCOND, Fs_epsi, ADCfilter);
 
         otherwise
             % Not a channel type this repo's chi/shear/accel chains use
