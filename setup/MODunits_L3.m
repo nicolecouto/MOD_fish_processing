@@ -55,8 +55,8 @@ u.tilt = struct('unit', 'deg', 'description', 'Mean VectorNav tilt (vnav.tilt: 0
 u.roll = struct('unit', 'deg', 'description', 'Circular mean of VectorNav roll (vnav.roll, -180 to 180) in the bin, nz x ncast: atan2 of the mean sine and cosine, since roll wraps at +-180.');
 u.height_above_bottom = struct('unit', 'm', 'description', 'Mean altimeter height above bottom in the bin (isap.hab, or alt.hab without an isap), nz x ncast. Samples pegged at the altimeter''s maximum range (no bottom in range: the record''s largest dst, seen more than once - 120 m for the ISA500) are left out, so a bin with no bottom in range is NaN.');
 
-% --- scans: mean of the L2 scans whose center is in the bin ---
-u.n_scans = struct('unit', 'count', 'description', 'Number of L2 scans whose center is in the bin, nz x ncast. 0 where there is no scan (the scan fields are NaN there).');
+% --- scans: mean of the L2 scans whose footprint covers the bin ---
+u.n_scans = struct('unit', 'count', 'description', 'Number of L2 scans whose footprint (the depths the scan spans) covers the bin, nz x ncast. 0 where no scan does (the scan fields are NaN there).');
 u.viscosity_kinematic = struct('unit', 'm^2/s', 'description', 'Mean of the scans'' kinematic viscosity (L2 nu) in the bin, nz x ncast.');
 u.diffusivity_thermal_molecular = struct('unit', 'm^2/s', 'description', 'Mean of the scans'' molecular thermal diffusivity (L2 ktemp) in the bin, nz x ncast. Only with FP07 or microconductivity chi (L2 has it only for chi).');
 

@@ -256,8 +256,11 @@ class StartNewDeployment:
         self.ctd_box.pack(side='left')
         ttk.Button(ctd, text='Check CTD calibration', command=self.check_ctd_calibration).pack(side='left', padx=(6, 0))
         ttk.Label(ins, text='Profiling').grid(row=0, column=4, sticky='e', **pad)
-        ttk.Combobox(ins, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up'],
-                     state='readonly', width=6).grid(row=0, column=5, sticky='w', **pad)
+        prof = ttk.Frame(ins)
+        prof.grid(row=0, column=5, sticky='w', **pad)
+        ttk.Combobox(prof, textvariable=self.var('profiling_direction', value='down'), values=['down', 'up', 'both'],
+                     state='readonly', width=6).pack(anchor='w')
+        ttk.Label(prof, text='direction to compute spectra', foreground='#777').pack(anchor='w')
         ttk.Label(ins, text='Winch spool').grid(row=0, column=6, sticky='e', **pad)
         self.spool_entry = ttk.Entry(ins, textvariable=self.var('winch_spool'), width=12)
         self.spool_entry.grid(row=0, column=7, sticky='w', **pad)

@@ -14,6 +14,6 @@ ch3_sn:
 ch4_type: microcond
 ch4_sn: J5023-2
 compass_sn:
-profiling_direction: up
+profiling_direction: both
 alt: true
 fluor: false

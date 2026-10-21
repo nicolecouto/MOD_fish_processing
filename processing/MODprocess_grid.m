@@ -27,9 +27,13 @@ function gridded = MODprocess_grid(metadata, by)
 %     - Scans (viscosity_kinematic, diffusivity_thermal_molecular, and
 %       L2's grouped structs epsilon, chi, microconductivity and qc, under
 %       the same names: gridded.epsilon.final, gridded.epsilon.s1_obs,
-%       gridded.chi.t1_mle, ...): the mean of the L2 scans whose
-%       center is in the bin. A bin with no scan is NaN, and n_scans says
-%       how many scans each bin holds. Only casts in the
+%       gridded.chi.t1_mle, ...): each scan of the cast (its center in
+%       the cast) fills every bin of its footprint - from the shallowest
+%       to the deepest L1 CTD depth during the scan (N_epsi/Fs_epsi long),
+%       so a 6.4 s scan at 3.8 m/s spans about 24 m - and a bin is the
+%       mean of the scans covering it (about 2 with 50% overlap). A bin
+%       no scan covers is NaN, and n_scans says how many scans cover each
+%       bin. Only casts in the
 %       profile_detection.profile_dir direction have scans. L2's
 %       scan-center CTD values (pressure, w, temperature, salinity, SR) are
 %       left out: they are the L1 CTD interpolated at each scan center, and
@@ -113,7 +117,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 9; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi). A grid from another version rebins every cast.
+GRID_VERSION = 10; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi); 10: each scan fills its footprint, n_scans counts the scans covering a bin. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -345,11 +349,12 @@ if numel(ctd.dnum) > 1
     end
 end
 
-% Turbulence: the scans whose center is in the cast
-scans = struct('dnum', [], 'pressure', []);
+% Turbulence: the scans whose center is in the cast, each over the bins
+% it spans (its footprint)
+scans = struct('dnum', [], 'pressure', [], 'half_s', []);
 turb = struct();
 for i = 1:numel(L2_files)
-    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', ...
+    s = load_cached(cache, L2_files{i}, [{'dnum', 'pressure', 'nu', 'ktemp', 'N_epsi', 'Fs_epsi', ...
         'epsilon_final', 'epsilon_obs', 'chi_obs', 'chi_ucond', 'coherence_sum'}, turbulence_groups()]);
     if ~isfield(s, 'dnum') || isempty(s.dnum) || ~isfield(s, 'pressure')
         continue
@@ -361,6 +366,11 @@ for i = 1:numel(L2_files)
     n_before = numel(scans.dnum);
     scans.dnum = [scans.dnum; s.dnum(keep)];
     scans.pressure = [scans.pressure; s.pressure(keep)];
+    half_s = NaN; % no scan length: the scan's center bin only
+    if isfield(s, 'N_epsi') && isfield(s, 'Fs_epsi')
+        half_s = s.N_epsi / s.Fs_epsi / 2;
+    end
+    scans.half_s = [scans.half_s; repmat(half_s, nnz(keep), 1)];
     [values, source] = scan_values(s);
     if isempty(col.epsilon_final_source)
         col.epsilon_final_source = source;
@@ -378,11 +388,31 @@ for i = 1:numel(L2_files)
 end
 if ~isempty(scans.dnum)
     [scans.dnum, iu] = unique(scans.dnum);
-    scan_bins = bin_number(-gsw_z_from_p(scans.pressure(iu), lat), z_bin);
-    col.fields.n_scans = bin_count(scan_bins);
+    % footprint: the bins from the shallowest to the deepest L1 CTD sample
+    % during the scan (in the cast), else the bin of its center pressure
+    first = bin_number(-gsw_z_from_p(scans.pressure(iu), lat), z_bin);
+    last = first;
+    half = scans.half_s(iu) / 86400;
+    for k = 1:numel(first)
+        in_scan = ctd.dnum >= scans.dnum(k) - half(k) & ctd.dnum <= scans.dnum(k) + half(k);
+        zb = bin_number(ctd.z(in_scan), z_bin);
+        if any(isfinite(zb))
+            first(k) = min(zb);
+            last(k) = max(zb);
+        end
+    end
+    % one (bin, scan) pair per bin a scan covers; overlapping scans average
+    ok = isfinite(first);
+    scan_of = repelem(find(ok), last(ok) - first(ok) + 1);
+    pair_bins = cell2mat(arrayfun(@(a, b) (a:b)', first(ok), last(ok), 'UniformOutput', false));
+    if isempty(pair_bins)
+        pair_bins = zeros(0, 1);
+    end
+    col.fields.n_scans = bin_count(pair_bins);
     names = fieldnames(turb);
     for f = 1:numel(names)
-        col.fields.(names{f}) = bin_mean(scan_bins, turb.(names{f})(iu));
+        x = turb.(names{f})(iu);
+        col.fields.(names{f}) = bin_mean(pair_bins, x(scan_of));
     end
 end
 if isempty(fieldnames(col.fields))

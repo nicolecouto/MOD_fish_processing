@@ -551,7 +551,7 @@ def render_dev1_setup_yml(values, config):
         % ('true' if on_winch_spool(values) else 'false'),
         'pressure_case: %s' % yq(values.get('fish_pc', '')),
         'fish_flag: %s # EPSI or FCTD' % values['fish_flag'],
-        'profiling_direction: %s # for turbulence data, up or down' % values.get('profiling_direction', 'down'),
+        'profiling_direction: %s # direction to compute spectra: down, up or both' % values.get('profiling_direction', 'down'),
         'latitude: %s # used for ctd.z when no GPS fix is available' % values.get('latitude', '0'),
         '',
         'instrument_manifest:',

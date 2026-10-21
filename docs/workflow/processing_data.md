@@ -189,7 +189,9 @@ L2's per-channel values are `<L2 name>_<channel>`:
   samples pegged at the maximum range are left out: with no bottom in range, the ISA500 reads a
   flat 120 m. A maximum that repeats exactly counts as pegged, since a real range varies, so a bin
   with no bottom in range is NaN. yaw and spin are headings and aren't gridded.
-- **Scans**: the mean of the L2 scans whose center is in the bin: `viscosity_kinematic` (`nu`),
+- **Scans**: each scan of the cast (its center in the cast) fills every bin of its footprint, from
+  the shallowest to the deepest L1 CTD depth during the scan (`N_epsi`/`Fs_epsi` long), and a bin
+  is the mean of the scans covering it: `viscosity_kinematic` (`nu`),
   `diffusivity_thermal_molecular` (`ktemp`), and L2's four turbulence structs under the same
   names, each leaf `<channel>_<variant>`:
   - `epsilon`: `final` (and per cast `final_source`, which epsilon `final` is), and per shear
@@ -201,8 +203,10 @@ L2's per-channel values are `<L2 name>_<channel>`:
   - `qc`: per shear channel `<s>_coherence_a3_sum`
   e.g. `gridded.epsilon.final`, `gridded.chi.t1_obs`. `gridded.variables` names them the same way
   (`'epsilon.s1_mle'`).
-  - A bin with no scan is NaN; `n_scans` says how many each bin holds. With 1 m bins and a scan
-    every ~2 m, about half the bins of a cast hold a scan. Only `profile_dir` casts have scans.
+  - On FCTD2 a scan is 6.4 s, about 24 m at 3.8 m/s, and with 50% overlap most bins are covered by
+    2 scans, so a cast's turbulence is continuous from its first scan to its last. A bin no scan
+    covers is NaN; `n_scans` says how many scans cover each bin. Only `profile_dir` casts have
+    scans (`profiling_direction` in Start New Deployment: down, up or both).
   - A struct holds only what L2 computed, so a vehicle without shear probes, like the FCTD, has
     no `epsilon.final` (only `epsilon.final_source`, all `''`). An L2 file in the old flat layout
     (before 2026-10-21) stops the grid with an error: reprocess L2.
@@ -840,3 +844,12 @@ Epsi grid would have lost epsilon the same way). The NaN padding of an L2 file m
 (`bin_cast`, a `setdiff`) had the same bug. Both now loop over rows. `grid_version` 9, so a grid made
 before the fix is rebinned in full on the next pass. Tested on a sandbox copy of
 26_1021_fctd2_rupture_disc: a one-cast rebin now equals a full rebin, field for field.
+
+**2026-10-21 (evening) - Turbulence over each scan's footprint** (branch `main-fork`). Nicole: "I
+don't love the look of all the white space between microcond chi values (same thing with epsilon
+and chi) ... I do think we should bin average or interpolate to the same bins as CTD data." Each
+scan's value went only in the bin holding its center: with 1 m bins and an FCTD2 scan every ~12 m,
+most bins were white. Now a scan fills every bin it spans (its L1 CTD depths during the scan), the
+bins it shares with the next scan are averaged, and `n_scans` counts the scans covering a bin
+(Nicole chose this over interpolating between scan centers: no values are made up). `grid_version`
+10.

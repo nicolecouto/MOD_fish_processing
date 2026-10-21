@@ -32,6 +32,9 @@ probe SN. Both probe fits are listed in `setup/MODsetup_probe_fits.m`.
 - Windows of `ucond.gain_fit_window_s` are placed in each stretch where the fish moves the whole
   time (`abs(dPdt)` above `profile_detection.speedLim_scan_m_s`) one way that
   `profile_detection.profile_dir` trusts, as many as fit, centered in the stretch.
+- Microconductivity works on up- and downcasts, so FCTD deployments use `profile_dir: both` (Start
+  New Deployment's Profiling menu; the FCTD presets start as `both`). Then L2 has scans, and the
+  fit has windows, in both directions.
 - A window is skipped when either record has a gap (`ctd_gap_factor` / `epsi_gap_factor` times
   the median sample interval) or the probe is railed (a sample at `ucond.rail_fraction` of the
   channel's `full_range` or beyond).
@@ -216,6 +219,13 @@ probe is railed at -2.5 V from 08:01 on: windows and scans after that are skippe
   deployment isn't followed.
 
 ## History
+
+**2026-10-21 (evening) - Upcasts** (branch `main-fork`). Nicole: "microconductivity can be
+calculated for both up and downcasts." No code here: Start New Deployment got a `both` Profiling
+option, and the FCTD presets start with it. On a sandbox copy of 26_1021_fctd2_rupture_disc
+reprocessed from L1 with `both`: the gain fit used 126 windows (28 from downcasts only) and gave
+4.31 S/m per V (the worker's was 4.47). Every upcast has chi, and for each down/up pair the median
+log10(up/down) chi_obs over shared bins is between -0.26 and 0.14.
 
 **2026-10-21 - chi_tot and eps_chi** (branch `main-fork`). Nicole: "Let's do microconductivity
 chi_tot and eps_chi." Her choices: N^2 per scan in L2 from the L1 CTD within a yml depth window, sorted

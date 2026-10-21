@@ -30,6 +30,12 @@ that the twist count restarts from 0 at this deployment. It's written to
 `fctd_epsi` doesn't use it), and the window warns if it's empty - all only
 in **ON THE WINCH SPOOL** mode.
 
+**Profiling** is the direction to compute spectra in: down, up or both. It's written to
+`dev1_setup.yml` (`profiling_direction:`), and processing uses it as
+`profile_detection.profile_dir`. Only scans in that direction get spectra, epsilon and chi.
+The FCTD presets start as `both`, since microconductivity works on up- and downcasts; the MAKO
+presets start as `down`.
+
 **The switch at the top** - **ON THE WINCH SPOOL** or **LAB TEST (not on a
 spool)** - says whether this deployment is on the cable. It alone decides; the
 survey's name doesn't. In LAB TEST mode:
@@ -238,6 +244,10 @@ typed into the yml by hand. The grid uses it for each cast's position (see
 (`MAKO1` → `Mako`) - see [L0 → L1](L0_to_L1_conversion.md).
 
 ## History
+
+**2026-10-21 - Profiling: both** (branch `main-fork`). Nicole: "I need a 'both' profiling option
+for 'Start New Deployment'", with subtext "direction to compute spectra" under the menu. The
+FCTD presets (FCTD1-3, which were `up`) now start as `both`.
 
 **2026-10-18 (later) - `platform: ship`** (branch `main-fork`). `dev1_setup.yml` gets
 `platform: ship` after `vehicle_name`; other platforms type it into their yml.

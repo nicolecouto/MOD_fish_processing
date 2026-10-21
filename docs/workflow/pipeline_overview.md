@@ -197,7 +197,7 @@ flowchart LR
 | `MODprocess_single_L1_to_L2.m` | data, metadata, PressureTimeseries → L2data | Same function as realtime; carries through profile_number/direction/filenames/dnum_start/dnum_end when present on `data` |
 | `mod_L2_tile_scans.m` | epsi, ctd, metadata → L2data | Same core as realtime; `segment_id` skips any window spanning a real gap |
 | `mod_scan_get_spectra.m` | scan, metadata → scan.spectra | Identical function, same as realtime path |
-| `MODprocess_grid.m` | metadata, by → grid | One column per cast (down and up), depth bins of `grid.z_bin_m`: CTD = mean of the L1 samples in the bin, turbulence = mean of the scans whose center is in it. By file (L1/L2 through `time_index`) or by profile (`profiles_L1/`, `profiles_L2/`); only new or changed casts are rebinned |
+| `MODprocess_grid.m` | metadata, by → grid | One column per cast (down and up), depth bins of `grid.z_bin_m`: CTD = mean of the L1 samples in the bin, turbulence = mean of the scans whose footprint (the depths a scan spans) covers the bin. By file (L1/L2 through `time_index`) or by profile (`profiles_L1/`, `profiles_L2/`); only new or changed casts are rebinned |
 
 ## Chi and epsilon - wired into `mod_L2_tile_scans.m`
 

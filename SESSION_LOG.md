@@ -4,6 +4,37 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-21 - Turbulence over each scan's footprint; Profiling "both" in Start New Deployment (branch `main-fork`)
+
+Nicole: "I don't love the look of all the white space between microcond chi values (same thing with epsilon and chi) ... I do think we should bin average or interpolate to the same bins as CTD data. Also, microconductivity can be calculated for both up and downcasts, and the lat/lon of those profiles should be the mean."
+
+Her choices:
+- Scan footprint over interpolating between centers.
+- `profile_dir: both`.
+- "I need a 'both' profiling option for 'Start New Deployment'", with subtext "direction to compute spectra".
+- FCTD presets -> both.
+
+Changes:
+- `MODprocess_grid.m` `bin_cast`: each scan fills the bins from its shallowest to its deepest L1 CTD depth during the scan (N_epsi/Fs_epsi), else its center bin. A bin is the mean of the scans covering it, and `n_scans` counts them. `grid_version` 10. `MODunits_L3`, the README and pipeline_overview are updated to match.
+- `start_new_deployment.py`: Profiling is down/up/both, with grey subtext under it.
+- `mod_setup_file.py`: the yml comment.
+- `presets/fctd1-3.yml`: `profiling_direction: both`.
+- Positions: no change needed. FCTD casts were already the mean of the fixes (first fix only for Epsi from the ship).
+
+Tested in the scratchpad:
+- 26_1021_fctd2_rupture_disc copy, downcasts only: chi_obs bins per downcast went from ~57 to ~760, filling each cast from its first scan to its last; median 2 scans per bin, max 3.
+  - All 209 bins covered by one scan equal an L2 chi_obs exactly.
+  - A one-cast rebin equals a full rebin; then "none changed".
+- Same copy, `dev1_setup.yml` set to `both`, reprocessed from L1:
+  - the run yml followed (`profile_dir: 'down' -> 'both'`)
+  - gain 4.31 S/m per V from 126 windows
+  - every upcast has chi; per down/up pair, the median log10(up/down) chi_obs is between -0.26 and 0.14
+  - the grid's latitude equals the mean GPS latitude for every cast
+- 26_1019_mako2_test2 copy (Epsi): epsilon.final went from 294 to 603 bins on its downcast; positions unchanged (first fix).
+- Start New Deployment: the FCTD2 preset renders `profiling_direction: both # direction to compute spectra: down, up or both`. The window (built hidden, from a sandbox config.yml) has the menu values down/up/both and the subtext in the same column.
+- Monitor screenshot with chi_obs/chi_tot/eps_chi, both directions.
+- `checkcode` shows only pre-existing messages; `mkdocs build --strict`.
+
 ### 2026-10-21 - Fix: the grid kept only `chi` for reused casts; monitor keeps section picks (branch `main-fork`)
 
 Nicole, after the 26_1021_fctd2_rupture_disc test deployment: "In the realtime monitor, I only ever see the last profile of microconducitvity chi ... the dropdowns I had set for microcond.chi_obs and .chi_tot were gone. Later they would show up again."
