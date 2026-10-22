@@ -185,12 +185,12 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   section's colour range (and log10 like it): the cast you click on a section, or the newest cast
   in the window until you click (and after changing survey). The top one's title gives the cast and
   whether it was clicked; a magenta line marks it on the sections. Each profile's box has its
-  section's height and depth limits, and no x label (the variable and unit are the section's). A
+  section's height and depth limits, and no x or y labels (the variable and unit, and the depths, are the section's). A
   depth zoom on any section or profile moves them all.
 - **Left:** 4 colour sections of the survey's grid (`processed/realtime/gridded/gridded.mat`), one
   column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
   there are 2 or more ("sigma0 contours": on/off, and the interval in kg/m^3; empty = 10
-  levels; shown in the first section's title). All 4 share the depth and time limits;
+  levels; shown in the first section's title; each section's title is its variable and unit). All 4 share the depth and time limits;
   each has its own variable (any field in `gridded.variables`, grouped ones by path like `epsilon.s1_mle`;
   epsilon, chi and microconductivity as log10, not their cutoffs or figures of merit; sections start
   as sigma0, temperature, salinity_practical and epsilon.final; a variable you pick that the grid
@@ -199,7 +199,7 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
   and turbo. Click one to pick a cast (the profiles at far left) and a time (the L1/L2 file
   holding it is shown).
-- **Middle,** 3 rows x 2 columns beside sections 1-3 (narrower than the sections, 3 : 5), then the log beside section 4. Left:
+- **Middle,** 3 rows x 2 columns beside sections 1-3 (narrower than the sections, 3.5 : 4), then the log beside section 4. Left:
   pressure vs time over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
   survey on the winch spool, restarting at each spool change), on the same time limits and
   linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the casts (`v`
@@ -214,10 +214,12 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   starts dotted; one line, up and down casts alike. Right, square: the last 5 casts' T profiles and C profiles, each
   offset like a waterfall, and their T-S. The log is the survey's `processing.log` (or
   `cruise_log.txt`), problem lines in red - click a line to see all of it.
-- **Right:** Start / Pause / Stop; Preflight (the worker's last preflight for the survey, from
+- **Right:** "Worker: running / stopped / paused", then Start / Pause / Stop; Preflight (the worker's last preflight for the survey, from
   `status.json`); for all sections: casts (both/down/up), depth limits, and the time window -
   a span in hours ending at the current time (UTC) or at a typed time, as in the FastCTD GUI
-  (span 0 = all casts); per section: variable, colormap, colour min/max; the T and C profile
+  (span 0 = all casts; choosing another survey, or opening on one the worker isn't running, fills
+  the span and ending time so all its casts show, and the survey the worker is on goes back to 6 h
+  ending now); per section: variable, colormap, colour min/max; the T and C profile
   offsets;
   the log; open the run in `MODvis_timeseries` or `MODvis_spectra`; Save PNG
   (`realtime/figures/`). Empty = auto. Each setting is written on the plot it changes.

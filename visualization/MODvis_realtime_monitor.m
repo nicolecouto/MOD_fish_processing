@@ -81,6 +81,7 @@ classdef MODvis_realtime_monitor < handle
         DetailLbl
 
         SurveyDrop
+        WorkerLbl
         StartBtn
         PauseBtn
         StopBtn
@@ -117,6 +118,11 @@ classdef MODvis_realtime_monitor < handle
     end
 
     properties (Constant)
+        ProfileColW = 105            % main grid, column 1 [px]: the profiles
+        ControlColW = 235            % main grid, column 4 [px]: the controls
+        GridPad = [2 10 10 10]       % main grid padding [left bottom right top]; the profiles need no room at the left
+        GridSpacing = 4              % main grid column spacing [px]
+        ColorbarPad = 25            % right of the sections [px]: the colorbar labels hang outside the axes
         DefaultVars = {'sigma0', 'temperature', 'salinity_practical', 'epsilon.final'}
         DefaultCmaps = {'dense', 'thermal', 'haline', 'turbo'}
         % parula and turbo are Matlab's; the rest are cmocean's (toolbox/cmocean)
@@ -137,6 +143,8 @@ classdef MODvis_realtime_monitor < handle
             app.buildUI();
             app.layoutMiddle();
             app.refresh();
+            app.fitWindowToSurvey(); % a past survey opens with all its casts
+            app.drawPlots();
             app.Timer = timer('ExecutionMode', 'fixedSpacing', 'Period', app.RefreshS, ...
                 'BusyMode', 'drop', 'TimerFcn', @(~, ~) app.refresh());
             start(app.Timer);
@@ -158,8 +166,10 @@ classdef MODvis_realtime_monitor < handle
                 'CloseRequestFcn', @(~, ~) delete(app), 'AutoResizeChildren', 'off', ...
                 'SizeChangedFcn', @(~, ~) app.resized());
             g = uigridlayout(app.Fig, [2 4]);
+            g.Padding = app.GridPad;
+            g.ColumnSpacing = app.GridSpacing;
             g.RowHeight = {40, '1x'};
-            g.ColumnWidth = {150, '5x', '3x', 235};
+            g.ColumnWidth = {app.ProfileColW, '4x', '3.5x', app.ControlColW};
 
             app.StatusLbl = uilabel(g, 'Text', '', 'WordWrap', 'on', 'FontSize', 12, 'FontWeight', 'bold');
             app.StatusLbl.Layout.Row = 1;
@@ -174,10 +184,11 @@ classdef MODvis_realtime_monitor < handle
             app.ProfileAx = gobjects(1, app.NSections);
             for i = 1:app.NSections
                 app.ProfileAx(i) = uiaxes(prof, 'FontSize', app.FontSize - 1);
+                app.ProfileAx(i).YTickLabel = {}; % the depths read off the section beside it
             end
 
             % left: the sections, stacked
-            left = uigridlayout(g, [app.NSections 1], 'Padding', [0 0 0 0], 'RowSpacing', 2);
+            left = uigridlayout(g, [app.NSections 1], 'Padding', [0 0 app.ColorbarPad 0], 'RowSpacing', 2);
             left.Layout.Row = 2;
             left.Layout.Column = 2;
             app.SectionAx = gobjects(1, app.NSections);
@@ -213,13 +224,17 @@ classdef MODvis_realtime_monitor < handle
             app.DetailLbl = uilabel(logs, 'Text', '', 'WordWrap', 'on', 'FontName', 'Menlo', 'FontSize', 10);
 
             % right: control panel
-            n_rows = 19 + 3 * app.NSections + 9;
+            n_rows = 20 + 3 * app.NSections + 9;
             c = uigridlayout(g, [n_rows 2], 'RowSpacing', 3, 'Scrollable', 'on');
             c.Layout.Row = 2;
             c.Layout.Column = 4;
             c.RowHeight = repmat({20}, 1, n_rows);
             row = 1;
             app.SurveyDrop = app.labelled(c, row, 'Survey', 'drop', {}, @(~, ~) app.surveyChanged());
+            row = row + 1;
+            app.WorkerLbl = uilabel(c, 'Text', 'Worker: -', 'FontWeight', 'bold');
+            app.WorkerLbl.Layout.Row = row;
+            app.WorkerLbl.Layout.Column = [1 2];
             row = row + 1;
             app.StartBtn = app.button(c, row, 1, 'Start', @(~, ~) app.startWorker());
             app.PauseBtn = app.button(c, row, 2, 'Pause', @(~, ~) app.sendCommand('pause'));
@@ -318,7 +333,7 @@ classdef MODvis_realtime_monitor < handle
             w = app.ProfilePanel.Position(3);
             for i = 1:app.NSections
                 p = app.SectionAx(i).InnerPosition;
-                app.ProfileAx(i).InnerPosition = [40, p(2), max(w - 48, 20), p(4)];
+                app.ProfileAx(i).InnerPosition = [6, p(2), max(w - 12, 20), p(4)]; % no y labels: edge to edge
             end
         end
 
@@ -330,7 +345,8 @@ classdef MODvis_realtime_monitor < handle
             end
             pos = app.Fig.Position;
             row_h = (pos(4) - 40 - 3 * 10 - (app.NSections - 1) * 2) / app.NSections;
-            mid_w = (pos(3) - 150 - 235 - 5 * 10) * 3 / 8; % the main grid's middle column, '3x' of 150 '5x' '3x' 235
+            fixed_w = app.ProfileColW + app.ControlColW + app.GridPad(1) + app.GridPad(3) + 3 * app.GridSpacing;
+            mid_w = (pos(3) - fixed_w) * 3.5 / 7.5; % the main grid's middle column, '3.5x' of '4x' '3.5x'
             app.MidGrid.ColumnWidth = {'1x', max(120, min(row_h, 0.6 * mid_w))};
         end
 
@@ -444,6 +460,16 @@ classdef MODvis_realtime_monitor < handle
             worker = app.field(st, 'worker_state', 'no status.json yet');
             if ~app.workerRunning() && any(strcmp(worker, {'running', 'paused'}))
                 worker = [worker ' (no worker.lock - not running?)'];
+            end
+            if ~app.workerRunning()
+                app.WorkerLbl.Text = 'Worker: stopped';
+                app.WorkerLbl.FontColor = [0.75 0 0];
+            elseif strcmp(app.field(st, 'worker_state', ''), 'paused')
+                app.WorkerLbl.Text = 'Worker: paused';
+                app.WorkerLbl.FontColor = [0 0 0];
+            else
+                app.WorkerLbl.Text = 'Worker: running';
+                app.WorkerLbl.FontColor = [0 0.5 0];
             end
             vehicle = '';
             spool = '';
@@ -692,7 +718,7 @@ classdef MODvis_realtime_monitor < handle
             cb.Label.String = label;
             cb.Label.Interpreter = 'none';
             cb.Label.FontSize = app.FontSize;
-            [lims, how] = app.colourLimits(i, v);
+            lims = app.colourLimits(i, v);
             if ~isempty(lims)
                 ax.CLim = lims; % not clim(): a user clim.m can shadow it
             end
@@ -710,7 +736,7 @@ classdef MODvis_realtime_monitor < handle
             app.TimeLimits = tl;
             datetick(ax, 'x', 'HH:MM', 'keeplimits');
             ylabel(ax, 'depth [m]');
-            lines = {sprintf('%d. %s, %s, colour %s', i, label, app.CmapDrop(i).Value, how)};
+            lines = {label};
             if i == 1
                 lines = [{sprintf('%s - %s, casts: %s (%d), depth %g-%g m, %g m bins, %s, white = no data', ...
                     app.SurveyDrop.Value, app.windowText(), app.DirDrop.Value, numel(idx), zl(1), zl(2), g.z_bin_m, ...
@@ -791,22 +817,18 @@ classdef MODvis_realtime_monitor < handle
             end
         end
 
-        function [lims, how] = colourLimits(app, i, v)
+        function lims = colourLimits(app, i, v)
             lo = app.CMinField(i).Value;
             hi = app.CMaxField(i).Value;
             finite = v(isfinite(v));
             lims = [];
             if ~isempty(lo) && ~isempty(hi) && hi > lo
                 lims = [lo hi];
-                how = sprintf('%g to %g', lo, hi);
             elseif ~isempty(finite)
                 lims = prctile(finite, [2 98]);
                 if lims(2) <= lims(1)
                     lims = lims(1) + [-1 1] * max(abs(lims(1)) * 0.01, eps);
                 end
-                how = sprintf('auto %.4g to %.4g (2-98%%)', lims(1), lims(2));
-            else
-                how = 'auto (no data)';
             end
         end
 
@@ -1264,8 +1286,29 @@ classdef MODvis_realtime_monitor < handle
             app.GridFile = '';
             app.SelectedTime = NaN;
             app.SelectedCastStart = NaN;
+            app.loadGrid();
+            app.fitWindowToSurvey();
             app.refresh();
             app.drawPlots();
+        end
+
+        function fitWindowToSurvey(app)
+            % span and ending-at so the whole survey shows; the survey the
+            % worker is on stays on a rolling window ending now
+            g = app.Grid;
+            if ~isfield(g, 'cast_start') || isempty(g.cast_start) || ~isfield(g, 'cast_end')
+                return
+            end
+            live = app.workerRunning() && strcmp(app.SurveyDrop.Value, app.field(app.Status, 'active_survey', ''));
+            if live
+                app.SpanField.Value = 6;
+                app.EndDrop.Value = app.EndDrop.Items{1};
+                return
+            end
+            t_end = ceil(max(g.cast_end) * 1440) / 1440; % the typed time has minutes
+            app.SpanField.Value = ceil((t_end - min(g.cast_start)) * 24 * 10) / 10; % hours, up to 0.1 h
+            app.EndField.Value = datestr(t_end, 'yyyy-mm-dd HH:MM'); %#ok<DATST>
+            app.EndDrop.Value = app.EndDrop.Items{2};
         end
 
         %% Helpers

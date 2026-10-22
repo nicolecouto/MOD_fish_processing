@@ -4,6 +4,16 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-22 - Monitor: aesthetics pass (branch `main-fork`)
+
+Nicole: pcolors a little narrower so pressure, twist and the map get more width; the pcolor colorbar labels were hidden behind column 3's y-axes; whole-deployment span and ending-at when a previous deployment is loaded; "Worker: running/stopped" above Start/Stop; pcolor titles just the variable and unit.
+- MODvis_realtime_monitor: main grid columns 4x : 3.5x (was 5x : 3x), profile column 105 px (was 150) with no y tick labels and its axes edge to edge, grid padding 2 px at the left and 4 px between columns; `layoutMiddle` reads the same constants (`ProfileColW`, `ControlColW`, `GridPad`, `GridSpacing`). The colorbar labels hang outside the section axes, so the sections' grid has 25 px of right padding (`ColorbarPad`) for them.
+- Auto span and ending-at (`fitWindowToSurvey`): on a survey change and at startup, span = first cast start to last cast end rounded up to 0.1 h, ending at the last cast end rounded up to the minute, "this time (UTC)". Not for the survey the worker is running on (`worker.lock` and `active_survey`): that one goes back to "current time (UTC)" and 6 h, so switching back to the live survey drops a span she had typed. Her choice. There is no separate "load deployment" action - the Survey dropdown is it.
+- "Worker: running / stopped / paused" (bold, green / red / black) in the control panel above Start; from `worker.lock` and the status's `worker_state`. The top line keeps its own worker text.
+- Section titles: `name [unit]` only (section 1 still has its survey/window line above); `colourLimits` no longer returns the description string.
+
+Tested on a synthetic two-survey root in the scratchpad (no gridded.mat found on this machine): the live survey keeps 6 h and current time; the old survey gets span 4.7 h ending at its last cast, every cast inside `timeWindow()`; switching back to the live one restores it; removing `worker.lock` flips the label to stopped within a refresh; each profile's plot box y and height equal its section's to 0.01 px; the colorbar labels of all 4 sections are clear of the middle column in an exported PNG. checkcode: only the pre-existing datetick note.
+
 ### 2026-10-22 - Monitor: profiles of the clicked cast (branch `main-fork`)
 
 Nicole: "When I click on something in one of the pcolors, I want to plot the profile in the left column. Do it for all 4 of whatever variables we're plotting at once." Then, worried about the sections' width: smaller control-panel text, and a narrower pressure/twist column.
