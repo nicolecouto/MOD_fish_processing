@@ -16,6 +16,12 @@ classdef MODvis_realtime_monitor < handle
     %
     %   Top:    status - worker state, survey, vehicle, winch spool, file
     %           counts, casts, lag, problems, last update.
+    %   Far left: the profile of each section's variable for one cast -
+    %           the cast clicked on a section, or the newest one until a
+    %           click - on that section's colour range, with a magenta line
+    %           at the cast on the sections. Each plot box has its
+    %           section's height and depths (no x label: the section's);
+    %           depth zooms move them all.
     %   Left:   4 colour sections of the grid, one column per cast (depth
     %           vs time; one cast spans its own start to end), with sigma0 contours (2+ casts; on/off and the interval in
     %           the controls). All 4 share the depth and
@@ -60,6 +66,10 @@ classdef MODvis_realtime_monitor < handle
 
         StatusLbl
         SectionAx                    % 1 x NSections uiaxes
+        ProfileAx                    % 1 x NSections uiaxes, the selected cast's profile of each section's variable
+        ProfilePanel                 % holds ProfileAx, free of a grid so they can line up with the sections
+        DepthLink                    % links YLim of the sections and the profiles
+        SectionCLim cell = {}        % each section's colour limits as last drawn, [] = none
         PressureAx
         TSAx
         WaterfallAx
@@ -100,6 +110,7 @@ classdef MODvis_realtime_monitor < handle
         GridStamp double = NaN
         ChosenVars cell = {}         % each section's last pick from its menu, kept while the grid lacks it
         SelectedTime double = NaN
+        SelectedCastStart double = NaN % the clicked cast's cast_start; NaN = the newest cast
         TimeLimits double = []       % the sections' time limits, shared with pressure and twist
         Twist struct = struct()      % <processed_root>/twist/twist_time_series.mat
         TwistStamp double = NaN
@@ -145,19 +156,30 @@ classdef MODvis_realtime_monitor < handle
         function buildUI(app)
             app.Fig = uifigure('Name', ['Realtime monitor - ' app.Root], 'Position', [40 40 1700 1000], ...
                 'CloseRequestFcn', @(~, ~) delete(app), 'AutoResizeChildren', 'off', ...
-                'SizeChangedFcn', @(~, ~) app.layoutMiddle());
-            g = uigridlayout(app.Fig, [2 3]);
+                'SizeChangedFcn', @(~, ~) app.resized());
+            g = uigridlayout(app.Fig, [2 4]);
             g.RowHeight = {40, '1x'};
-            g.ColumnWidth = {'2x', '2x', 270};
+            g.ColumnWidth = {150, '5x', '3x', 235};
 
             app.StatusLbl = uilabel(g, 'Text', '', 'WordWrap', 'on', 'FontSize', 12, 'FontWeight', 'bold');
             app.StatusLbl.Layout.Row = 1;
-            app.StatusLbl.Layout.Column = [1 3];
+            app.StatusLbl.Layout.Column = [1 4];
+
+            % far left: the selected cast's profiles, one beside each section,
+            % placed by alignProfiles to the sections' plot boxes
+            prof = uipanel(g, 'BorderType', 'none');
+            prof.Layout.Row = 2;
+            prof.Layout.Column = 1;
+            app.ProfilePanel = prof;
+            app.ProfileAx = gobjects(1, app.NSections);
+            for i = 1:app.NSections
+                app.ProfileAx(i) = uiaxes(prof, 'FontSize', app.FontSize - 1);
+            end
 
             % left: the sections, stacked
             left = uigridlayout(g, [app.NSections 1], 'Padding', [0 0 0 0], 'RowSpacing', 2);
             left.Layout.Row = 2;
-            left.Layout.Column = 1;
+            left.Layout.Column = 2;
             app.SectionAx = gobjects(1, app.NSections);
             for i = 1:app.NSections
                 app.SectionAx(i) = uiaxes(left, 'FontSize', app.FontSize);
@@ -170,7 +192,7 @@ classdef MODvis_realtime_monitor < handle
             % beside the 4th section
             mid = uigridlayout(g, [app.NSections 2], 'Padding', [0 0 0 0], 'RowSpacing', 2);
             mid.Layout.Row = 2;
-            mid.Layout.Column = 2;
+            mid.Layout.Column = 3;
             mid.RowHeight = repmat({'1x'}, 1, app.NSections); % rows line up with the sections
             app.MidGrid = mid;
             app.PressureAx = app.smallAxes(mid, 1, 1);
@@ -194,8 +216,8 @@ classdef MODvis_realtime_monitor < handle
             n_rows = 19 + 3 * app.NSections + 9;
             c = uigridlayout(g, [n_rows 2], 'RowSpacing', 3, 'Scrollable', 'on');
             c.Layout.Row = 2;
-            c.Layout.Column = 3;
-            c.RowHeight = repmat({22}, 1, n_rows);
+            c.Layout.Column = 4;
+            c.RowHeight = repmat({20}, 1, n_rows);
             row = 1;
             app.SurveyDrop = app.labelled(c, row, 'Survey', 'drop', {}, @(~, ~) app.surveyChanged());
             row = row + 1;
@@ -277,6 +299,27 @@ classdef MODvis_realtime_monitor < handle
             root_lbl = uilabel(c, 'Text', app.Root, 'WordWrap', 'on', 'FontSize', 9);
             root_lbl.Layout.Row = [row min(row + 1, n_rows)];
             root_lbl.Layout.Column = [1 2];
+            set(findall(c, '-property', 'FontSize'), 'FontSize', 10); % a little smaller, so the plots get the room
+        end
+
+        function resized(app)
+            app.layoutMiddle();
+            app.alignProfiles();
+        end
+
+        function alignProfiles(app)
+            % each profile's plot box at its section's height and width
+            % of depth, so the depths read across; the panel and the
+            % sections' grid share the main grid's row, so their y agree
+            if isempty(app.ProfilePanel) || ~isvalid(app.ProfilePanel)
+                return
+            end
+            drawnow; % the sections' titles and labels have set their boxes
+            w = app.ProfilePanel.Position(3);
+            for i = 1:app.NSections
+                p = app.SectionAx(i).InnerPosition;
+                app.ProfileAx(i).InnerPosition = [40, p(2), max(w - 48, 20), p(4)];
+            end
         end
 
         function layoutMiddle(app)
@@ -287,7 +330,7 @@ classdef MODvis_realtime_monitor < handle
             end
             pos = app.Fig.Position;
             row_h = (pos(4) - 40 - 3 * 10 - (app.NSections - 1) * 2) / app.NSections;
-            mid_w = (pos(3) - 270 - 4 * 10) / 2; % the main grid's middle column, '2x' of '2x' '2x' 270
+            mid_w = (pos(3) - 150 - 235 - 5 * 10) * 3 / 8; % the main grid's middle column, '3x' of 150 '5x' '3x' 235
             app.MidGrid.ColumnWidth = {'1x', max(120, min(row_h, 0.6 * mid_w))};
         end
 
@@ -520,17 +563,81 @@ classdef MODvis_realtime_monitor < handle
 
         function drawSections(app)
             app.TimeLimits = [];
+            k = app.selectedCast();
             for i = 1:app.NSections
-                app.drawSection(i);
+                app.drawSection(i, k);
+                app.drawProfile(i, k);
             end
             ok = isgraphics(app.SectionAx);
             if ~isempty(app.TimeLimits)
-                linkaxes(app.SectionAx(ok), 'xy');
+                linkaxes(app.SectionAx(ok), 'x');
+            end
+            % a depth zoom on any section or profile moves them all
+            app.DepthLink = linkprop([app.SectionAx(ok), app.ProfileAx(isgraphics(app.ProfileAx))], 'YLim');
+            app.alignProfiles();
+        end
+
+        function k = selectedCast(app)
+            % the grid column of the clicked cast, else the newest cast in
+            % the window and direction(s); [] when there is none
+            k = [];
+            g = app.Grid;
+            if ~isfield(g, 'cast_start') || isempty(g.cast_start)
+                return
+            end
+            if isfinite(app.SelectedCastStart)
+                k = find(abs(g.cast_start - app.SelectedCastStart) < 1e-8, 1);
+            end
+            if isempty(k)
+                idx = find(app.pickColumns());
+                [~, j] = max(g.time(idx));
+                k = idx(j);
             end
         end
 
-        function drawSection(app, i)
+        function drawProfile(app, i, k)
+            % section i's variable for cast k, on that section's colour range
+            ax = app.ProfileAx(i);
+            cla(ax);
+            g = app.Grid;
+            name = app.VarDrop(i).Value;
+            G = app.gridField(g, name);
+            if isfield(g, 'z') && ~isempty(g.z)
+                ax.YDir = 'reverse';
+                ylim(ax, app.depthLimits(g.z)); % the sections' depths, with or without a profile
+            end
+            if isempty(k) || isempty(G)
+                if i == 1
+                    title(ax, 'no cast', 'FontSize', app.FontSize, 'FontWeight', 'normal');
+                end
+                return
+            end
+            [~, v] = app.displayed(name, G(:, k));
+            plot(ax, v, g.z, 'k', 'LineWidth', 1);
+            ax.YDir = 'reverse'; % plot resets the axes
+            ylim(ax, app.depthLimits(g.z));
+            lims = app.SectionCLim{i};
+            if ~isempty(lims)
+                xlim(ax, lims);
+            end
+            % no x label: the variable and unit are the section's
+            if i == 1
+                how = 'newest';
+                if isfinite(app.SelectedCastStart) && abs(g.cast_start(k) - app.SelectedCastStart) < 1e-8
+                    how = 'clicked';
+                end
+                title(ax, {app.castText(k), sprintf('(%s; x = colour range)', how)}, 'Interpreter', 'none', ...
+                    'FontSize', app.FontSize, 'FontWeight', 'normal');
+            end
+        end
+
+        function txt = castText(app, k)
+            txt = sprintf('%s %s', datestr(app.Grid.time(k), 'mm-dd HH:MM'), app.Grid.cast_direction{k}); %#ok<DATST>
+        end
+
+        function drawSection(app, i, k)
             ax = app.SectionAx(i);
+            app.SectionCLim{i} = [];
             cla(ax);
             colorbar(ax, 'off');
             g = app.Grid;
@@ -575,8 +682,8 @@ classdef MODvis_realtime_monitor < handle
                     hc.HitTest = 'off';
                 end
             end
-            if isfinite(app.SelectedTime)
-                xline(ax, app.SelectedTime, 'm', 'LineWidth', 1.5, 'HitTest', 'off');
+            if ~isempty(k)
+                xline(ax, g.time(k), 'm', 'LineWidth', 1.5, 'HitTest', 'off'); % the cast in the profiles
             end
             hold(ax, 'off');
             ax.YDir = 'reverse';
@@ -589,6 +696,7 @@ classdef MODvis_realtime_monitor < handle
             if ~isempty(lims)
                 ax.CLim = lims; % not clim(): a user clim.m can shadow it
             end
+            app.SectionCLim{i} = lims;
             zl = app.depthLimits(g.z);
             ylim(ax, zl);
             tl = app.timeWindow();
@@ -1097,7 +1205,19 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function pickTime(app, ev)
+            % the click picks a time (its L1/L2 file) and the cast drawn
+            % there (nearest cast time among those shown: the cell clicked)
             app.SelectedTime = ev.IntersectionPoint(1);
+            g = app.Grid;
+            cast = '';
+            if isfield(g, 'time') && ~isempty(g.time)
+                idx = find(app.pickColumns());
+                if ~isempty(idx)
+                    [~, j] = min(abs(g.time(idx) - app.SelectedTime));
+                    app.SelectedCastStart = g.cast_start(idx(j));
+                    cast = sprintf(', cast %s', app.castText(idx(j)));
+                end
+            end
             file = '';
             ti = app.safeLoad(fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'time_index.mat'));
             if isfield(ti, 'filename') && ~isempty(ti.filename)
@@ -1106,8 +1226,8 @@ classdef MODvis_realtime_monitor < handle
                     file = ti.filename{k};
                 end
             end
-            app.DetailLbl.Text = sprintf('Selected %s UTC - L1/L2 file: %s', ...
-                datestr(app.SelectedTime, 'yyyy-mm-dd HH:MM:SS'), app.orNone(file)); %#ok<DATST>
+            app.DetailLbl.Text = sprintf('Selected %s UTC%s - L1/L2 file: %s', ...
+                datestr(app.SelectedTime, 'yyyy-mm-dd HH:MM:SS'), cast, app.orNone(file)); %#ok<DATST>
             app.drawSections();
         end
 
@@ -1143,6 +1263,7 @@ classdef MODvis_realtime_monitor < handle
         function surveyChanged(app)
             app.GridFile = '';
             app.SelectedTime = NaN;
+            app.SelectedCastStart = NaN;
             app.refresh();
             app.drawPlots();
         end

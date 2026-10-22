@@ -181,6 +181,12 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 
 - **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
   missing parameters, last update (red when there are problems or missing parameters).
+- **Far left:** one cast's profile of each section's variable, beside its section, on that
+  section's colour range (and log10 like it): the cast you click on a section, or the newest cast
+  in the window until you click (and after changing survey). The top one's title gives the cast and
+  whether it was clicked; a magenta line marks it on the sections. Each profile's box has its
+  section's height and depth limits, and no x label (the variable and unit are the section's). A
+  depth zoom on any section or profile moves them all.
 - **Left:** 4 colour sections of the survey's grid (`processed/realtime/gridded/gridded.mat`), one
   column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
   there are 2 or more ("sigma0 contours": on/off, and the interval in kg/m^3; empty = 10
@@ -191,8 +197,9 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   lacks for a while, e.g. microconductivity before the first downcast with scans, is picked again
   when it's back), colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
   haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
-  and turbo. Click one to pick a time: the L1/L2 file holding it is shown.
-- **Middle,** 3 rows x 2 columns beside sections 1-3, then the log beside section 4. Left:
+  and turbo. Click one to pick a cast (the profiles at far left) and a time (the L1/L2 file
+  holding it is shown).
+- **Middle,** 3 rows x 2 columns beside sections 1-3 (narrower than the sections, 3 : 5), then the log beside section 4. Left:
   pressure vs time over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
   survey on the winch spool, restarting at each spool change), on the same time limits and
   linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the casts (`v`

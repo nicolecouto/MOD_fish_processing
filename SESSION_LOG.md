@@ -4,6 +4,16 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-22 - Monitor: profiles of the clicked cast (branch `main-fork`)
+
+Nicole: "When I click on something in one of the pcolors, I want to plot the profile in the left column. Do it for all 4 of whatever variables we're plotting at once." Then, worried about the sections' width: smaller control-panel text, and a narrower pressure/twist column.
+- MODvis_realtime_monitor: a 150 px column left of the sections, one profile per section of its variable, for the clicked cast (nearest cast time among those shown, so a down-only view never picks an upcast), or the newest cast until a click and after a survey change (her choices). x = the section's colour range, log10 as the section; one black line; the magenta line on the sections moves to that cast. Sections and profiles share depth zoom (linkprop on YLim; time stays linked between sections).
+- The cast is kept by its `cast_start`, so a grid rewrite keeps the clicked cast.
+- Nicole: "Don't label the x-axes with the data type ... It's important that the axes heights are the same as the pcolors and that they have the same y-lims." No x label; the profiles sit in a plain panel and each one's InnerPosition is set to its section's plot box (y and height) after every draw and on resize; y limits set from the same depth limits and linked.
+- Layout: middle column 3 : 5 of the sections (was 1 : 1), control panel 235 px (was 270) with 10 pt text and 20 px rows. At 1700 px the sections are wider than before (~790 px, was ~610).
+
+Tested on the scratchpad copy of 26_1021_fctd2_rupture_disc (monitor root in the scratchpad): newest cast before a click; a click mid-window picks the nearest cast, its profile values equal the section's column exactly for temperature, fluor.chla, log10 microconductivity.chi_obs and salinity, x limits equal each section's CLim; a grid reload keeps it; depth zoom on a section moves the profiles and back; Casts = down never picks an upcast; a survey change goes back to the newest; each profile's plot box y and height equal its section's to 0.1 px, with the same y limits, at full depth and with Depth max 300. checkcode: only the pre-existing datetick note.
+
 ### 2026-10-22 - Fluorometer in the grid; only the groups the data have; cutoffs in kc (branch `main-fork`)
 
 Nicole: "There are still some values from L1 that don't end up in the grid, like all the fluor fields for FCTD. A FCTD does not need a chi or epsilon structure in the grid - they end up blank anyway." Then: "Instead of putting kc in with epsilon or chi, pull them into their own structure - kc.t1_obs, kc.s1_obs_coh_corr, etc."

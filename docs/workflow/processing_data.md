@@ -475,6 +475,8 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
 
 - **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
   last update; problems count; missing parameters.
+- **Far left, profiles:** the clicked cast's profile of each section's variable (the newest cast
+  until a click), on the section's colour range, each at its section's height and depths.
 - **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours (turn
   them off or set the interval in kg/m^3 - empty = 10 levels); shared
   depth and time limits, each with its own variable, colormap and colour range. Variables
@@ -879,3 +881,10 @@ stops the grid and MODvis_spectra with "reprocess L2". Sandbox copies of 26_1021
 and MAKO2: L2 and grid values equal the v11 ones (the cutoffs mapped to `kc`; MAKO2 L2 within 7e-8,
 rounding), fluor bin means equal a hand calculation, the FCTD grid has `fluor`, `kc`,
 `microconductivity` only and the Epsi grid `epsilon`, `chi`, `kc`, `qc` only.
+
+**2026-10-22 - Monitor: profiles of the clicked cast** (branch `main-fork`). Nicole: "When I click
+on something in one of the pcolors, I want to plot the profile in the left column. Do it for all 4
+of whatever variables we're plotting at once." A narrow column left of the sections shows the
+clicked cast's 4 profiles (the newest cast until a click), each on its section's colour range, at its
+section's height and depth limits, with no x label (Nicole: the section's title says it); to
+keep the sections wide the middle column is narrower (3 : 5) and the control panel's text smaller.
