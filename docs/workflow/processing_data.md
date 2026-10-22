@@ -189,18 +189,22 @@ L2's per-channel values are `<L2 name>_<channel>`:
   samples pegged at the maximum range are left out: with no bottom in range, the ISA500 reads a
   flat 120 m. A maximum that repeats exactly counts as pegged, since a real range varies, so a bin
   with no bottom in range is NaN. yaw and spin are headings and aren't gridded.
+- **Fluorometer**: `fluor.bb`, `fluor.chla` and `fluor.fdom` from L1 `fluor` (the ECOP's bb, chla,
+  fDOM, in the L1's raw units), each sample at the CTD depth at its time, then binned.
 - **Scans**: each scan of the cast (its center in the cast) fills every bin of its footprint, from
   the shallowest to the deepest L1 CTD depth during the scan
   (`n_samples_scan_afe`/`fs_afe` long), and a bin is the mean of the scans covering it:
   `viscosity_kinematic` (`nu`),
-  `diffusivity_thermal_molecular` (`ktemp`), and L2's four turbulence structs under the same
+  `diffusivity_thermal_molecular` (`ktemp`), and L2's five turbulence structs under the same
   names, each leaf `<channel>_<variant>`:
   - `epsilon`: `final` (and per cast `final_source`, which epsilon `final` is), and per shear
-    channel `<s>_obs`, `<s>_obs_kc`, `<s>_obs_coh_corr`, `<s>_obs_coh_corr_kc`, `<s>_mle`,
-    `<s>_fom_obs_coh_corr`, `<s>_fom_mle`
-  - `chi`: per fpo7 channel `<t>_obs`, `<t>_obs_kc`, `<t>_mle`
-  - `microconductivity` (one probe, so no channel): `chi_obs`, `chi_obs_kmax`, `chi_tot`,
-    `eps_chi`, `n2` ([Microconductivity chi](microconductivity.md))
+    channel `<s>_obs`, `<s>_obs_coh_corr`, `<s>_mle`, `<s>_fom_obs_coh_corr`, `<s>_fom_mle`
+  - `chi`: per fpo7 channel `<t>_obs`, `<t>_mle`
+  - `microconductivity` (one probe, so no channel): `chi_obs`, `chi_tot`, `eps_chi`, `n2`
+    ([Microconductivity chi](microconductivity.md))
+  - `kc`: the cutoff wavenumbers [cpm], named for the value they bound: `<s>_obs`,
+    `<s>_obs_coh_corr` (shear integration cutoffs), `<t>_obs` (the fpo7 noise-floor cutoff),
+    `<c>_chi_obs` (microconductivity's upper integration bound, e.g. `kc.c1_chi_obs`)
   - `qc`: per shear channel `<s>_coherence_a3_sum`
   e.g. `gridded.epsilon.final`, `gridded.chi.t1_obs`. `gridded.variables` names them the same way
   (`'epsilon.s1_mle'`).
@@ -208,9 +212,11 @@ L2's per-channel values are `<L2 name>_<channel>`:
     2 scans, so a cast's turbulence is continuous from its first scan to its last. A bin no scan
     covers is NaN; `n_scans` says how many scans cover each bin. Only `profile_dir` casts have
     scans (`profiling_direction` in Start New Deployment: down, up or both).
-  - A struct holds only what L2 computed, so a vehicle without shear probes, like the FCTD, has
-    no `epsilon.final` (only `epsilon.final_source`, all `''`). An L2 file in the old flat layout
-    (before 2026-10-21) stops the grid with an error: reprocess L2.
+  - A struct holds only what L2 computed, and the grid has a struct only when some cast has a
+    value in it: an FCTD grid has no `epsilon`, `chi` or `qc`, an Epsi grid no
+    `microconductivity` or `fluor`. An L2 file in an older layout (flat names, `Fs_epsi`, or
+    cutoffs inside `epsilon`/`chi`/`microconductivity` instead of `kc`) stops the grid with an
+    error: reprocess L2.
   - L2's scan-center CTD values (`pressure`, `w`, `temperature`, `salinity`, `SR`) aren't gridded.
     Each is the L1 CTD interpolated at one scan's center. L2 needs them for that scan's `nu`, `ktemp`
     and wavenumbers, but the CTD bin means above use every sample. They are also the background
@@ -860,3 +866,16 @@ Fs_ctd and Fs_epsi stand for? I think sampling." `Fs_epsi`, `N_epsi` and `Fs_ctd
 record; the yml key is still `afe.sample_rate`): the AFE board's rate, which also covers
 microconductivity on FCTD. `grid_version` 11. Remake L0, L1 and L2: an old L2 file stops the grid
 and MODvis_spectra with "reprocess L2", and MODvis_spectra_L0 asks to remake an old L0/L1 file.
+
+**2026-10-22 - Fluorometer in the grid; cutoffs in `kc`** (branch `main-fork`). Nicole: "There are
+still some values from L1 that don't end up in the grid, like all the fluor fields for FCTD. A FCTD
+does not need a chi or epsilon structure in the grid - they end up blank anyway," and "Instead of
+putting kc in with epsilon or chi, pull them into their own structure." The grid gets
+`fluor.bb`, `fluor.chla`, `fluor.fdom` (L1 `fluor`, binned like pitch), and a group only when some
+cast has a value in it. L2 and the grid move every cutoff wavenumber into `kc`: `kc.<s>_obs`,
+`kc.<s>_obs_coh_corr`, `kc.<t>_obs`, `kc.<c>_chi_obs` (was `microconductivity.chi_obs_kmax`).
+`grid_version` 12. Reprocess L2: an L2 with cutoffs inside `epsilon`/`chi`/`microconductivity`
+stops the grid and MODvis_spectra with "reprocess L2". Sandbox copies of 26_1021_fctd2_rupture_disc
+and MAKO2: L2 and grid values equal the v11 ones (the cutoffs mapped to `kc`; MAKO2 L2 within 7e-8,
+rounding), fluor bin means equal a hand calculation, the FCTD grid has `fluor`, `kc`,
+`microconductivity` only and the Epsi grid `epsilon`, `chi`, `kc`, `qc` only.

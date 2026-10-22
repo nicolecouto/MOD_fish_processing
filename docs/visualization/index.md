@@ -64,8 +64,8 @@ accelerometers. Reference lines on it:
   Shaded up to 3x (the cutoff search's `SN_min`). For L2 the bench noise is
   `FPO7/FPO7_benchnoise.mat` under the run yml's `calibrations_root` (`<survey>/meta/meta_data_<run>.yml`),
   or `acquisition/config.yml`'s `calibrations_root` (this computer's setting) when that path isn't mounted. The fc/kc
-  cutoffs and the Batchelor/Panchev overlays come from L2's `chi.t*_obs_kc`, `t*_fc_index` and
-  `epsilon.s*_obs_kc`, renamed to the legacy names on load.
+  cutoffs and the Batchelor/Panchev overlays come from L2's `kc.t*_obs`, `t*_fc_index` and
+  `kc.s*_obs`, renamed to the legacy names on load.
 - **Bit noise** (any file with `fs_afe`): flat ADC quantization-noise floors for 24/20/16 bits,
   each drawn solid at Δ²/12/(fs/2) and dashed at Δ²/(fs/2), plus the accelerometer sensor noise
   at (20e-6)² g²/Hz - see

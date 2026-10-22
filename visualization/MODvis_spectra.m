@@ -887,10 +887,12 @@ classdef MODvis_spectra < handle
                 uialert(app.Fig, "Failed to load: " + fp + newline + ME.message, "Load error");
                 return;
             end
-            if ~isfield(S, 'Profile') && any(isfield(S, {'Fs_epsi', 'N_epsi'}))
-                uialert(app.Fig, "This L2 file is from before 2026-10-21 (Fs_epsi/N_epsi, now " + ...
-                    "fs_afe/n_samples_scan_afe). Reprocess L2: delete processed/<run>/L2/ " + ...
-                    "or reset the survey.", "Old L2 file");
+            cutoff_inside = @(g) isfield(S, g) && isstruct(S.(g)) && any(endsWith(fieldnames(S.(g)), '_kc'));
+            if ~isfield(S, 'Profile') && (any(isfield(S, {'Fs_epsi', 'N_epsi'})) ...
+                    || cutoff_inside('epsilon') || cutoff_inside('chi'))
+                uialert(app.Fig, "This L2 file is in an older layout (Fs_epsi/N_epsi, now " + ...
+                    "fs_afe/n_samples_scan_afe, or cutoffs inside epsilon/chi, now kc). " + ...
+                    "Reprocess L2: delete processed/<run>/L2/ or reset the survey.", "Old L2 file");
                 return;
             end
 
@@ -1418,13 +1420,14 @@ classdef MODvis_spectra < handle
             %   epsilon.final -> epsilon_final, chi.t*_obs -> chi.t*,
             %   chi.t*_mle -> chi_mle.t*, epsilon.s*_obs_coh_corr ->
             %   epsilonCo.s*, epsilon.s*_mle -> epsilonMle.s*, nu -> kvis,
-            %   chi.t*_obs_kc -> t*_kc, spectra.t*_fc_index -> t*_fc [Hz],
-            %   epsilon.s*_obs_kc -> s*_kc, s*_fc = s*_kc x |w| [Hz],
+            %   kc.t*_obs -> t*_kc, spectra.t*_fc_index -> t*_fc [Hz],
+            %   kc.s*_obs -> s*_kc, s*_fc = s*_kc x |w| [Hz],
             %   FP07 bench noise (loadBenchNoise) -> physUnits.noise_coefs.
             % A field the file doesn't have is left out.
             S.physUnits = struct('noise_coefs', app.NoiseCoefs);
             chiL2 = app.getFieldOr(S, 'chi', struct());
             epsL2 = app.getFieldOr(S, 'epsilon', struct());
+            kcL2 = app.getFieldOr(S, 'kc', struct());
             if isfield(epsL2, 'final'); S.epsilon_final = epsL2.final; end
             S.chi = app.byChannel(chiL2, '_obs');
             S.chi_mle = app.byChannel(chiL2, '_mle');
@@ -1433,8 +1436,8 @@ classdef MODvis_spectra < handle
             if isfield(S, 'nu'); S.kvis = S.nu; end
             for ch = {'t1','t2'}
                 c = ch{1};
-                if isfield(chiL2, [c '_obs_kc'])
-                    S.([c '_kc']) = chiL2.([c '_obs_kc'])(:);
+                if isfield(kcL2, [c '_obs'])
+                    S.([c '_kc']) = kcL2.([c '_obs'])(:);
                 end
                 if isfield(S, 'spectra') && isfield(S.spectra, [c '_fc_index']) && isfield(S.spectra, 'f')
                     ix = S.spectra.([c '_fc_index'])(:);
@@ -1446,8 +1449,8 @@ classdef MODvis_spectra < handle
             end
             for ch = {'s1','s2'}
                 c = ch{1};
-                if isfield(epsL2, [c '_obs_kc'])
-                    S.([c '_kc']) = epsL2.([c '_obs_kc'])(:);
+                if isfield(kcL2, [c '_obs'])
+                    S.([c '_kc']) = kcL2.([c '_obs'])(:);
                     if isfield(S, 'w') && numel(S.w) == numel(S.([c '_kc']))
                         S.([c '_fc']) = S.([c '_kc']) .* abs(S.w(:));
                     end
@@ -1457,8 +1460,8 @@ classdef MODvis_spectra < handle
 
         function out = byChannel(~, group, suffix)
             % A grouped L2 struct's <channel><suffix> leaves as
-            % out.<channel> (chi.t1_obs -> out.t1). Exact suffix only, so
-            % '_obs' doesn't also take t1_obs_kc.
+            % out.<channel> (chi.t1_obs -> out.t1). A channel has no '_', so
+            % '_mle' doesn't also take s1_fom_mle.
             out = struct();
             for leaf = fieldnames(group)'
                 name = leaf{1};

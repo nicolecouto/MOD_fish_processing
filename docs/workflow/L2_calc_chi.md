@@ -144,7 +144,7 @@ Calls Module 5, then integrates from `kmin = metadata.PROCESS.CHI.kmin_obs` (his
 
 **No figure-of-merit QC flag** - `mod_efe_scan_chi.m` computes one (`compute_fom.m`) alongside its own chi/chi_mle. Left as a clearly-scoped-out follow-up, same as before.
 
-Wired into `MODprocess_single_L1_to_L2.m`: scan-center `temperature`/`salinity` are interpolated the same way `pressure`/`w` already were, and `chi_obs`/`chi_obs_kc` get computed automatically (L2: `chi.<channel>_obs`/`chi.<channel>_obs_kc`, with `chi.<channel>_mle`) for every fpo7 channel with a resolved `volts_to_C`, whenever the bench noise file (see below) is present - no changes needed to `MODprocess_all_L1_to_L2.m` itself, since it already calls through to the per-file function.
+Wired into `MODprocess_single_L1_to_L2.m`: scan-center `temperature`/`salinity` are interpolated the same way `pressure`/`w` already were, and `chi_obs`/`chi_obs_kc` get computed automatically (L2: `chi.<channel>_obs`, its cutoff `kc.<channel>_obs`, and `chi.<channel>_mle`) for every fpo7 channel with a resolved `volts_to_C`, whenever the bench noise file (see below) is present - no changes needed to `MODprocess_all_L1_to_L2.m` itself, since it already calls through to the per-file function.
 
 ### 7. `toolbox/theoretical_spectra/batchelor_spectrum.m` — chi_mle's spectral model
 

@@ -21,7 +21,7 @@ classdef MODvis_realtime_monitor < handle
     %           the controls). All 4 share the depth and
     %           time limits; each has its own variable (from
     %           gridded.variables, e.g. epsilon.final; epsilon, chi and microconductivity as
-    %           log10, not their cutoffs or figures of merit), colormap and
+    %           log10, not their figures of merit; kc and fluor linear), colormap and
     %           colour range.
     %   Middle, 3 rows x 2 columns of small plots beside sections 1-3,
     %           half a section's width: left, pressure vs time over the
@@ -674,7 +674,7 @@ classdef MODvis_realtime_monitor < handle
                 end
             end
             if startsWith(name, {'epsilon.', 'chi.', 'microconductivity.'}) ...
-                    && ~contains(name, {'_kc', '_kmax', '_fom'})
+                    && ~contains(name, '_fom')
                 v(v <= 0) = NaN;
                 v = log10(v);
                 label = sprintf('log10 %s [%s]', name, unit);

@@ -102,13 +102,13 @@ correction of the mean.
 
 **Outputs.** L2's `microconductivity` struct:
 - `chi_obs`, the measured chi
-- `chi_obs_kmax`
 - `chi_tot`
 - `eps_chi`
 - `n2`, the N^2 used
 
-L2 also keeps the spectrum it integrated, `spectra.<ch>_dCdz_k` (and `spectra.k` when there's no
-FP07 chi). The gridded data gets the same five as bin means of the corrected scans.
+and kmax as `kc.<ch>_chi_obs` (e.g. `kc.c1_chi_obs`), with the other cutoff wavenumbers. L2 also
+keeps the spectrum it integrated, `spectra.<ch>_dCdz_k` (and `spectra.k` when there's no FP07
+chi). The gridded data gets the same values as bin means of the corrected scans.
 
 ## Parameters: the yml's `ucond` block
 
@@ -219,6 +219,10 @@ probe is railed at -2.5 V from 08:01 on: windows and scans after that are skippe
   deployment isn't followed.
 
 ## History
+
+**2026-10-22 - kmax in `kc`** (branch `main-fork`). `microconductivity.chi_obs_kmax` is now
+`kc.<ch>_chi_obs` (e.g. `kc.c1_chi_obs`), in L2 and the grid, with the other cutoff wavenumbers
+(see [Processing data](processing_data.md) History).
 
 **2026-10-21 (evening) - Upcasts** (branch `main-fork`). Nicole: "microconductivity can be
 calculated for both up and downcasts." No code here: Start New Deployment got a `both` Profiling

@@ -4,6 +4,24 @@ Moved out of `PLAN.md` Section 12 on 2026-09-28 so the plan stays short. Append-
 
 Reverse-chronological. Each step of the reorganization gets tested against real example files (kept in `mod_fish_lib/data_for_reorg/`, one subfolder per dataset type: `fctd`, `epsi_on_wirewalker`, `epsi_mako_w_fluor`, `epsi_minnow`, `epsi_mako`, `fctd_w_ucond`, `fctd_w_ucond_fluor`) before being ported into `MOD_fish_processing`.
 
+### 2026-10-22 - Fluorometer in the grid; only the groups the data have; cutoffs in kc (branch `main-fork`)
+
+Nicole: "There are still some values from L1 that don't end up in the grid, like all the fluor fields for FCTD. A FCTD does not need a chi or epsilon structure in the grid - they end up blank anyway." Then: "Instead of putting kc in with epsilon or chi, pull them into their own structure - kc.t1_obs, kc.s1_obs_coh_corr, etc."
+- Grid: `fluor.bb`, `fluor.chla`, `fluor.fdom` from L1 `fluor`, each sample at the CTD depth at its time, like pitch. No other L1 fields (her choice: vnav 3-axis, dPdt, twist stay out).
+- Grid: a group (`epsilon`, `chi`, `microconductivity`, `kc`, `qc`, `fluor`) only when some cast has a value in it; `epsilon.final_source` only with `epsilon`.
+- L2 and grid: cutoffs in `kc`: `kc.<s>_obs`, `kc.<s>_obs_coh_corr` (were `epsilon.<s>_obs_kc`, `_obs_coh_corr_kc`), `kc.<t>_obs` (was `chi.<t>_obs_kc`), `kc.<c>_chi_obs` (was `microconductivity.chi_obs_kmax`, named by the probe's channel - her choice).
+- `grid_version` 12. An L2 with cutoffs inside epsilon/chi/microconductivity: `MODprocess_grid:oldL2Layout`, and MODvis_spectra's "Old L2 file" alert. MODvis_spectra reads `kc.t*_obs`/`kc.s*_obs`. The monitor plots `kc.*` and `fluor.*` linearly.
+- MODunits_L2/L3, the gridded folder README, processing_data, microconductivity, L1_to_L2_conversion, L2_calc_chi and visualization docs updated.
+
+Tested on scratchpad copies of 26_1021_fctd2_rupture_disc (FCTD2) and MAKO2, L2 redone:
+- every L2 value equals the earlier L2 with the cutoffs mapped to `kc` (FCTD2 exact, MAKO2 within 7e-8, the DEV3 rounding seen before); every v11 grid value equals v12.
+- FCTD2 grid groups: `fluor`, `kc` (`c1_chi_obs`), `microconductivity`; MAKO2: `epsilon`, `chi`, `kc`, `qc`.
+- fluor.chla bin means of one cast equal a hand calculation exactly (767 bins).
+- A second grid call rebins nothing; a one-cast rebin equals the full grid (both vehicles).
+- Old-layout L2: the grid raises oldL2Layout; MODvis_spectra doesn't load it. A new MAKO2 L2 in MODvis_spectra has t1_kc, s1_kc and s1_fc.
+- The monitor on the FCTD2 grid: `fluor.chla` and `kc.c1_chi_obs` are in the menus and plot (linear); no `epsilon.*` items.
+- FCTD2's fluor looks like no signal (bb constant 1.5e-4, chla and fDOM about 2-3e-6 with spikes); gridding passes it through as L1 has it.
+
 ### 2026-10-21 - Sample-rate names: fs, fs_afe, fs_ctd (branch `main-fork`)
 
 Nicole: "What do you suppose the s in Fs_ctd and Fs_epsi stand for? I think sampling."
