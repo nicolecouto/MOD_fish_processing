@@ -185,6 +185,7 @@ classdef MODvis_realtime_monitor < handle
             for i = 1:app.NSections
                 app.ProfileAx(i) = uiaxes(prof, 'FontSize', app.FontSize - 1);
                 app.ProfileAx(i).YTickLabel = {}; % the depths read off the section beside it
+                grid(app.ProfileAx(i), 'on');
             end
 
             % left: the sections, stacked

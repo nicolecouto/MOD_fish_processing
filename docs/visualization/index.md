@@ -185,7 +185,7 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   section's colour range (and log10 like it): the cast you click on a section, or the newest cast
   in the window until you click (and after changing survey). The top one's title gives the cast and
   whether it was clicked; a magenta line marks it on the sections. Each profile's box has its
-  section's height and depth limits, and no x or y labels (the variable and unit, and the depths, are the section's). A
+  section's height and depth limits, grid on, and no x or y labels (the variable and unit, and the depths, are the section's). A
   depth zoom on any section or profile moves them all.
 - **Left:** 4 colour sections of the survey's grid (`processed/realtime/gridded/gridded.mat`), one
   column per cast (a lone cast spans its own start to end), depth vs time, with sigma0 contours when
