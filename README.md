@@ -36,10 +36,11 @@ util
     MODutil_simulate_acquisition.m - replays a real deployment's raw files into a test folder, growing each file the way fctd_epsi does, to test realtime processing
     MODutil_read_som3.m - prints (or returns) what's in a .modraw file's $SOM3 block: mission, vehicle, firmware, and each SOM module (EFE channels with probe SNs, SBE, SD card, ...)
     MODutil_level_folders.m - for the viewers: the L1 and L2 folders that go together for a processing run (its own L1, or the L1_from run's)
+    MODutil_altimeter_hab_m.m - an L1 file's altimeter height above bottom in a time window (ISA500, else the MOD altimeter), without samples pegged at its range; used by the grid and the realtime monitor
     MODutil_provenance.m - the provenance field in every L0/L1/L2/profiles file: the file(s) and run yml it was made from (relative to the survey), the yml's SHA-256, run, time and code commit
 
 visualization
-    MODvis_realtime_monitor.m - the live monitor for the realtime worker: status, grid sections (depth vs time, any gridded variable), pressure, T-S of the last casts, cruise twist, the processing log, Start/Pause/Stop
+    MODvis_realtime_monitor.m - the live monitor for the realtime worker: status, the newest cast's max CTD depth, min altimeter and bottom depth, grid sections (depth vs time, any gridded variable), pressure, T-S of the last casts, cruise twist, the processing log, Start/Pause/Stop
     MODvis_timeseries.m - plots time series from a directory of L0, L1, L2, or Profile .mat files, or a processing run's folder (opens its L1) (formerly L0ExplorerApp.m)
     MODvis_spectra.m - browses a folder of .mat files carrying per-scan spectra (this repo's own L2/profile output, or legacy MOD_fish_lib/EPSILOMETER Profile*.mat), with wavenumber/frequency spectrum plots, theoretical overlays, FPO7 noise floors, and ADC bit-noise (24/20/16-bit) and accelerometer noise reference lines
     MODvis_spectra_L0.m - quick-look EFE spectra straight from L0 files vs ADC bit noise, no setup.yml needed: timeseries rows on top, click to pick the spectrum window; nfft/window/overlap/taper/detrend editable in the viewer; export one scan or the whole file's scans (spectra, f, noise floors, indices, settings) to .mat

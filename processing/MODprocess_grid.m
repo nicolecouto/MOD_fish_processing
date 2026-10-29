@@ -95,8 +95,8 @@ function gridded = MODprocess_grid(metadata, by)
 %   MODprocess_deployment.m (stage 'grid'), templates/MODtemplate_postprocess_steps.m
 %
 % CALLS
-%   MODsetup_validate_metadata.m, MODunits_L3.m, MODutil_provenance.m,
-%   MODutil_save_atomic.m, gsw_z_from_p.m (Gibbs SeaWater toolbox)
+%   MODsetup_validate_metadata.m, MODunits_L3.m, MODutil_altimeter_hab_m.m,
+%   MODutil_provenance.m, MODutil_save_atomic.m, gsw_z_from_p.m (Gibbs SeaWater toolbox)
 %
 % NOTES
 %   Ported in spirit from MOD_fish_lib's FastCTD_GridData.m (bin means of
@@ -305,11 +305,7 @@ for i = 1:numel(L1_files)
     for name = fieldnames(fluor_names)'
         extra.(name{1}) = [extra.(name{1}); samples_in_cast(s, 'fluor', fluor_names.(name{1}), in_cast)];
     end
-    hab = altimeter_in_cast(s, 'isap', in_cast);
-    if isempty(hab)
-        hab = altimeter_in_cast(s, 'alt', in_cast);
-    end
-    extra.height_above_bottom = [extra.height_above_bottom; hab];
+    extra.height_above_bottom = [extra.height_above_bottom; MODutil_altimeter_hab_m(s, in_cast)];
     if ~isfield(s, 'ctd') || ~isfield(s.ctd, 'dnum') || ~isfield(s.ctd, 'z') || isempty(s.ctd.dnum)
         continue
     end
@@ -474,23 +470,6 @@ t = s.(rec).dnum(:);
 y = s.(rec).(name)(:);
 keep = in_cast(t) & isfinite(y);
 x = [t(keep), y(keep)];
-end
-
-%% [dnum, hab] of an altimeter's samples in the cast, without the ones
-% pegged at its maximum range (no bottom in range: dst sits at one flat
-% value, e.g. 120 m for the ISA500 - MODunits_L1.m); a real range varies
-% from sample to sample, so a maximum seen more than once is a peg
-function x = altimeter_in_cast(s, rec, in_cast)
-x = samples_in_cast(s, rec, 'hab', in_cast);
-if isempty(x) || ~isfield(s.(rec), 'dst') || numel(s.(rec).dst) ~= numel(s.(rec).dnum)
-    return
-end
-dst = s.(rec).dst(:);
-peg = max(dst);
-if nnz(dst == peg) > 1
-    [~, k] = ismember(x(:, 1), s.(rec).dnum(:));
-    x = x(dst(k) ~= peg, :);
-end
 end
 
 %% L2's grouped turbulence structs, gridded under the same names

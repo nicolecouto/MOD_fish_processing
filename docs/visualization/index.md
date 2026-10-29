@@ -180,7 +180,14 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 ```
 
 - **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
-  missing parameters, last update (red when there are problems or missing parameters).
+  missing parameters, last update (red when there are problems or missing parameters). Under it,
+  the newest cast in `meta/casts.mat` (either direction; "in progress" while it's still going):
+  its max CTD depth, min altimeter and the bottom depth (the CTD depth at the min altimeter + that
+  height), from the L1 samples from the cast's start to a pad past its end (the cast table can
+  end a cast a little early). The altimeter is the ISA500 (else the MOD altimeter), without
+  samples pegged at its range (no bottom in range: 120 m for the ISA500), as a running median
+  over n samples so one bad ping isn't the minimum. The pad and n are in the control panel and
+  written on the line.
 - **Far left:** one cast's profile of each section's variable, beside its section, on that
   section's colour range (and log10 like it): the cast you click on a section, or the newest cast
   in the window until you click (and after changing survey). The top one's title gives the cast and
@@ -202,7 +209,9 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 - **Middle,** 3 rows x 2 columns beside sections 1-3 (narrower than the sections, 3.5 : 4), then the log beside section 4. Left:
   pressure vs time over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
   survey on the winch spool, restarting at each spool change), on the same time limits and
-  linked, so zooming one zooms both; they stretch to fill the width. Row 3: a map of the casts (`v`
+  linked, so zooming one zooms both; they stretch to fill the width. A zoom or pan on pressure
+  (or twist) stays through refreshes until you restore the view or change the time window or
+  survey. Row 3: a map of the casts (`v`
   downcasts, `^` upcasts, at the grid's position of each - see
   [the grid](../workflow/processing_data.md#the-grid)) and the GPS track (`meta/gps_time_series.mat`)
   between the survey's first cast start and last cast end (nothing from before or after the
@@ -220,9 +229,10 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   (span 0 = all casts; choosing another survey, or opening on one the worker isn't running, fills
   the span and ending time so all its casts show, and the survey the worker is on goes back to 6 h
   ending now); per section: variable, colormap, colour min/max; the T and C profile
-  offsets;
+  offsets; the newest cast line's bottom search pad (s, default 10) and altimeter median (samples,
+  default 5);
   the log; open the run in `MODvis_timeseries` or `MODvis_spectra`; Save PNG
-  (`realtime/figures/`). Empty = auto. Each setting is written on the plot it changes.
+  (`realtime/figures/`; a screen grab of the window if `exportapp` fails, with why). Empty = auto. Each setting is written on the plot it changes.
 
 ![MODvis_realtime_monitor.m middle plots: pressure over the cruise twist count on the same time limits, T and C profiles of the last casts offset like a waterfall, and their T-S - the 2026-10-17 FCTD2 ocean test, all casts](../concepts/images/MODvis_realtime_monitor_panels.png)
 

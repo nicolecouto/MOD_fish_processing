@@ -474,7 +474,8 @@ worker's files every 10 s and writes only `control.json` and saved PNGs, so it c
 processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi variables added:
 
 - **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
-  last update; problems count; missing parameters.
+  last update; problems count; missing parameters. Under it, the newest cast's max CTD depth, min
+  altimeter and bottom depth (CTD depth + altimeter), from L1 to a few seconds past the cast's end.
 - **Far left, profiles:** the clicked cast's profile of each section's variable (the newest cast
   until a click), on the section's colour range, each at its section's height and depths.
 - **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours (turn
@@ -483,7 +484,7 @@ processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi va
   are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
 - **Middle, 3 x 2:**
   - left: pressure vs time over the cruise twist count (all vehicles - one winch spool), on the
-    same, linked time limits, with spool changes (dashed) and survey starts (dotted) marked; the
+    same, linked time limits (a zoom stays through refreshes), with spool changes (dashed) and survey starts (dotted) marked; the
     twist title gives the count now, the spool and when it went on; row 3: a map of the casts
     (`v` down, `^` up, at the grid's positions) and the GPS track between the first and last cast,
     over the sections' time window, the latest fix bigger and red (no bathymetry yet);
