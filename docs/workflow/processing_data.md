@@ -474,16 +474,24 @@ worker's files every 10 s and writes only `control.json` and saved PNGs, so it c
 processing even if it crashes. Laid out after the 2018 FastCTD GUI, with epsi variables added:
 
 - **Top status strip:** survey, vehicle and winch spool; worker state; file counts per stage; lag;
-  last update; problems count; missing parameters. Under it, the newest cast's max CTD depth, min
-  altimeter and bottom depth (CTD depth + altimeter), from L1 to a few seconds past the cast's end.
+  last update; problems count; missing parameters. In the right corner, 3 lines on the last full
+  profile: the newest complete cast whose altimeter saw the bottom (a cast still going, or one with
+  the altimeter at its peg, e.g. 120 m, is passed over), with its max CTD depth, min altimeter and
+  bottom depth (CTD depth + altimeter), from L1 to a few seconds past the cast's end.
 - **Far left, profiles:** the clicked cast's profile of each section's variable (the newest cast
   until a click), on the section's colour range, each at its section's height and depths.
 - **Left, 4 colour sections:** depth vs time, one column per cast, sigma0 contours (turn
   them off or set the interval in kg/m^3 - empty = 10 levels); shared
   depth and time limits, each with its own variable, colormap and colour range. Variables
-  are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer.
+  are picked from `variables`: T, SP, log10 epsilon, log10 chi (t1/t2/c1), fluorometer. A survey
+  opens with its `fish_flag`'s defaults: EPSI temperature (thermal), fall_speed (balance),
+  epsilon.s1_obs_coh_corr (parula), chi.t1_mle (spectral), downcasts only; FCTD temperature
+  (thermal), salinity_practical (haline), fluor.chla (algae), microconductivity.chi_tot
+  (spectral), both directions. Colour ranges are auto (the 7th to 93rd percentile of the data
+  shown, rounded; the percentile is a control) until you type one, and the fields always show the
+  range in effect; clear both fields to go back to auto.
 - **Middle, 3 x 2:**
-  - left: pressure vs time over the cruise twist count (all vehicles - one winch spool), on the
+  - left: CTD depth vs time over the cruise twist count (all vehicles - one winch spool), on the
     same, linked time limits (a zoom stays through refreshes), with spool changes (dashed) and survey starts (dotted) marked; the
     twist title gives the count now, the spool and when it went on; row 3: a map of the casts
     (`v` down, `^` up, at the grid's positions) and the GPS track between the first and last cast,

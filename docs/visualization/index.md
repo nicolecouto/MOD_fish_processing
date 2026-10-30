@@ -180,14 +180,16 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
 ```
 
 - **Top:** worker state, survey, vehicle, winch spool, file counts, casts, lag, problems,
-  missing parameters, last update (red when there are problems or missing parameters). Under it,
-  the newest cast in `meta/casts.mat` (either direction; "in progress" while it's still going):
-  its max CTD depth, min altimeter and the bottom depth (the CTD depth at the min altimeter + that
-  height), from the L1 samples from the cast's start to a pad past its end (the cast table can
-  end a cast a little early). The altimeter is the ISA500 (else the MOD altimeter), without
-  samples pegged at its range (no bottom in range: 120 m for the ISA500), as a running median
-  over n samples so one bad ping isn't the minimum. The pad and n are in the control panel and
-  written on the line.
+  missing parameters, last update (red when there are problems or missing parameters). In the
+  right corner, 3 lines on the last full profile: the newest complete cast in `meta/casts.mat`
+  (either direction) whose altimeter saw the bottom - a cast still going is passed over, and so is
+  one whose altimeter only read its peg (no bottom in range: 120 m for the ISA500), looking back
+  over the last 10 complete casts. Its time and direction; its max CTD depth and min altimeter;
+  and the bottom depth (the CTD depth at the min altimeter + that height), from the L1 samples
+  from the cast's start to a pad past its end (the cast table can end a cast a little early). The
+  altimeter is the ISA500 (else the MOD altimeter), without the pegged samples, as a running
+  median over n samples so one bad ping isn't the minimum. The pad and n are in the control panel
+  and written on the first line.
 - **Far left:** one cast's profile of each section's variable, beside its section, on that
   section's colour range (and log10 like it): the cast you click on a section, or the newest cast
   in the window until you click (and after changing survey). The top one's title gives the cast and
@@ -199,17 +201,28 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   there are 2 or more ("sigma0 contours": on/off, and the interval in kg/m^3; empty = 10
   levels; shown in the first section's title; each section's title is its variable and unit). All 4 share the depth and time limits;
   each has its own variable (any field in `gridded.variables`, grouped ones by path like `epsilon.s1_mle`;
-  epsilon, chi and microconductivity as log10, not their cutoffs or figures of merit; sections start
-  as sigma0, temperature, salinity_practical and epsilon.final; a variable you pick that the grid
+  epsilon, chi and microconductivity as log10, not their cutoffs or figures of merit; a variable you pick that the grid
   lacks for a while, e.g. microconductivity before the first downcast with scans, is picked again
-  when it's back), colormap and colour range. Colormaps: Matlab's parula and turbo, and cmocean's (thermal,
-  haline, dense, deep, algae, ...; `toolbox/cmocean/`); they start as dense, thermal, haline
-  and turbo. Click one to pick a cast (the profiles at far left) and a time (the L1/L2 file
-  holding it is shown).
+  when it's back), colormap and colour range. Colormaps: Matlab's parula and turbo, ColorBrewer's
+  Spectral (blue low, red high), and cmocean's (thermal, haline, dense, deep, algae, ...;
+  `toolbox/cmocean/`). A survey opens with its `fish_flag`'s sections, colormaps and casts:
+
+  | fish_flag | Sections (colormap) | Casts |
+  |---|---|---|
+  | EPSI (and any other) | temperature (thermal), fall_speed (balance), epsilon.s1_obs_coh_corr (parula), chi.t1_mle (spectral) | down |
+  | FCTD | temperature (thermal), salinity_practical (haline), fluor.chla (algae), microconductivity.chi_tot (spectral) | both |
+
+  Switching to a survey of the other fish type sets its defaults again. A colour range is auto -
+  from the "Auto colour range" percentile of the data shown to 100 minus it (default 7, so
+  7-93%), rounded outward - and written into its min/max fields, labelled "(auto)", so the fields
+  always show the range in effect; a typed value is kept ("(set)") until you clear both fields
+  or pick another variable. Click a section to pick a cast (the profiles at far left) and a time
+  (the L1/L2 file holding it is shown).
 - **Middle,** 3 rows x 2 columns beside sections 1-3 (narrower than the sections, 3.5 : 4), then the log beside section 4. Left:
-  pressure vs time over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
+  CTD depth vs time (from `meta/pressure_time_series.mat`, with L1's `ctd.z` conversion at the
+  GPS latitude, else the yml's) over the cruise twist count (`Processed/twist/twist_time_series.mat`, every
   survey on the winch spool, restarting at each spool change), on the same time limits and
-  linked, so zooming one zooms both; they stretch to fill the width. A zoom or pan on pressure
+  linked, so zooming one zooms both; they stretch to fill the width. A zoom or pan on depth
   (or twist) stays through refreshes until you restore the view or change the time window or
   survey. Row 3: a map of the casts (`v`
   downcasts, `^` upcasts, at the grid's position of each - see
@@ -228,8 +241,8 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   a span in hours ending at the current time (UTC) or at a typed time, as in the FastCTD GUI
   (span 0 = all casts; choosing another survey, or opening on one the worker isn't running, fills
   the span and ending time so all its casts show, and the survey the worker is on goes back to 6 h
-  ending now); per section: variable, colormap, colour min/max; the T and C profile
-  offsets; the newest cast line's bottom search pad (s, default 10) and altimeter median (samples,
+  ending now), the auto colour range percentile; per section: variable, colormap, colour min/max; the T and C profile
+  offsets; the last full profile's bottom search pad (s, default 10) and altimeter median (samples,
   default 5);
   the log; open the run in `MODvis_timeseries` or `MODvis_spectra`; Save PNG
   (`realtime/figures/`; a screen grab of the window if `exportapp` fails, with why). Empty = auto. Each setting is written on the plot it changes.

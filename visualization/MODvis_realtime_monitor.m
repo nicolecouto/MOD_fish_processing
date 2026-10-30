@@ -15,9 +15,12 @@ classdef MODvis_realtime_monitor < handle
     % stops processing.
     %
     %   Top:    status - worker state, survey, vehicle, winch spool, file
-    %           counts, casts, lag, problems, last update; then the newest
-    %           cast's max CTD depth, min altimeter and bottom depth, from
-    %           its L1 files (updateCastLine).
+    %           counts, casts, lag, problems, last update; in the right
+    %           corner, 3 lines on the last full profile - the newest
+    %           complete cast whose altimeter saw the bottom (one still
+    %           going, or with the altimeter at its peg, e.g. 120 m, is
+    %           passed over): its max CTD depth, min altimeter and bottom
+    %           depth, from its L1 files (updateCastLine).
     %   Far left: the profile of each section's variable for one cast -
     %           the cast clicked on a section, or the newest one until a
     %           click - on that section's colour range, with a magenta line
@@ -30,9 +33,16 @@ classdef MODvis_realtime_monitor < handle
     %           time limits; each has its own variable (from
     %           gridded.variables, e.g. epsilon.final; epsilon, chi and microconductivity as
     %           log10, not their figures of merit; kc and fluor linear), colormap and
-    %           colour range.
+    %           colour range. The variables, colormaps and casts a survey
+    %           opens with are its fish_flag's (DefaultSections: EPSI
+    %           temperature, fall_speed, epsilon.s1_obs_coh_corr, chi.t1_mle,
+    %           downcasts; FCTD temperature, salinity_practical, fluor.chla,
+    %           microconductivity.chi_tot, both). A colour range is auto -
+    %           a percentile of the data shown to 100 minus it, rounded -
+    %           until one is typed, and is always shown in its fields.
     %   Middle, 3 rows x 2 columns of small plots beside sections 1-3,
-    %           half a section's width: left, pressure vs time over the
+    %           half a section's width: left, CTD depth vs time (from
+    %           meta/pressure_time_series.mat, as L1's ctd.z) over the
     %           cruise twist count (<processed_root>/twist/, every survey on
     %           the spool, restarting at each winch spool change), on the
     %           same, linked time limits (a zoom or pan stays through
@@ -68,13 +78,13 @@ classdef MODvis_realtime_monitor < handle
         NProfiles double = 5         % casts in the T-S and T profile plots
 
         StatusLbl
-        CastLbl                      % the newest cast's altimeter, CTD depth and bottom depth, from L1
+        CastLbl                      % the last full profile's CTD depth, altimeter and bottom depth, from L1
         SectionAx                    % 1 x NSections uiaxes
         ProfileAx                    % 1 x NSections uiaxes, the selected cast's profile of each section's variable
         ProfilePanel                 % holds ProfileAx, free of a grid so they can line up with the sections
         DepthLink                    % links YLim of the sections and the profiles
         SectionCLim cell = {}        % each section's colour limits as last drawn, [] = none
-        PressureAx
+        DepthAx
         TSAx
         WaterfallAx
         TwistAx
@@ -94,6 +104,8 @@ classdef MODvis_realtime_monitor < handle
         CmapDrop
         CMinField
         CMaxField
+        CLimLbl                      % 1 x NSections, says whether the colour range is auto or set
+        AutoPctField                 % auto colour range: this percentile to 100 minus it
         DirDrop
         ZMinField
         ZMaxField
@@ -104,7 +116,7 @@ classdef MODvis_realtime_monitor < handle
         ContourField                 % sigma0 contour interval [kg/m^3], empty = 10 levels
         OffsetField
         CondOffsetField
-        PadField                     % the newest cast line looks this many seconds past the cast's end
+        PadField                     % the last full profile looks this many seconds past the cast's end
         MedianField                  % its altimeter is a running median over this many samples
         LogDrop
         OpenTSBtn
@@ -116,28 +128,38 @@ classdef MODvis_realtime_monitor < handle
         GridFile char = ''
         GridStamp double = NaN
         ChosenVars cell = {}         % each section's last pick from its menu, kept while the grid lacks it
+        FishFlag char = ''           % the survey's fish_flag the section defaults were last set for
+        AutoCLim logical = true(1, 4) % each section's colour range from the data (true) or typed (false)
+        CastCache struct = struct('start', {}, 'key', {}, 'result', {}) % each cast's castBottom, by cast_start
         SelectedTime double = NaN
         SelectedCastStart double = NaN % the clicked cast's cast_start; NaN = the newest cast
-        TimeLimits double = []       % the sections' time limits, shared with pressure and twist
+        TimeLimits double = []       % the sections' time limits, shared with depth and twist
         Twist struct = struct()      % <processed_root>/twist/twist_time_series.mat
         TwistStamp double = NaN
-        CastKey = []                 % what the newest cast line was last worked out from
-        PressureView = {}            % {XLim, YLim} of the pressure plot's time window, as last drawn ({} = no plot)
-        PressureShown = {}           % {XLim, YLim} it was left at after the last draw (the window's, or the zoom)
-        PressureZoom = {}            % {XLim, YLim} the user zoomed or panned it to, kept over redraws
+        DepthView = {}               % {XLim, YLim} of the depth plot's time window, as last drawn ({} = no plot)
+        DepthShown = {}              % {XLim, YLim} it was left at after the last draw (the window's, or the zoom)
+        DepthZoom = {}               % {XLim, YLim} the user zoomed or panned it to, kept over redraws
     end
 
     properties (Constant)
-        TopH = 58                    % main grid, row 1 [px]: the status and newest cast lines
+        TopH = 66                    % main grid, row 1 [px]: the status lines and the last full profile
+        CastColW = 520               % row 1's right column [px]: the last full profile, 3 lines
+        BottomSearchCasts = 10       % the last full profile is looked for among this many newest complete casts
         ProfileColW = 105            % main grid, column 1 [px]: the profiles
         ControlColW = 235            % main grid, column 4 [px]: the controls
         GridPad = [2 10 10 10]       % main grid padding [left bottom right top]; the profiles need no room at the left
         GridSpacing = 4              % main grid column spacing [px]
         ColorbarPad = 25            % right of the sections [px]: the colorbar labels hang outside the axes
-        DefaultVars = {'sigma0', 'temperature', 'salinity_practical', 'epsilon.final'}
-        DefaultCmaps = {'dense', 'thermal', 'haline', 'turbo'}
-        % parula and turbo are Matlab's; the rest are cmocean's (toolbox/cmocean)
-        Colormaps = {'parula', 'turbo', 'thermal', 'haline', 'dense', 'deep', 'algae', 'matter', ...
+        % each fish_flag's sections (variable, colormap) and casts; another or
+        % no fish_flag gets EPSI's
+        DefaultSections = struct( ...
+            'EPSI', struct('vars', {{'temperature', 'fall_speed', 'epsilon.s1_obs_coh_corr', 'chi.t1_mle'}}, ...
+                'cmaps', {{'thermal', 'balance', 'parula', 'spectral'}}, 'casts', 'down'), ...
+            'FCTD', struct('vars', {{'temperature', 'salinity_practical', 'fluor.chla', 'microconductivity.chi_tot'}}, ...
+                'cmaps', {{'thermal', 'haline', 'algae', 'spectral'}}, 'casts', 'both'))
+        % parula and turbo are Matlab's, spectral ColorBrewer's (colormapNamed);
+        % the rest are cmocean's (toolbox/cmocean)
+        Colormaps = {'parula', 'turbo', 'spectral', 'thermal', 'haline', 'dense', 'deep', 'algae', 'matter', ...
             'amp', 'tempo', 'speed', 'turbid', 'solar', 'ice', 'oxy', 'gray', 'balance', 'delta', 'curl'}
     end
 
@@ -182,11 +204,15 @@ classdef MODvis_realtime_monitor < handle
             g.RowHeight = {app.TopH, '1x'};
             g.ColumnWidth = {app.ProfileColW, '4x', '3.5x', app.ControlColW};
 
-            top = uigridlayout(g, [2 1], 'Padding', [0 0 0 0], 'RowSpacing', 0, 'RowHeight', {'2x', '1x'});
+            % top: the status lines; in the right corner, the last full profile
+            top = uigridlayout(g, [1 2], 'Padding', [0 0 0 0], 'ColumnSpacing', 10, ...
+                'ColumnWidth', {'1x', app.CastColW});
             top.Layout.Row = 1;
             top.Layout.Column = [1 4];
-            app.StatusLbl = uilabel(top, 'Text', '', 'WordWrap', 'on', 'FontSize', 12, 'FontWeight', 'bold');
-            app.CastLbl = uilabel(top, 'Text', '', 'FontSize', 12, 'FontWeight', 'bold');
+            app.StatusLbl = uilabel(top, 'Text', '', 'WordWrap', 'on', 'FontSize', 12, 'FontWeight', 'bold', ...
+                'VerticalAlignment', 'top');
+            app.CastLbl = uilabel(top, 'Text', '', 'FontSize', 13, 'FontWeight', 'bold', 'VerticalAlignment', 'top', ...
+                'BackgroundColor', [0.94 0.94 0.94]);
 
             % far left: the selected cast's profiles, one beside each section,
             % placed by alignProfiles to the sections' plot boxes
@@ -211,7 +237,7 @@ classdef MODvis_realtime_monitor < handle
                 app.SectionAx(i).ButtonDownFcn = @(~, ev) app.pickTime(ev);
             end
 
-            % middle, one row per section: pressure and the cruise twist count
+            % middle, one row per section: CTD depth and the cruise twist count
             % (same time limits, linked) over the map of the GPS track on the left; the
             % last casts' T and C profiles and their T-S on the right; the log
             % beside the 4th section
@@ -220,13 +246,13 @@ classdef MODvis_realtime_monitor < handle
             mid.Layout.Column = 3;
             mid.RowHeight = repmat({'1x'}, 1, app.NSections); % rows line up with the sections
             app.MidGrid = mid;
-            app.PressureAx = app.smallAxes(mid, 1, 1);
+            app.DepthAx = app.smallAxes(mid, 1, 1);
             app.TwistAx = app.smallAxes(mid, 2, 1);
             app.MapAx = app.smallAxes(mid, 3, 1);
             app.WaterfallAx = app.smallAxes(mid, 1, 2);
             app.CondAx = app.smallAxes(mid, 2, 2);
             app.TSAx = app.smallAxes(mid, 3, 2);
-            % the profile and T-S plots are square; pressure and twist take the rest of the width
+            % the profile and T-S plots are square; depth and twist take the rest of the width
             for ax = [app.WaterfallAx, app.CondAx, app.TSAx]
                 ax.PlotBoxAspectRatio = [1 1 1];
             end
@@ -238,7 +264,7 @@ classdef MODvis_realtime_monitor < handle
             app.DetailLbl = uilabel(logs, 'Text', '', 'WordWrap', 'on', 'FontName', 'Menlo', 'FontSize', 10);
 
             % right: control panel
-            n_rows = 20 + 3 * app.NSections + 11;
+            n_rows = 21 + 3 * app.NSections + 11;
             c = uigridlayout(g, [n_rows 2], 'RowSpacing', 3, 'Scrollable', 'on');
             c.Layout.Row = 2;
             c.Layout.Column = 4;
@@ -274,6 +300,12 @@ classdef MODvis_realtime_monitor < handle
             app.EndField = uieditfield(c, 'text', 'Value', '', 'Placeholder', 'yyyy-mm-dd HH:MM', ...
                 'ValueChangedFcn', @(~, ~) app.endTimeTyped());
             app.EndField.Layout.Row = row; app.EndField.Layout.Column = 2;
+            row = row + 1;
+            app.AutoPctField = app.labelled(c, row, 'Auto colour range [%]', 'num', 7, @(~, ~) app.drawSections());
+            app.AutoPctField.AllowEmpty = 'off';
+            app.AutoPctField.Limits = [0 50];
+            app.AutoPctField.UpperLimitInclusive = 'off';
+            app.AutoPctField.Tooltip = 'An auto colour range runs from this percentile of the data shown to 100 minus it.';
             row = row + 2; % a gap: the section settings start here
             lbl = uilabel(c, 'Text', 'sigma0 contours');
             lbl.Layout.Row = row; lbl.Layout.Column = 1;
@@ -287,24 +319,26 @@ classdef MODvis_realtime_monitor < handle
             app.CmapDrop = gobjects(1, app.NSections);
             app.CMinField = gobjects(1, app.NSections);
             app.CMaxField = gobjects(1, app.NSections);
+            app.CLimLbl = gobjects(1, app.NSections);
+            defaults = app.DefaultSections.EPSI; % until a survey's fish_flag is read (applyFishDefaults)
             for i = 1:app.NSections
                 row = row + 1;
-                app.VarDrop(i) = app.labelled(c, row, sprintf('Section %d', i), 'drop', app.DefaultVars(i), ...
+                app.VarDrop(i) = app.labelled(c, row, sprintf('Section %d', i), 'drop', defaults.vars(i), ...
                     @(src, ~) app.varChosen(i, src.Value));
                 row = row + 1;
                 app.CmapDrop(i) = app.labelled(c, row, '  colormap', 'drop', app.Colormaps, @(~, ~) app.drawSections());
-                app.CmapDrop(i).Value = app.DefaultCmaps{i};
+                app.CmapDrop(i).Value = defaults.cmaps{i};
                 row = row + 1;
                 lims = uigridlayout(c, [1 2], 'Padding', [0 0 0 0], 'ColumnSpacing', 4);
                 lims.Layout.Row = row;
                 lims.Layout.Column = 2;
-                lbl = uilabel(c, 'Text', '  colour min, max');
-                lbl.Layout.Row = row;
-                lbl.Layout.Column = 1;
+                app.CLimLbl(i) = uilabel(c, 'Text', '  colour (auto)');
+                app.CLimLbl(i).Layout.Row = row;
+                app.CLimLbl(i).Layout.Column = 1;
                 app.CMinField(i) = uieditfield(lims, 'numeric', 'AllowEmpty', 'on', 'Value', [], ...
-                    'ValueChangedFcn', @(~, ~) app.drawSections());
+                    'ValueChangedFcn', @(~, ~) app.climTyped(i));
                 app.CMaxField(i) = uieditfield(lims, 'numeric', 'AllowEmpty', 'on', 'Value', [], ...
-                    'ValueChangedFcn', @(~, ~) app.drawSections());
+                    'ValueChangedFcn', @(~, ~) app.climTyped(i));
             end
             row = row + 2;
             app.heading(c, row, 'Small plots');
@@ -322,7 +356,7 @@ classdef MODvis_realtime_monitor < handle
             row = row + 1;
             app.LogDrop = app.labelled(c, row, 'Log', 'drop', {'survey processing.log', 'cruise_log.txt'}, @(~, ~) app.refreshLog());
             row = row + 1;
-            note = uilabel(c, 'Text', 'Empty = auto. Span 0 = all casts.', 'FontSize', 10);
+            note = uilabel(c, 'Text', 'Empty = auto (colours: clear both). Span 0 = all casts.', 'FontSize', 10);
             note.Layout.Row = row;
             note.Layout.Column = [1 2];
             row = row + 1;
@@ -360,7 +394,7 @@ classdef MODvis_realtime_monitor < handle
 
         function layoutMiddle(app)
             % column 2 of the middle as wide as a row is tall, so its plots
-            % are square; column 1 (pressure, twist) gets the rest
+            % are square; column 1 (depth, twist) gets the rest
             if isempty(app.MidGrid) || ~isvalid(app.MidGrid)
                 return
             end
@@ -516,34 +550,73 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function updateCastLine(app)
-            % the newest cast in the cast table (either direction, maybe
-            % still going): its least altimeter height above bottom (of a
-            % running median over n samples, so one bad ping isn't it; no
-            % samples pegged at the altimeter's range), its deepest CTD
-            % depth and the bottom's depth (the CTD depth at the least
-            % height + that height), from the L1 samples from the cast's
-            % start to pad seconds after its end (the cast table can end a
-            % cast a little early)
+            % the last full profile: the newest complete cast in the cast
+            % table whose altimeter saw the bottom (a cast still going, or
+            % one with the altimeter only at its peg - no bottom in range -
+            % is passed over), of the last BottomSearchCasts complete ones;
+            % its deepest CTD depth, least altimeter height above bottom and
+            % the bottom's depth (castBottom)
             meta = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta');
             saved = app.safeLoad(fullfile(meta, 'casts.mat'));
             if ~isfield(saved, 'casts') || isempty(saved.casts)
-                app.CastLbl.Text = 'Newest cast: none yet';
-                app.CastKey = [];
+                app.CastLbl.Text = {'  Last full profile: no casts yet'; '  -'; '  -'};
                 return
             end
-            [~, k] = max([saved.casts.dnum_start]);
-            c = saved.casts(k);
             pad = app.PadField.Value;
             if isempty(pad)
                 pad = 0;
             end
+            n_median = app.MedianField.Value;
+            if isempty(n_median)
+                n_median = 1;
+            end
+            ti = app.safeLoad(fullfile(meta, 'time_index.mat'));
+            casts = saved.casts([saved.casts.complete] == true);
+            [~, order] = sort([casts.dnum_start], 'descend');
+            casts = casts(order(1:min(end, app.BottomSearchCasts)));
+            for k = 1:numel(casts)
+                r = app.castBottom(casts(k), ti, pad, n_median);
+                if isempty(r)
+                    return % an L1 file being written - next refresh (the last text stays up)
+                end
+                if ~isempty(r.hab)
+                    break
+                end
+            end
+            if isempty(casts) || isempty(r.hab)
+                app.CastLbl.Text = {sprintf('  Last full profile: none of the last %d complete casts reached the bottom', ...
+                    numel(casts)); '  -'; '  -'};
+                return
+            end
+            c = casts(k);
+            z_txt = '-';
+            if isfinite(r.z_max)
+                z_txt = sprintf('%.1f m', r.z_max);
+            end
+            bottom = '  bottom - (no CTD depth then)';
+            if isfinite(r.z_at)
+                bottom = sprintf('  bottom %.1f m', r.z_at + r.hab);
+            end
+            app.CastLbl.Text = {sprintf('  Last full profile  %s %s   (L1 + %g s, median %d)', ...
+                datestr(c.dnum_start, 'mm-dd HH:MM'), c.direction, pad, n_median); ...
+                sprintf('  max CTD depth %s    min altimeter %.1f m (%s)', z_txt, r.hab, ...
+                datestr(r.hab_dnum, 'HH:MM:SS')); bottom}; %#ok<DATST>
+        end
+
+        function r = castBottom(app, c, ti, pad, n_median)
+            % cast c's least altimeter height above bottom (of a running
+            % median over n samples, so one bad ping isn't it; no samples
+            % pegged at the altimeter's range), its deepest CTD depth and
+            % the CTD depth at that least height, from the L1 samples from
+            % the cast's start to pad seconds after its end (the cast table
+            % can end a cast a little early). r.hab is [] when the
+            % altimeter never saw the bottom; r is [] when an L1 file can't
+            % be read yet. Kept in CastCache until the cast's files change.
             t_end = c.dnum_end + pad / 86400;
             files = {};
-            ti = app.safeLoad(fullfile(meta, 'time_index.mat'));
             if isfield(ti, 'filename') && ~isempty(ti.filename)
                 overlap = ti.dnum_start <= t_end & ti.dnum_end >= c.dnum_start;
-                files = fullfile(app.surveyFolder(), 'processed', 'realtime', 'L1', ti.filename(overlap));
-                files = cellstr(files);
+                files = cellstr(fullfile(app.surveyFolder(), 'processed', 'realtime', 'L1', ti.filename(overlap)));
                 files = files(isfile(files));
             end
             dates = zeros(1, numel(files));
@@ -551,14 +624,13 @@ classdef MODvis_realtime_monitor < handle
                 d = dir(files{i});
                 dates(i) = d.datenum;
             end
-            n_median = app.MedianField.Value;
-            if isempty(n_median)
-                n_median = 1;
-            end
-            key = {app.SurveyDrop.Value, c.dnum_start, c.dnum_end, c.complete, pad, n_median, files, dates};
-            if isequal(key, app.CastKey)
+            key = {c.dnum_end, pad, n_median, files, dates};
+            j = find([app.CastCache.start] == c.dnum_start, 1);
+            if ~isempty(j) && isequal(app.CastCache(j).key, key)
+                r = app.CastCache(j).result;
                 return
             end
+            r = [];
             in_window = @(t) t >= c.dnum_start & t <= t_end;
             z = zeros(0, 2);   % [dnum, CTD depth]
             hab = zeros(0, 2); % [dnum, height above bottom]
@@ -568,7 +640,7 @@ classdef MODvis_realtime_monitor < handle
                 try
                     s = load(files{i}, 'ctd', 'isap', 'alt');
                 catch
-                    return % being written - next refresh (the last line stays up)
+                    return
                 end
                 if isfield(s, 'ctd') && all(isfield(s.ctd, {'dnum', 'z'})) && numel(s.ctd.z) == numel(s.ctd.dnum)
                     t = s.ctd.dnum(:);
@@ -583,34 +655,23 @@ classdef MODvis_realtime_monitor < handle
             [~, iu] = unique(hab(:, 1));
             hab = hab(iu, :);
             hab(:, 2) = movmedian(hab(:, 2), n_median);
-            going = '';
-            if ~c.complete
-                going = ' (in progress)';
+            r = struct('z_max', NaN, 'hab', [], 'hab_dnum', NaN, 'z_at', NaN);
+            if ~isempty(z)
+                r.z_max = max(z(:, 2));
             end
-            txt = sprintf('Newest cast %s %s%s, L1 to its end + %g s, altimeter median of %d:   ', ...
-                datestr(c.dnum_start, 'mm-dd HH:MM'), c.direction, going, pad, n_median); %#ok<DATST>
-            if isempty(z)
-                txt = [txt 'max CTD depth -'];
-            else
-                txt = [txt sprintf('max CTD depth %.1f m', max(z(:, 2)))];
-            end
-            if isempty(hab)
-                txt = [txt '   min altimeter - (no reading in range)   bottom -'];
-            else
-                [h, j] = min(hab(:, 2));
-                z_at = NaN;
+            if ~isempty(hab)
+                [r.hab, j_min] = min(hab(:, 2));
+                r.hab_dnum = hab(j_min, 1);
                 if size(z, 1) > 1
-                    z_at = interp1(z(:, 1), z(:, 2), hab(j, 1));
-                end
-                txt = [txt sprintf('   min altimeter %.1f m at %s', h, datestr(hab(j, 1), 'HH:MM:SS'))]; %#ok<DATST>
-                if isnan(z_at)
-                    txt = [txt '   bottom - (no CTD depth then)'];
-                else
-                    txt = [txt sprintf('   bottom %.1f m (CTD %.1f + altimeter %.1f)', z_at + h, z_at, h)];
+                    r.z_at = interp1(z(:, 1), z(:, 2), r.hab_dnum);
                 end
             end
-            app.CastLbl.Text = txt;
-            app.CastKey = key;
+            entry = struct('start', c.dnum_start, 'key', {key}, 'result', r);
+            if isempty(j)
+                app.CastCache(end + 1) = entry;
+            else
+                app.CastCache(j) = entry;
+            end
         end
 
         function changed = loadGrid(app)
@@ -636,6 +697,7 @@ classdef MODvis_realtime_monitor < handle
             app.GridFile = f;
             app.GridStamp = stamp;
             app.Grid = g;
+            defaults = app.applyFishDefaults();
             names = {'temperature'};
             if isfield(app.Grid, 'variables') && ~isempty(app.Grid.variables)
                 v = app.Grid.variables;
@@ -657,8 +719,8 @@ classdef MODvis_realtime_monitor < handle
                 app.VarDrop(i).Items = names;
                 if any(strcmp(names, current))
                     app.VarDrop(i).Value = current;
-                elseif any(strcmp(names, app.DefaultVars{i}))
-                    app.VarDrop(i).Value = app.DefaultVars{i};
+                elseif any(strcmp(names, defaults.vars{i}))
+                    app.VarDrop(i).Value = defaults.vars{i};
                 else
                     app.VarDrop(i).Value = names{min(i, numel(names))};
                 end
@@ -666,9 +728,47 @@ classdef MODvis_realtime_monitor < handle
             changed = true;
         end
 
+        function defaults = applyFishDefaults(app)
+            % the survey's fish_flag's sections, colormaps and casts
+            % (DefaultSections), set when it differs from the last survey's;
+            % colour ranges back to auto then
+            flag = '';
+            yml = fullfile(app.surveyFolder(), 'meta', 'dev1_setup.yml');
+            if isfile(yml)
+                flag = upper(app.ymlValue(fileread(yml), 'fish_flag'));
+            end
+            if ~isfield(app.DefaultSections, flag)
+                flag = 'EPSI';
+            end
+            defaults = app.DefaultSections.(flag);
+            if strcmp(flag, app.FishFlag)
+                return
+            end
+            app.FishFlag = flag;
+            app.ChosenVars = defaults.vars; % each comes back when the grid has it
+            for i = 1:app.NSections
+                app.CmapDrop(i).Value = defaults.cmaps{i};
+                app.setAutoCLim(i);
+            end
+            app.DirDrop.Value = defaults.casts;
+        end
+
         function varChosen(app, i, name)
             app.ChosenVars{i} = name;
+            app.setAutoCLim(i); % the last variable's range means nothing for this one
             app.drawSections();
+        end
+
+        function climTyped(app, i)
+            % a typed colour range stays; both fields cleared = auto again
+            app.AutoCLim(i) = isempty(app.CMinField(i).Value) && isempty(app.CMaxField(i).Value);
+            app.drawSections();
+        end
+
+        function setAutoCLim(app, i)
+            app.AutoCLim(i) = true;
+            app.CMinField(i).Value = [];
+            app.CMaxField(i).Value = [];
         end
 
         %% Plots
@@ -680,49 +780,49 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function drawTimeSeries(app)
-            % pressure, the cruise twist count and the GPS track, on the same time limits
-            app.notePressureZoom();
-            app.drawPressure();
+            % CTD depth, the cruise twist count and the GPS track, on the same time limits
+            app.noteDepthZoom();
+            app.drawDepth();
             app.drawTwist();
             app.drawMap();
             try
-                linkaxes([app.PressureAx, app.TwistAx], 'x');
+                linkaxes([app.DepthAx, app.TwistAx], 'x');
             catch
                 % one of them has nothing to plot yet (no time axis)
             end
-            if ~isempty(app.PressureZoom) && ~isempty(app.PressureView)
-                app.PressureAx.XLim = app.PressureZoom{1}; % the twist's too: linked
-                app.PressureAx.YLim = app.PressureZoom{2};
+            if ~isempty(app.DepthZoom) && ~isempty(app.DepthView)
+                app.DepthAx.XLim = app.DepthZoom{1}; % the twist's too: linked
+                app.DepthAx.YLim = app.DepthZoom{2};
             end
-            if ~isempty(app.PressureView)
-                app.PressureShown = {app.PressureAx.XLim, app.PressureAx.YLim};
+            if ~isempty(app.DepthView)
+                app.DepthShown = {app.DepthAx.XLim, app.DepthAx.YLim};
             end
         end
 
-        function notePressureZoom(app)
-            % pressure limits other than the ones last drawn are the user's
-            % zoom or pan (on pressure, or on twist: x is linked) - kept
+        function noteDepthZoom(app)
+            % depth plot limits other than the ones last drawn are the user's
+            % zoom or pan (on depth, or on twist: x is linked) - kept
             % until a new time window; back at the window's own limits
             % (restore view) - dropped
-            if isempty(app.PressureShown) || ~isgraphics(app.PressureAx)
+            if isempty(app.DepthShown) || ~isgraphics(app.DepthAx)
                 return
             end
-            now_lims = {app.PressureAx.XLim, app.PressureAx.YLim};
-            if isequal(now_lims, app.PressureView)
-                app.PressureZoom = {};
-            elseif ~isequal(now_lims, app.PressureShown)
-                app.PressureZoom = now_lims;
+            now_lims = {app.DepthAx.XLim, app.DepthAx.YLim};
+            if isequal(now_lims, app.DepthView)
+                app.DepthZoom = {};
+            elseif ~isequal(now_lims, app.DepthShown)
+                app.DepthZoom = now_lims;
             end
         end
 
         function windowChanged(app)
-            % a new time window: the pressure zoom went with the old one
-            app.PressureZoom = {};
+            % a new time window: the depth zoom went with the old one
+            app.DepthZoom = {};
             app.drawPlots();
         end
 
         function tl = smallPlotWindow(app, t)
-            % [start end] datenum for pressure and twist: the sections'
+            % [start end] datenum for depth and twist: the sections'
             % window; when it ends now, now (newer samples than the last
             % grid redraw still show); with no window, the data's range
             w = app.timeWindow();
@@ -968,17 +1068,37 @@ classdef MODvis_realtime_monitor < handle
         end
 
         function lims = colourLimits(app, i, v)
+            % the typed range, else (auto, or the typed one incomplete) the
+            % AutoPctField percentile to 100 minus it of the data shown,
+            % rounded, written into the fields so they show what's in effect
             lo = app.CMinField(i).Value;
             hi = app.CMaxField(i).Value;
+            if ~app.AutoCLim(i) && ~isempty(lo) && ~isempty(hi) && hi > lo
+                lims = [lo hi];
+                app.CLimLbl(i).Text = '  colour (set)';
+                return
+            end
+            app.AutoCLim(i) = true;
+            app.CLimLbl(i).Text = '  colour (auto)';
             finite = v(isfinite(v));
             lims = [];
-            if ~isempty(lo) && ~isempty(hi) && hi > lo
-                lims = [lo hi];
-            elseif ~isempty(finite)
-                lims = prctile(finite, [2 98]);
+            if ~isempty(finite)
+                p = app.AutoPctField.Value;
+                lims = prctile(finite, [p, 100 - p]);
                 if lims(2) <= lims(1)
                     lims = lims(1) + [-1 1] * max(abs(lims(1)) * 0.01, eps);
                 end
+                % outward to a round step, about a 10th to a 100th of the range
+                step = 10 ^ (floor(log10(diff(lims))) - 1);
+                lims = [floor(lims(1) / step), ceil(lims(2) / step)] * step;
+                lims = round(lims, 12, 'significant'); % no 3.3000000000000003
+            end
+            if isempty(lims)
+                app.CMinField(i).Value = [];
+                app.CMaxField(i).Value = [];
+            else
+                app.CMinField(i).Value = lims(1);
+                app.CMaxField(i).Value = lims(2);
             end
         end
 
@@ -995,25 +1115,57 @@ classdef MODvis_realtime_monitor < handle
             end
         end
 
-        function drawPressure(app)
-            ax = app.PressureAx;
+        function drawDepth(app)
+            % CTD depth from meta/pressure_time_series.mat, as L1's ctd.z
+            % (MODprocess_single_L0_to_L1.m): -gsw_z_from_p at the GPS
+            % latitude at each time, else the yml's latitude
+            ax = app.DepthAx;
             cla(ax);
-            f = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta', 'pressure_time_series.mat');
-            pt = app.safeLoad(f);
-            app.PressureView = {};
-            app.PressureShown = {};
+            meta = fullfile(app.surveyFolder(), 'processed', 'realtime', 'meta');
+            pt = app.safeLoad(fullfile(meta, 'pressure_time_series.mat'));
+            app.DepthView = {};
+            app.DepthShown = {};
             if ~isfield(pt, 'dnum') || isempty(pt.dnum)
-                title(ax, 'pressure: none yet', 'FontSize', app.FontSize + 1);
+                title(ax, 'CTD depth: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
             tl = app.smallPlotWindow(pt.dnum);
             keep = pt.dnum >= tl(1) & pt.dnum <= tl(2);
-            plot(ax, datetime(pt.dnum(keep), 'ConvertFrom', 'datenum'), pt.P(keep), 'k');
+            t = pt.dnum(keep);
+            gp = app.safeLoad(fullfile(meta, 'gps_time_series.mat'));
+            lat = NaN;
+            if isfield(gp, 'dnum') && isfield(gp, 'latitude')
+                ok = isfinite(gp.dnum) & isfinite(gp.latitude);
+                [gt, iu] = unique(gp.dnum(ok));
+                glat = gp.latitude(ok);
+                glat = glat(iu);
+                if numel(gt) > 1
+                    lat = interp1(gt, glat, t, 'linear', 'extrap');
+                elseif isscalar(gt)
+                    lat = glat;
+                end
+            end
+            if all(isnan(lat))
+                yml = fullfile(app.surveyFolder(), 'meta', 'dev1_setup.yml');
+                if isfile(yml)
+                    lat = str2double(app.ymlValue(fileread(yml), 'latitude'));
+                end
+            end
+            if all(isnan(lat))
+                title(ax, 'CTD depth: no GPS fix and no latitude in dev1_setup.yml', 'FontSize', app.FontSize + 1, ...
+                    'Interpreter', 'none');
+                return
+            end
+            z = -gsw_z_from_p(pt.P(keep), lat);
+            plot(ax, datetime(t, 'ConvertFrom', 'datenum'), z, 'k');
             ax.YDir = 'reverse';
+            if max(z) > 0
+                ylim(ax, [0, 1.02 * max(z)]); % from the surface, not a round number above it
+            end
             xlim(ax, datetime(tl, 'ConvertFrom', 'datenum'));
-            ylabel(ax, 'P [dbar]');
-            title(ax, 'pressure (sections'' time window)', 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
-            app.PressureView = {ax.XLim, ax.YLim};
+            ylabel(ax, 'depth [m]');
+            title(ax, 'CTD depth (sections'' time window)', 'FontSize', app.FontSize + 1, 'FontWeight', 'normal');
+            app.DepthView = {ax.XLim, ax.YLim};
         end
 
         function [idx, colors, labels] = lastCasts(app)
@@ -1236,7 +1388,7 @@ classdef MODvis_realtime_monitor < handle
                 title(ax, 'cruise twist: none yet', 'FontSize', app.FontSize + 1);
                 return
             end
-            tl = app.smallPlotWindow(tt.dnum); % the same limits as pressure
+            tl = app.smallPlotWindow(tt.dnum); % the same limits as depth
             keep = tt.dnum >= tl(1) & tt.dnum <= tl(2);
             w = tt;
             if isfield(w, 'pressure')
@@ -1451,8 +1603,8 @@ classdef MODvis_realtime_monitor < handle
             app.GridFile = '';
             app.SelectedTime = NaN;
             app.SelectedCastStart = NaN;
-            app.PressureZoom = {};
-            app.CastKey = [];
+            app.DepthZoom = {};
+            app.CastCache(:) = [];
             app.loadGrid();
             app.fitWindowToSurvey();
             app.refresh();
@@ -1507,6 +1659,12 @@ classdef MODvis_realtime_monitor < handle
         function cmap = colormapNamed(name)
             if any(strcmp(name, {'parula', 'turbo'}))
                 cmap = feval(name, 256);
+            elseif strcmp(name, 'spectral')
+                % ColorBrewer's 11-class Spectral (colorbrewer2.org), blue
+                % (low) to red (high), on 256 levels
+                anchors = [94 79 162; 50 136 189; 102 194 165; 171 221 164; 230 245 152; 255 255 191; ...
+                    254 224 139; 253 174 97; 244 109 67; 213 62 79; 158 1 66] / 255;
+                cmap = interp1(linspace(0, 1, size(anchors, 1)), anchors, linspace(0, 1, 256));
             else
                 cmap = cmocean(name);
             end
