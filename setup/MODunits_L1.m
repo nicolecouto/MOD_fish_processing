@@ -36,6 +36,10 @@ u.epsi_volt = struct('unit', 'V', ...
 u.epsi_g = struct('unit', 'g (gravitational acceleration)', ...
     'description', 'Any a* channel (accelerometer) converted from raw counts, then volts -> g - epsi.(channel)_g, e.g. epsi.a3_g. Pattern, not enumerated per channel.');
 
+% --- accel (accelerometer std windows, from epsi.a*_g) ---
+u.accel_dnum = struct('unit', 'MATLAB datenum', 'description', 'Mean time of each l1.accel_std_s window of epsi samples (windows counted from datenum 0, so they line up across L1 files).');
+u.accel_channel_std = struct('unit', 'g', 'description', 'Standard deviation of epsi.(channel)_g in each window (2 or more finite samples, else NaN) - accel.(channel)_std, e.g. accel.a3_std. Pattern, one per accelerometer channel.');
+
 % --- ctd ---
 u.ctd_dnum = struct('unit', 'MATLAB datenum', 'description', 'CTD sample time - the master clock everything else CTD-related is derived from (process_ctd_fields).');
 u.ctd_time_s = struct('unit', 's', 'description', 'dnum in seconds on MATLAB''s day-zero epoch (dnum*86400) - matches MODprocess_single_modraw_to_L0.m''s convert_timestamp convention.');

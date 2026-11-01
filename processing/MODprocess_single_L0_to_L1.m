@@ -25,6 +25,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %              external_ctd substitutes for L0_data.ctd instead - see
 %              INPUTS.
 %     alt, isap - raw distance -> height above bottom (hab)
+%     accel  - new: the std of each EFE accelerometer channel
+%              (epsi.a<n>_g) over windows of PROCESS.L1.accel_std_s
+%              seconds (see accel_std below); [] without one
 %     vnav   - attitude added as vnav.tilt/spin/pitch/roll/yaw
 %              (mod_L1_add_vnav_attitude.m), and the cable twist count
 %              as data.twist (mod_L1_add_twist.m), computed after ctd so
@@ -44,6 +47,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %               from an L0 .mat file)
 %   metadata  - metadata struct (from MODsetup_read_yaml.m)
 %               Uses: metadata.PROCESS.channels, metadata.PROCESS.latitude,
+%                     metadata.PROCESS.L1.accel_std_s (only with an
+%                     accelerometer channel; checked by the caller),
 %                     metadata.AFE.(channel).full_range/.ADCconf/.type
 %                     (any missing -> standard EFE, see mod_efe_conversion.m),
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
@@ -60,8 +65,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 % OUTPUTS
 %   data      - same fields as L0_data, with epsi/ctd/alt/isap converted
 %               to physical units, vnav.tilt/spin added and vnav.pitch/
-%               roll/yaw filled (mod_L1_add_vnav_attitude.m) and
-%               data.twist added, as described above
+%               roll/yaw filled (mod_L1_add_vnav_attitude.m), and
+%               data.twist and data.accel added, as described above
 %
 % CALLED BY
 %   MODprocess_all_L0_to_L1.m
@@ -71,7 +76,7 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   gsw_sigma0.m, gsw_z_from_p.m
 %   mod_L1_add_vnav_attitude.m, mod_L1_add_twist.m
 %   mod_efe_volts_g_to_counts.m, mod_efe_counts_to_volts_g.m
-%   (local subfunctions: apply_setup_efe, process_ctd_fields, calibrate_altimeter_hab)
+%   (local subfunctions: apply_setup_efe, accel_std, process_ctd_fields, calibrate_altimeter_hab)
 %
 % NOTES
 %   The subfunctions below are local rather than separate files - they are
@@ -107,6 +112,12 @@ if ~isempty(data.epsi)
     [data.epsi, data.epsi_conversion] = apply_setup_efe(data, metadata);
 elseif ~isfield(data, 'epsi_conversion')
     data.epsi_conversion = [];
+end
+
+%% Accelerometers: std over accel_std_s windows
+data.accel = [];
+if ~isempty(data.epsi)
+    data.accel = accel_std(data.epsi, metadata);
 end
 
 %% CTD: raw hex -> physical P/T/C/S, plus derived fields
@@ -152,6 +163,50 @@ if isfield(data, 'vnav') && ~isempty(data.vnav)
 end
 
 end %end function
+
+%% Accelerometer std: accel.dnum (each window's mean time) and
+% accel.<ch>_std [g] for every epsi.a<n>_g, one value per window of
+% PROCESS.L1.accel_std_s seconds with 2 or more finite samples. Windows
+% are counted from datenum 0, so they fall in the same place whichever L1
+% file holds the samples (one split by a file boundary is two partial
+% windows). [] without an accelerometer channel.
+function accel = accel_std(epsi, metadata)
+accel = [];
+names = fieldnames(epsi);
+channels = names(~cellfun(@isempty, regexp(names, '^a\d+_g$', 'once')));
+if isempty(channels) || ~isfield(epsi, 'dnum') || isempty(epsi.dnum)
+    return
+end
+if ~isfield(metadata, 'PROCESS') || ~isfield(metadata.PROCESS, 'L1') || ~isfield(metadata.PROCESS.L1, 'accel_std_s')
+    error('MODprocess_single_L0_to_L1:noAccelWindow', ['l1.accel_std_s is not set - add it to the ' ...
+        'yml (MODsetup_metadata_field_registry.m).']);
+end
+win_s = metadata.PROCESS.L1.accel_std_s;
+if ~(isscalar(win_s) && win_s > 0)
+    error('MODprocess_single_L0_to_L1:badAccelWindow', 'l1.accel_std_s must be > 0 s (got %s).', mat2str(win_s));
+end
+t = epsi.dnum(:);
+w = floor(t * 86400 / win_s);
+ok = isfinite(w);
+[~, ~, iw] = unique(w(ok)); % window of each sample
+t = t(ok);
+accel.dnum = accumarray(iw, t, [], @mean);
+keep = accumarray(iw, 1) >= 2;
+for ch = channels'
+    x = epsi.(ch{1})(:);
+    x = x(ok);
+    good = isfinite(x);
+    n = accumarray(iw(good), 1, size(keep));
+    s = accumarray(iw(good), x(good), size(keep), @std, NaN);
+    s(n < 2) = NaN;
+    accel.([ch{1}(1:end - 2) '_std']) = s;
+end
+accel.dnum = accel.dnum(keep);
+for ch = channels'
+    f = [ch{1}(1:end - 2) '_std'];
+    accel.(f) = accel.(f)(keep);
+end
+end
 
 %% EFE: recover exact counts, reconvert with setup.yml's names/config
 % L0 files written before EFE conversion moved to L0 still hold raw

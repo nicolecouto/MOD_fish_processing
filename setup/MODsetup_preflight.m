@@ -319,7 +319,7 @@ if isfield(metadata, 'AFE') && isstruct(metadata.AFE)
 end
 sections = {};
 if ismember('L1', stages)
-    sections = [sections, {'afe', 'spectral', 'profile_detection'}];
+    sections = [sections, {'afe', 'l1', 'spectral', 'profile_detection'}];
 end
 if any(ismember({'L1', 'L2'}, stages)) && any(strcmpi(types, 'microcond'))
     sections{end+1} = 'ucond'; % gain fit at L1, chi at L2

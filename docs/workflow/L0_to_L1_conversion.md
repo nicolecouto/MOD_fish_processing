@@ -141,9 +141,11 @@ MATLAB has no built-in YAML reader (checked in R2024b: no `yaml.*` namespace, `r
 data = MODprocess_single_L0_to_L1(L0_data, metadata)
 ```
 
-Pure transformation - takes an L0 struct and a `metadata` struct, returns the same fields with `epsi`/`ctd`/`alt`/`isap` converted to physical units. No file I/O.
+Pure transformation - takes an L0 struct and a `metadata` struct, returns the same fields with `epsi`/`ctd`/`alt`/`isap` converted to physical units, plus the `accel` record (below). No file I/O.
 
-The three conversion steps (`apply_setup_efe`, `process_ctd_fields`, `calibrate_altimeter_hab`) live as **local subfunctions inside this file**, not as separate `modProcess_L1_apply_*.m` files - nothing calls them standalone today. Split one out the moment something else needs to call it directly. (`process_ctd_fields` was named `calibrate_ctd` until the DeepSolo work below - renamed because for SBE41/external-CTD sources it does no calibration at all, only derivation of secondary fields.)
+**`accel`** (`accel_std`): the standard deviation of each EFE accelerometer channel (every `epsi.a<n>_g`) over windows of `l1.accel_std_s` seconds (`metadata.PROCESS.L1.accel_std_s`, a required cruise-yml value, default 1 s). `accel.dnum` is each window's mean time and `accel.<ch>_std` [g] its std (NaN with fewer than 2 finite samples). Windows are counted from datenum 0, so they line up across L1 files; a window split by a file boundary is two partial windows. `[]` without an accelerometer channel. The grid bins it as `qc.<ch>_std`. `MODprocess_all_L0_to_L1.m` checks `accel_std_s` once before its file loop.
+
+The four conversion steps (`apply_setup_efe`, `accel_std`, `process_ctd_fields`, `calibrate_altimeter_hab`) live as **local subfunctions inside this file**, not as separate `modProcess_L1_apply_*.m` files - nothing calls them standalone today. Split one out the moment something else needs to call it directly. (`process_ctd_fields` was named `calibrate_ctd` until the DeepSolo work below - renamed because for SBE41/external-CTD sources it does no calibration at all, only derivation of secondary fields.)
 
 Notes on the CTD conversion specifically:
 - SBE49 "eng" format (raw hex counts) goes through the full SBE calibration polynomials (temperature, pressure, conductivity), then Practical Salinity via `gsw_SP_from_C`. The coefficients are the L0 file's `ctd_cal` (its `$DCAL`, else the `.CAL` file - see [SBE calibration](modraw_to_L0_conversion.md#sbe-calibration-dcal-else-the-cal-file)), and `ctd.cal_source` says which. `TOFFSET` (added to T), `CSLOPE` (times C) and `POFFSET` (added to P, dbar) from `$DCAL` are applied; they're 0, 1 and 0 on every SBE so far, and a `.CAL` file has none.

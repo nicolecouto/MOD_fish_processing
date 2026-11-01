@@ -65,6 +65,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   L0_dir        - full path to a folder of L0 .mat files
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
 %                    per session and passed through - see PLAN.md Section 2.
+%                    l1.accel_std_s (metadata.PROCESS.L1.accel_std_s, the
+%                    L1 accel window) is checked once, before the files.
 %   L1_dir        - (optional) full path to save .mat files to. Default:
 %                    a sibling 'L1' folder next to L0_dir
 %                    (fullfile(fileparts(L0_dir),'L1')), created if missing.
@@ -99,7 +101,8 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   MODprocess_deployment.m, top-level scripts
 %
 % CALLS
-%   MODsetup_add_derived_metadata.m, MODsetup_save_metadata.m (unconditional)
+%   MODsetup_add_derived_metadata.m, MODsetup_save_metadata.m,
+%   MODsetup_validate_metadata.m (unconditional)
 %   MODprocess_single_L0_to_L1.m, MODprocess_read_external_ctd.m (only for
 %   vehicles with an independent CTD file - see NOTES)
 %   MODprocess_L1_accumulate_twist_timeseries.m (writes nothing when no L1 file has twist)
@@ -179,6 +182,20 @@ if nfiles == 0
     disp(['MODprocess_all_L0_to_L1: No .mat files found in ' MODutil_short_path(L0_dir)])
     L1_files = {};
     return
+end
+
+% The L1 accel window (MODprocess_single_L0_to_L1.m), asked for once here
+while true
+    try
+        metadata = MODsetup_validate_metadata(metadata, metadata.paths.setup_yml, {'accel_std_s'});
+        break
+    catch ME
+        % A prompted value was saved to the yml - reread it and retry
+        if ~strcmp(ME.identifier, 'MODsetup_validate_metadata:yamlUpdated')
+            rethrow(ME)
+        end
+        metadata = MODsetup_add_derived_metadata(MODsetup_read_yaml(metadata.paths.setup_yml));
+    end
 end
 
 % Vehicles whose CTD data arrives via an independent file rather than

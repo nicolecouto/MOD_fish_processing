@@ -6,6 +6,10 @@
 afe:
   sample_rate: 320
 
+# L0 -> L1 (every vehicle)
+l1:
+  accel_std_s: 1
+
 # Scan and spectrum settings (every vehicle)
 spectral:
   fft_length: 1024
@@ -95,6 +99,10 @@ grid:
 # afe - EFE board (every vehicle - L0->L1 needs afe.sample_rate)
 #   - sample_rate: Nominal AFE (EFE board) sample rate [Hz]: shear, FP07, microconductivity
 #       and accelerometers (mod_scan_get_spectra.m, MODsetup_define_filters.m)
+#
+# l1 - L0 -> L1 (every vehicle)
+#   - accel_std_s: Window [s] for L1 accel, the std of each EFE accelerometer channel
+#       (gridded as qc.<ch>_std)
 #
 # spectral - Scan and spectrum settings (every vehicle)
 #   - fft_length: FFT segment length [samples] - also the Hamming taper length (no separate
@@ -259,12 +267,13 @@ grid:
 #       MOD_fish_lib's haf_oakey.m hardcoded this at 0.02 - made tunable here, same
 #       precedent as chi's time_constant_s/fall_speed_exponent fields.
 #   - coherence_fmin_hz: Low end of the frequency band mod_scan_shear_accel_coherence.m's
-#       band-integrated coherence diagnostic (spectra.(ch)_coh_a3_sum) sums over - not
-#       itself consumed by the epsilon calculation (which uses the full per-frequency
-#       coherence vector, not this sum). MOD_fish_lib's mod_efe_scan_coherence.m used
-#       Meta_Data.PROCESS.fc1/.fc2 for the same band - no historical numeric default found
-#       in this repo's reference deployments, so this suggested_default is a placeholder
-#       pending a real value; see docs/workflow/L2_calc_eps.md.
+#       band-integrated coherence diagnostics (spectra.(ch)_coh_<accel>_sum, one per
+#       accelerometer) sum over - not itself consumed by the epsilon calculation (which uses
+#       the full per-frequency coherence vector, not this sum). MOD_fish_lib's
+#       mod_efe_scan_coherence.m used Meta_Data.PROCESS.fc1/.fc2 for the same band - no
+#       historical numeric default found in this repo's reference deployments, so this
+#       suggested_default is a placeholder pending a real value; see
+#       docs/workflow/L2_calc_eps.md.
 #   - coherence_fmax_hz: High end of the frequency band mod_scan_shear_accel_coherence.m's
 #       band-integrated coherence diagnostic sums over - see coherence_fmin_hz. Placeholder
 #       default pending a real per-deployment value; see docs/workflow/L2_calc_eps.md.

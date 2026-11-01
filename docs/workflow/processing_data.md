@@ -191,6 +191,9 @@ L2's per-channel values are `<L2 name>_<channel>`:
   with no bottom in range is NaN. yaw and spin are headings and aren't gridded.
 - **Fluorometer**: `fluor.bb`, `fluor.chla` and `fluor.fdom` from L1 `fluor` (the ECOP's bb, chla,
   fDOM, in the L1's raw units), each sample at the CTD depth at its time, then binned.
+- **Accelerometer std**: `qc.a1_std`, `qc.a2_std`, `qc.a3_std` [g] from L1 `accel` - the standard
+  deviation of each EFE accelerometer over `l1.accel_std_s` windows (1 s by default) - each window
+  at the CTD depth at its time, then binned. Down and up casts both.
 - **Scans**: each scan of the cast (its center in the cast) fills every bin of its footprint, from
   the shallowest to the deepest L1 CTD depth during the scan
   (`n_samples_scan_afe`/`fs_afe` long), and a bin is the mean of the scans covering it:
@@ -205,7 +208,10 @@ L2's per-channel values are `<L2 name>_<channel>`:
   - `kc`: the cutoff wavenumbers [cpm], named for the value they bound: `<s>_obs`,
     `<s>_obs_coh_corr` (shear integration cutoffs), `<t>_obs` (the fpo7 noise-floor cutoff),
     `<c>_chi_obs` (microconductivity's upper integration bound, e.g. `kc.c1_chi_obs`)
-  - `qc`: per shear channel `<s>_coherence_a3_sum`
+  - `qc`: per shear channel and accelerometer, `<s>_coherence_a1_sum`, `_a2_sum`, `_a3_sum` - the
+    shear-accelerometer coherence integrated over `coherence_fmin_hz` to `coherence_fmax_hz` (a3 is
+    the one epsilon's `_coh_corr` uses; a1 and a2 are diagnostics only). The accelerometer std above
+    joins this struct too.
   e.g. `gridded.epsilon.final`, `gridded.chi.t1_obs`. `gridded.variables` names them the same way
   (`'epsilon.s1_mle'`).
   - On FCTD2 a scan is 6.4 s, about 24 m at 3.8 m/s, and with 50% overlap most bins are covered by
@@ -897,3 +903,14 @@ of whatever variables we're plotting at once." A narrow column left of the secti
 clicked cast's 4 profiles (the newest cast until a click), each on its section's colour range, at its
 section's height and depth limits, with no x label (Nicole: the section's title says it); to
 keep the sections wide the middle column is narrower (3 : 5) and the control panel's text smaller.
+
+**2026-11-01 - Vibration QC: accelerometer std and coherence with every accelerometer** (branch
+`main-fork`). Nicole: "I'd like to add some measure of a1_g, a2_g, and a3_g to the grid. Maybe the
+standard deviation over 1 seconds", computed in L1, and "coherence with a1 and a2 too, and put the
+1-second std fields in the qc structure". L1 has a new `accel` record (`accel.dnum`,
+`accel.<ch>_std`, the std over `l1.accel_std_s` windows - a new required cruise-yml value, default
+1 s); L2's `qc` has `<s>_coherence_<a>_sum` for a1, a2 and a3 (the epsilon correction still uses
+a3); the grid has `qc.<ch>_std` and the six coherence sums. `grid_version` is now 13. Checked on a
+sandbox copy of 10 `26_1026_mako2_depl04` files: L2 epsilon, chi, kc and `_coherence_a3_sum` are
+identical to the previous code's; a yml without `accel_std_s` is listed as missing by preflight;
+the grid made from old L1 files (no `accel`) has no `qc.*_std`, without error.

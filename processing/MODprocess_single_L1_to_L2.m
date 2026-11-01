@@ -230,11 +230,13 @@ function L2data = MODprocess_single_L1_to_L2(data, metadata, PressureTimeseries)
 %       .<c>_chi_obs  - microconductivity.chi_obs's upper integration
 %                       bound (<c> is the probe's channel, e.g. c1)
 %     qc:
-%       .<s>_coherence_a3_sum - shear-a3 coherence integrated over
-%                       coherence_fmin_hz..coherence_fmax_hz [Hz], a
+%       .<s>_coherence_<a>_sum - shear-accelerometer coherence
+%                       integrated over coherence_fmin_hz..coherence_fmax_hz
+%                       [Hz], one per shear channel and accelerometer
+%                       channel in the file (a1, a2, a3), a
 %                       vibration-contamination diagnostic
-%                       (mod_scan_calc_epsilon.m's
-%                       spectra.<s>_coh_a3_sum)
+%                       (mod_scan_shear_accel_coherence.m's
+%                       spectra.<s>_coh_<a>_sum)
 %     spectra.(channel)_shear_k, .(channel)_shear_co_k - raw and
 %                   coherence-cleaned shear wavenumber spectra, nbscan x
 %                   nfreq, one pair per shear channel with epsilon
@@ -436,12 +438,22 @@ for iF = 1:numel(ucond_fields)
     ucond_all.(ucond_fields{iF}) = nan(nbscan, 1);
 end
 epsilon_fields = {'epsilon_obs', 'epsilon_obs_kc', 'epsilon_obs_coh_corr', 'epsilon_obs_coh_corr_kc', ...
-    'epsilon_mle', 'fom', 'fom_mle', 'coherence_sum'};
+    'epsilon_mle', 'fom', 'fom_mle'};
 epsilon_all_by_field = struct();
 for iF = 1:numel(epsilon_fields)
     epsilon_all_by_field.(epsilon_fields{iF}) = struct();
     for iC = 1:numel(epsilon_channels)
         epsilon_all_by_field.(epsilon_fields{iF}).(epsilon_channels{iC}) = nan(nbscan, 1);
+    end
+end
+% shear-accelerometer coherence sums, one per shear channel and each
+% accelerometer the file has (epsi.a<n>_g)
+fn = fieldnames(epsi);
+accel_channels = regexprep(fn(~cellfun(@isempty, regexp(fn, '^a\d+_g$', 'once'))), '_g$', '')';
+coherence_sum_all = struct();
+for iC = 1:numel(epsilon_channels)
+    for iA = 1:numel(accel_channels)
+        coherence_sum_all.(epsilon_channels{iC}).(accel_channels{iA}) = nan(nbscan, 1);
     end
 end
 scan_results = cell(nbscan, 1);
@@ -540,15 +552,14 @@ for iScan = 1:nbscan
 
                 for iF = 1:numel(epsilon_fields)
                     field = epsilon_fields{iF};
-                    if strcmp(field, 'coherence_sum')
-                        continue % nested under spectra, handled separately below
-                    end
                     epsilon_all_by_field.(field).(ch)(iScan) = scan_results{iScan}.epsilon.(ch).(field);
                 end
-                coh_sum_field = [ch '_coh_a3_sum'];
-                if isfield(scan_results{iScan}.epsilon.(ch).spectra, coh_sum_field)
-                    epsilon_all_by_field.coherence_sum.(ch)(iScan) = ...
-                        scan_results{iScan}.epsilon.(ch).spectra.(coh_sum_field);
+                for iA = 1:numel(accel_channels)
+                    coh_sum_field = [ch '_coh_' accel_channels{iA} '_sum'];
+                    if isfield(scan_results{iScan}.epsilon.(ch).spectra, coh_sum_field)
+                        coherence_sum_all.(ch).(accel_channels{iA})(iScan) = ...
+                            scan_results{iScan}.epsilon.(ch).spectra.(coh_sum_field);
+                    end
                 end
             end
 
@@ -610,7 +621,9 @@ for iC = 1:numel(epsilon_channels)
     for field = fieldnames(kc_leaf)'
         L2data.kc.([ch '_' kc_leaf.(field{1})]) = epsilon_all_by_field.(field{1}).(ch);
     end
-    L2data.qc.([ch '_coherence_a3_sum']) = epsilon_all_by_field.coherence_sum.(ch);
+    for iA = 1:numel(accel_channels)
+        L2data.qc.([ch '_coherence_' accel_channels{iA} '_sum']) = coherence_sum_all.(ch).(accel_channels{iA});
+    end
 end
 for iC = 1:numel(chi_obs_channels)
     ch = chi_obs_channels{iC};

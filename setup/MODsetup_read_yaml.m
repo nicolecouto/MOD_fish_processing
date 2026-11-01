@@ -466,7 +466,7 @@ if isfield(yml, 'winch_spool')
 end
 
 %% Processing parameters - every value MODsetup_metadata_field_registry.m
-% knows about (spectral, profile_detection, chi, ucond, epsilon, grid, plus
+% knows about (l1, spectral, profile_detection, chi, ucond, epsilon, grid, plus
 % afe.sample_rate), copied from its
 % yaml_section.yaml_key to its metadata_path only when setup.yml declares
 % it. One loop over the registry, so a parameter added there is read here

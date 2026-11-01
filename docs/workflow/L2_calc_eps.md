@@ -31,7 +31,7 @@ Same single-pole-low-pass shape as `mod_scan_fpo7_transfer_function.m`'s thermal
 scan = mod_scan_shear_accel_coherence(scan, metadata, channel)
 ```
 
-Magnitude-squared coherence (MATLAB's `mscohere`, whole-scan detrend - not `mod_scan_get_spectra.m`'s per-segment-detrend Welch method, a deliberate simplification matching the legacy port exactly) between the shear channel and accelerometer channel `a3` (hardcoded, not looped over all three axes - matches legacy's own hardcoded choice: the vertical axis is the one most mechanically coupled to a shear probe's own vibration). Used downstream (in `mod_scan_calc_epsilon.m`, not this function) to build a coherence-cleaned shear spectrum: `Ps_velocity_co_f = Ps_velocity_f .* (1 - Cxy)`.
+Magnitude-squared coherence (MATLAB's `mscohere`, whole-scan detrend - not `mod_scan_get_spectra.m`'s per-segment-detrend Welch method, a deliberate simplification matching the legacy port exactly) between the shear channel and each accelerometer channel the scan has (`a1`, `a2`, `a3`): `spectra.<s>_coh_<a>` and its band integral `spectra.<s>_coh_<a>_sum` (saved in L2 as `qc.<s>_coherence_<a>_sum`). Only the `a3` coherence cleans the spectrum - legacy's own choice: the vertical axis is the one most mechanically coupled to a shear probe's own vibration; a1 and a2 are diagnostics. The a3 coherence is used downstream (in `mod_scan_calc_epsilon.m`, not this function) to build a coherence-cleaned shear spectrum: `Ps_velocity_co_f = Ps_velocity_f .* (1 - Cxy)`.
 
 ### 6. `mod_scan_calc_epsilon_obs.m` - direct-integration epsilon (`eps1_mmp.m` + `epsilon2_correct.m` port)
 

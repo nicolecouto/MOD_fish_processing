@@ -21,14 +21,16 @@ function gridded = MODprocess_grid(metadata, by)
 %     - Other L1 records (pitch, tilt, roll from vnav; height_above_bottom
 %       from isap, or alt without one, leaving out samples pegged at the
 %       altimeter's maximum range; fluor.bb, .chla, .fdom from the ECOP
-%       fluorometer): the mean of the samples in the bin,
+%       fluorometer; qc.<ch>_std, the accelerometer std windows of L1
+%       accel, e.g. qc.a3_std): the mean of the samples in the bin,
 %       each at the CTD depth at its time (interpolated). roll is a
 %       circular mean (it wraps at +-180 deg); yaw and spin are headings
 %       and are left out.
 %     - Scans (viscosity_kinematic, diffusivity_thermal_molecular, and
 %       L2's grouped structs epsilon, chi, microconductivity, kc and qc,
 %       under the same names: gridded.epsilon.final, gridded.epsilon.s1_obs,
-%       gridded.chi.t1_mle, gridded.kc.t1_obs, ...): each scan of the cast (its center in
+%       gridded.chi.t1_mle, gridded.kc.t1_obs, gridded.qc.s1_coherence_a3_sum,
+%       ...): each scan of the cast (its center in
 %       the cast) fills every bin of its footprint - from the shallowest
 %       to the deepest L1 CTD depth during the scan
 %       (n_samples_scan_afe/fs_afe long), so a 6.4 s scan at
@@ -122,7 +124,7 @@ if isfield(metadata, 'paths') && isfield(metadata.paths, 'setup_yml')
 end
 metadata = MODsetup_validate_metadata(metadata, yaml_file, {'z_bin_m'});
 z_bin = metadata.PROCESS.GRID.z_bin_m;
-GRID_VERSION = 12; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi); 10: each scan fills its footprint, n_scans counts the scans covering a bin; 11: L2's fs_afe, n_samples_scan_afe (were Fs_epsi, N_epsi); 12: fluor, L2's cutoffs in kc, only the groups the data have. A grid from another version rebins every cast.
+GRID_VERSION = 13; % 2: conductivity C; 3: GPS latitude/longitude per cast, no all-NaN epsilon_final; 4: first fix for Epsi downcasts from the ship; 5: long-form names, every L2 per-scan value, attitude and height above bottom; 6: microconductivity chi; 7: turbulence grouped in epsilon, chi, microconductivity, qc; 8: microconductivity chi_obs, chi_tot, eps_chi, n2; 9: reused casts keep every turbulence group (8 lost all but chi); 10: each scan fills its footprint, n_scans counts the scans covering a bin; 11: L2's fs_afe, n_samples_scan_afe (were Fs_epsi, N_epsi); 12: fluor, L2's cutoffs in kc, only the groups the data have; 13: qc.<accel>_std from L1 accel. A grid from another version rebins every cast.
 if ~(z_bin > 0)
     error('MODprocess_grid:badZBin', 'grid.z_bin_m must be > 0 m (got %g).', z_bin);
 end
@@ -292,13 +294,14 @@ grid_names = {'pressure', 'temperature', 'conductivity', 'salinity_practical', '
     'temperature_conservative', 'sigma0', 'fall_speed'};
 ctd = struct('dnum', [], 'z', []);
 % other L1 records: [dnum, value] of each sample in the cast
-% (fluor__<leaf> is gridded.fluor.<leaf>)
+% (fluor__<leaf> is gridded.fluor.<leaf>; qc__<ch>_std, from L1 accel,
+% gridded.qc.<ch>_std)
 extra = struct('pitch', zeros(0, 2), 'tilt', zeros(0, 2), 'roll', zeros(0, 2), ...
     'height_above_bottom', zeros(0, 2), 'fluor__bb', zeros(0, 2), 'fluor__chla', zeros(0, 2), ...
     'fluor__fdom', zeros(0, 2));
 fluor_names = struct('fluor__bb', 'bb', 'fluor__chla', 'chla', 'fluor__fdom', 'fDOM');
 for i = 1:numel(L1_files)
-    s = load_cached(cache, L1_files{i}, {'ctd', 'vnav', 'isap', 'alt', 'fluor'});
+    s = load_cached(cache, L1_files{i}, {'ctd', 'vnav', 'isap', 'alt', 'fluor', 'accel'});
     for name = {'pitch', 'tilt', 'roll'}
         extra.(name{1}) = [extra.(name{1}); samples_in_cast(s, 'vnav', name{1}, in_cast)];
     end
@@ -306,6 +309,17 @@ for i = 1:numel(L1_files)
         extra.(name{1}) = [extra.(name{1}); samples_in_cast(s, 'fluor', fluor_names.(name{1}), in_cast)];
     end
     extra.height_above_bottom = [extra.height_above_bottom; MODutil_altimeter_hab_m(s, in_cast)];
+    if isfield(s, 'accel') && isstruct(s.accel)
+        for name = fieldnames(s.accel)'
+            if endsWith(name{1}, '_std')
+                key = ['qc__' name{1}];
+                if ~isfield(extra, key)
+                    extra.(key) = zeros(0, 2);
+                end
+                extra.(key) = [extra.(key); samples_in_cast(s, 'accel', name{1}, in_cast)];
+            end
+        end
+    end
     if ~isfield(s, 'ctd') || ~isfield(s.ctd, 'dnum') || ~isfield(s.ctd, 'z') || isempty(s.ctd.dnum)
         continue
     end
