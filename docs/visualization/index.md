@@ -258,8 +258,10 @@ reports it if it fails).
 
 Plots cable twist count (gyro method) vs. time, highlighting upcast samples (when the fin is
 normally adjusted). Given the cruise twist count, it also marks each spool change (dashed, with
-the spool) and each survey start (dotted, with its name); the line is broken at gaps. The
-monitor's twist panel uses it.
+the spool) and each survey start (dotted, with its name); the line is broken at gaps. On the
+axes, in the corner the line keeps clear of (the y limits widen if none is): "↑ Fins to
+starboard - twists increase", "↓ Fins to port - twists decrease". The monitor's twist panel
+uses it.
 
 ```matlab
 T = load(fullfile(processed_root, 'twist', 'twist_time_series.mat')).TwistTimeseries;  % cruise

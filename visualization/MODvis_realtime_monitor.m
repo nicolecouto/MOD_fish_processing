@@ -1408,8 +1408,8 @@ classdef MODvis_realtime_monitor < handle
                 w.dnum = tl(:);
                 w.count_gyro = nan(2, 1);
             end
+            ax.FontSize = app.FontSize; % before: the fin note takes the axes' size
             MODvis_twist_timeseries(w, ax);
-            ax.FontSize = app.FontSize;
             xlim(ax, datetime(tl, 'ConvertFrom', 'datenum'));
             legend(ax, 'off');
             % now: the newest count, the spool and when it went on
