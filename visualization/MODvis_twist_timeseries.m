@@ -79,7 +79,11 @@ title(ax, {sprintf('Twist Count vs. Time (Final count: %.2f)', currentcount), ..
     'Neutral is Negative - set fin to neutral to reduce count'}, 'FontWeight', 'normal')
 xlabel(ax, 'Time [UTC]')
 ylabel(ax, 'Twist counts')
-legend(ax, h_leg, leg_text, 'Location', 'best', 'AutoUpdate', 'off');
+% legend text a size up from the axes' (its default is 0.9 of it); line
+% sample a quarter of the default 30-point length (ItemTokenSize is
+% hidden: set on the legend, not as a legend() option)
+lgd = legend(ax, h_leg, leg_text, 'Location', 'best', 'AutoUpdate', 'off', 'FontSize', ax.FontSize + 1);
+lgd.ItemTokenSize(1) = lgd.ItemTokenSize(1) / 4;
 
 % spool changes (count restarts from 0) and survey starts
 grey = [0.5 0.5 0.5];
