@@ -51,8 +51,8 @@ u.ctd_SR = struct('unit', 'g/kg', 'description', 'Reference Salinity, gsw_SR_fro
 u.ctd_CT = struct('unit', 'degC', 'description', 'Conservative Temperature, gsw_CT_from_t(ctd.SR, ctd.T, ctd.P) - the TEOS-10-idiomatic replacement for potential temperature (formerly ctd.th).');
 u.ctd_sigma0 = struct('unit', 'kg/m^3', 'description', 'Potential density anomaly referenced to 0 dbar, gsw_sigma0(ctd.SR, ctd.CT) - the TEOS-10-idiomatic replacement for potential density (formerly ctd.sgth).');
 u.ctd_z = struct('unit', 'm, positive down', 'description', 'Depth from pressure, -gsw_z_from_p(ctd.P, lat) - negated because gsw_z_from_p''s own convention is height (negative down) and this repo''s z/dzdt convention is positive down.');
-u.ctd_dPdt = struct('unit', 'dbar/s', 'description', 'Finite-difference pressure rate, diff(ctd.P)./diff(ctd.time_s).');
-u.ctd_dzdt = struct('unit', 'm/s, positive during descent', 'description', 'Finite-difference depth rate (fall speed), diff(ctd.z)./diff(ctd.time_s) - this is the "w" fed to L2 spectral calculations.');
+u.ctd_dPdt = struct('unit', 'dbar/s', 'description', 'Pressure rate: ctd.P low-passed (zero-phase Butterworth, half power at 1/l1.dzdt_lowpass_s), then gradient against ctd.time_s.');
+u.ctd_dzdt = struct('unit', 'm/s, positive during descent', 'description', 'Depth rate (fall speed): ctd.z low-passed (zero-phase Butterworth, half power at 1/l1.dzdt_lowpass_s), then gradient against ctd.time_s - this is the "w" fed to L2 spectral calculations and the grid''s fall_speed.');
 u.ctd_cal_source = struct('unit', 'n/a (text)', 'description', 'Where the SBE49 calibration came from: ''.modraw $DCAL'' (what the SBE reported) or ''calibrations folder: <path>'' (SBE/<SN>.CAL) - L0''s ctd_cal.source. SBE49 only.');
 
 % --- alt / isap (altimeters) ---

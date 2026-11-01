@@ -18,8 +18,9 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %     ctd    - raw hex -> P/T/C/SP (SBE49 only - SBE41 arrives from L0
 %              already in physical units) with L0_data.ctd_cal (the
 %              file's $DCAL, else the .CAL file; ctd.cal_source says
-%              which), plus derived dPdt, z, dzdt
-%              (always) and SP, SR, CT, sigma0 (only when T/C are actually
+%              which), plus derived dPdt, z, dzdt (always; the rates
+%              from P and z low-passed at PROCESS.L1.dzdt_lowpass_s - see
+%              lowpass_rate below) and SP, SR, CT, sigma0 (only when T/C are actually
 %              present - see process_ctd_fields below). For vehicles with
 %              no $SB49/$SB41 blocks at all (DeepSolo, Wirewalker),
 %              external_ctd substitutes for L0_data.ctd instead - see
@@ -49,6 +50,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %               Uses: metadata.PROCESS.channels, metadata.PROCESS.latitude,
 %                     metadata.PROCESS.L1.accel_std_s (only with an
 %                     accelerometer channel; checked by the caller),
+%                     metadata.PROCESS.L1.dzdt_lowpass_s (only with a
+%                     CTD; checked by the caller),
 %                     metadata.AFE.(channel).full_range/.ADCconf/.type
 %                     (any missing -> standard EFE, see mod_efe_conversion.m),
 %                     metadata.GEOMETRY.alt_angle_deg/.alt_dist_from_crashguard_ft/
@@ -76,7 +79,8 @@ function data = MODprocess_single_L0_to_L1(L0_data, metadata, external_ctd)
 %   gsw_sigma0.m, gsw_z_from_p.m
 %   mod_L1_add_vnav_attitude.m, mod_L1_add_twist.m
 %   mod_efe_volts_g_to_counts.m, mod_efe_counts_to_volts_g.m
-%   (local subfunctions: apply_setup_efe, accel_std, process_ctd_fields, calibrate_altimeter_hab)
+%   (local subfunctions: apply_setup_efe, accel_std, process_ctd_fields, lowpass_rate,
+%   calibrate_altimeter_hab)
 %
 % NOTES
 %   The subfunctions below are local rather than separate files - they are
@@ -318,7 +322,15 @@ else
     % either way.
 end
 
-ctd.dPdt = [0; diff(ctd.P)./diff(ctd.time_s)];
+if ~isfield(metadata, 'PROCESS') || ~isfield(metadata.PROCESS, 'L1') || ~isfield(metadata.PROCESS.L1, 'dzdt_lowpass_s')
+    error('MODprocess_single_L0_to_L1:noDzdtLowpass', ['l1.dzdt_lowpass_s is not set - add it to the ' ...
+        'yml (MODsetup_metadata_field_registry.m).']);
+end
+lowpass_s = metadata.PROCESS.L1.dzdt_lowpass_s;
+if ~(isscalar(lowpass_s) && lowpass_s > 0)
+    error('MODprocess_single_L0_to_L1:badDzdtLowpass', 'l1.dzdt_lowpass_s must be > 0 s (got %s).', mat2str(lowpass_s));
+end
+ctd.dPdt = lowpass_rate(ctd.P, ctd.time_s, lowpass_s);
 
 % Depth from pressure needs latitude - interpolate from GPS fixes if any
 % exist for this file, otherwise fall back to the deployment's static
@@ -337,8 +349,37 @@ end
 % convention is positive down (dzdt > 0 during descent) - negate to
 % preserve it exactly.
 ctd.z = -gsw_z_from_p(ctd.P, lat);
-ctd.dzdt = [0; diff(ctd.z)./diff(ctd.time_s)];
+ctd.dzdt = lowpass_rate(ctd.z, ctd.time_s, lowpass_s);
 
+end
+
+%% Rate of change of a CTD record, low-passed: x through a zero-phase
+% Butterworth filter (filtfilt) whose applied response is at half power
+% at 1/lowpass_s, then the centred gradient against time. Single-pass
+% Butterworth is at half power at Wn; filtfilt squares the response, so
+% Wn is moved up to put the two-pass half power at the cutoff. The order
+% only sets how sharp the roll-off is. A record too short to pad
+% (filtfilt needs more than 3 * order samples), or sampled too sparsely
+% for the cutoff (Wn >= 1: lowpass_s is about two samples or less, e.g.
+% DeepSolo's pressure), uses x as it is. NaNs are filled for the filter
+% and put back after.
+function rate = lowpass_rate(x, time_s, lowpass_s)
+x = x(:);
+time_s = time_s(:);
+rate = nan(size(x));
+ok = isfinite(x) & isfinite(time_s);
+if nnz(ok) < 2
+    return
+end
+order = 4;
+dt = median(diff(time_s(ok)));
+Wn = (2 * dt / lowpass_s) / (sqrt(2) - 1)^(1 / (2 * order));
+xs = x;
+if Wn > 0 && Wn < 1 && nnz(ok) > 3 * order
+    [b, a] = butter(order, Wn, 'low');
+    xs(ok) = filtfilt(b, a, x(ok));
+end
+rate(ok) = gradient(xs(ok), time_s(ok));
 end
 
 %% Altimeter/ISA500 raw distance -> height above bottom

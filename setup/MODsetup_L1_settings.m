@@ -43,6 +43,7 @@ settings.channels = get_field(metadata, {'PROCESS', 'channels'});
 settings.latitude = get_field(metadata, {'PROCESS', 'latitude'});
 settings.epsi_gap_factor = get_field(metadata, {'PROCESS', 'epsi_gap_factor'});
 settings.accel_std_s = get_field(metadata, {'PROCESS', 'L1', 'accel_std_s'}); % L1 accel
+settings.dzdt_lowpass_s = get_field(metadata, {'PROCESS', 'L1', 'dzdt_lowpass_s'}); % L1 ctd.dzdt, ctd.dPdt
 settings.GEOMETRY = get_field(metadata, {'GEOMETRY'}); % altimeter
 % profiling direction is detected at L1 (mod_L1_detect_profiling_direction.m)
 settings.lowpass_sec = get_field(metadata, {'PROFILES', 'lowpass_sec'});

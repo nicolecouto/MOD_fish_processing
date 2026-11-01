@@ -66,7 +66,9 @@ function [L1_files, problems, processed] = MODprocess_all_L0_to_L1(L0_dir, metad
 %   metadata      - metadata struct (from MODsetup_read_yaml.m), read once
 %                    per session and passed through - see PLAN.md Section 2.
 %                    l1.accel_std_s (metadata.PROCESS.L1.accel_std_s, the
-%                    L1 accel window) is checked once, before the files.
+%                    L1 accel window) and l1.dzdt_lowpass_s (the ctd.dzdt
+%                    and ctd.dPdt low-pass) are checked once, before the
+%                    files.
 %   L1_dir        - (optional) full path to save .mat files to. Default:
 %                    a sibling 'L1' folder next to L0_dir
 %                    (fullfile(fileparts(L0_dir),'L1')), created if missing.
@@ -184,10 +186,11 @@ if nfiles == 0
     return
 end
 
-% The L1 accel window (MODprocess_single_L0_to_L1.m), asked for once here
+% The L1 accel window and fall-speed low-pass (MODprocess_single_L0_to_L1.m),
+% asked for once here
 while true
     try
-        metadata = MODsetup_validate_metadata(metadata, metadata.paths.setup_yml, {'accel_std_s'});
+        metadata = MODsetup_validate_metadata(metadata, metadata.paths.setup_yml, {'accel_std_s', 'dzdt_lowpass_s'});
         break
     catch ME
         % A prompted value was saved to the yml - reread it and retry

@@ -9,6 +9,7 @@ afe:
 # L0 -> L1 (every vehicle)
 l1:
   accel_std_s: 1
+  dzdt_lowpass_s: 1
 
 # Scan and spectrum settings (every vehicle)
 spectral:
@@ -103,6 +104,8 @@ grid:
 # l1 - L0 -> L1 (every vehicle)
 #   - accel_std_s: Window [s] for L1 accel, the std of each EFE accelerometer channel
 #       (gridded as qc.<ch>_std)
+#   - dzdt_lowpass_s: Low-pass cutoff period [s] for L1 ctd.dzdt and ctd.dPdt (half power of
+#       the applied zero-phase filter); dzdt is the fall speed L2 and the grid use
 #
 # spectral - Scan and spectrum settings (every vehicle)
 #   - fft_length: FFT segment length [samples] - also the Hamming taper length (no separate

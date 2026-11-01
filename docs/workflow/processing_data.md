@@ -181,7 +181,7 @@ L2's per-channel values are `<L2 name>_<channel>`:
     | `salinity_reference` | `ctd.SR` (used in place of Absolute Salinity - [why](../concepts/units_and_seawater.md)) |
     | `temperature_conservative` | `ctd.CT` |
     | `sigma0` | `ctd.sigma0` |
-    | `fall_speed` | `ctd.dzdt` |
+    | `fall_speed` | `ctd.dzdt` (low-passed at `l1.dzdt_lowpass_s`) |
 
 - **Attitude and height above bottom**: `pitch`, `tilt` and `roll` from L1 `vnav`, and
   `height_above_bottom` from `isap.hab` (or `alt.hab` without an isap). Each sample is put at the CTD
@@ -914,3 +914,12 @@ a3); the grid has `qc.<ch>_std` and the six coherence sums. `grid_version` is no
 sandbox copy of 10 `26_1026_mako2_depl04` files: L2 epsilon, chi, kc and `_coherence_a3_sum` are
 identical to the previous code's; a yml without `accel_std_s` is listed as missing by preflight;
 the grid made from old L1 files (no `accel`) has no `qc.*_std`, without error.
+
+**2026-11-01 - Fall speed low-passed in L1** (branch `main-fork`). L1 `ctd.dzdt` and `ctd.dPdt`
+were raw sample-to-sample differences, and `dzdt` is the `w` in every L2 epsilon and chi and the
+grid's `fall_speed`. The pressure is quantized, so on a depl04 downcast the raw `dzdt` had a std of
+0.18 m/s about a 0.64 m/s mean. They are now the centred gradient of `P` and `z` after a zero-phase
+Butterworth low-pass at `l1.dzdt_lowpass_s` (a new required cruise-yml value, default 1 s, the half
+power of the applied filter; Nicole: separate from `profile_detection.lowpass_sec`, the same value
+to start). Std on that downcast 0.018 m/s, same file mean. L1 and L2 need reprocessing for
+epsilon and chi to pick it up.
