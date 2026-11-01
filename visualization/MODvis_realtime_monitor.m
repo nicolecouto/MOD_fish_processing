@@ -300,13 +300,13 @@ classdef MODvis_realtime_monitor < handle
             app.EndField = uieditfield(c, 'text', 'Value', '', 'Placeholder', 'yyyy-mm-dd HH:MM', ...
                 'ValueChangedFcn', @(~, ~) app.endTimeTyped());
             app.EndField.Layout.Row = row; app.EndField.Layout.Column = 2;
-            row = row + 1;
-            app.AutoPctField = app.labelled(c, row, 'Auto colour range [%]', 'num', 7, @(~, ~) app.drawSections());
+            row = row + 2; % a gap: the section settings start here
+            app.AutoPctField = app.labelled(c, row, 'Auto color range [%]', 'num', 7, @(~, ~) app.drawSections());
             app.AutoPctField.AllowEmpty = 'off';
             app.AutoPctField.Limits = [0 50];
             app.AutoPctField.UpperLimitInclusive = 'off';
-            app.AutoPctField.Tooltip = 'An auto colour range runs from this percentile of the data shown to 100 minus it.';
-            row = row + 2; % a gap: the section settings start here
+            app.AutoPctField.Tooltip = 'An auto color range runs from this percentile of the data shown to 100 minus it.';
+            row = row + 1;
             lbl = uilabel(c, 'Text', 'sigma0 contours');
             lbl.Layout.Row = row; lbl.Layout.Column = 1;
             app.ContourBox = uicheckbox(c, 'Text', 'show', 'Value', true, 'ValueChangedFcn', @(~, ~) app.drawSections());
@@ -332,7 +332,7 @@ classdef MODvis_realtime_monitor < handle
                 lims = uigridlayout(c, [1 2], 'Padding', [0 0 0 0], 'ColumnSpacing', 4);
                 lims.Layout.Row = row;
                 lims.Layout.Column = 2;
-                app.CLimLbl(i) = uilabel(c, 'Text', '  colour (auto)');
+                app.CLimLbl(i) = uilabel(c, 'Text', '  color (auto)');
                 app.CLimLbl(i).Layout.Row = row;
                 app.CLimLbl(i).Layout.Column = 1;
                 app.CMinField(i) = uieditfield(lims, 'numeric', 'AllowEmpty', 'on', 'Value', [], ...
@@ -356,7 +356,7 @@ classdef MODvis_realtime_monitor < handle
             row = row + 1;
             app.LogDrop = app.labelled(c, row, 'Log', 'drop', {'survey processing.log', 'cruise_log.txt'}, @(~, ~) app.refreshLog());
             row = row + 1;
-            note = uilabel(c, 'Text', 'Empty = auto (colours: clear both). Span 0 = all casts.', 'FontSize', 10);
+            note = uilabel(c, 'Text', 'Empty = auto (colors: clear both). Span 0 = all casts.', 'FontSize', 10);
             note.Layout.Row = row;
             note.Layout.Column = [1 2];
             row = row + 1;
@@ -902,7 +902,7 @@ classdef MODvis_realtime_monitor < handle
                 if isfinite(app.SelectedCastStart) && abs(g.cast_start(k) - app.SelectedCastStart) < 1e-8
                     how = 'clicked';
                 end
-                title(ax, {app.castText(k), sprintf('(%s; x = colour range)', how)}, 'Interpreter', 'none', ...
+                title(ax, {app.castText(k), sprintf('(%s; x = color range)', how)}, 'Interpreter', 'none', ...
                     'FontSize', app.FontSize, 'FontWeight', 'normal');
             end
         end
@@ -1075,11 +1075,11 @@ classdef MODvis_realtime_monitor < handle
             hi = app.CMaxField(i).Value;
             if ~app.AutoCLim(i) && ~isempty(lo) && ~isempty(hi) && hi > lo
                 lims = [lo hi];
-                app.CLimLbl(i).Text = '  colour (set)';
+                app.CLimLbl(i).Text = '  color (set)';
                 return
             end
             app.AutoCLim(i) = true;
-            app.CLimLbl(i).Text = '  colour (auto)';
+            app.CLimLbl(i).Text = '  color (auto)';
             finite = v(isfinite(v));
             lims = [];
             if ~isempty(finite)
@@ -1408,10 +1408,9 @@ classdef MODvis_realtime_monitor < handle
                 w.dnum = tl(:);
                 w.count_gyro = nan(2, 1);
             end
-            ax.FontSize = app.FontSize; % before: the fin note takes the axes' size
-            MODvis_twist_timeseries(w, ax);
+            ax.FontSize = app.FontSize;
+            MODvis_twist_timeseries(w, ax); % its legend: which way the fins turn the count
             xlim(ax, datetime(tl, 'ConvertFrom', 'datenum'));
-            legend(ax, 'off');
             % now: the newest count, the spool and when it went on
             now_count = tt.count_gyro(find(isfinite(tt.count_gyro), 1, 'last'));
             if isempty(now_count)
@@ -1426,7 +1425,7 @@ classdef MODvis_realtime_monitor < handle
                 sprintf('latest %s UTC; dashed spool change, dotted survey start', ...
                 datestr(tt.dnum(end), 'mm-dd HH:MM'))}, 'FontSize', app.FontSize + 1, 'FontWeight', 'normal', ...
                 'Interpreter', 'none'); %#ok<DATST>
-            ylabel(ax, 'turns (neutral is negative)');
+            ylabel(ax, 'Twist counts');
             xlabel(ax, '');
         end
 

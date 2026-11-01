@@ -32,9 +32,9 @@ function ax = MODvis_twist_timeseries(TwistTimeseries, ax)
 % NOTES
 %   Upcast samples (diff(pressure) < 0) are highlighted since that's when
 %   the fin is normally adjusted. "Neutral is Negative" - setting the fin
-%   to neutral makes the count go down. Which way the fins turn the
-%   count is written on the axes, in the corner the line keeps clear of
-%   (the y limits are widened if no corner is clear).
+%   to neutral makes the count go down. The line's legend entry says
+%   which way the fins turn the count (two lines, legend AutoUpdate off
+%   so the marks drawn after it stay out).
 %
 % Multiscale Ocean Dynamics (MOD) Group, Scripps Institution of Oceanography
 
@@ -55,7 +55,10 @@ for k = flipud(gap(:))'
     line_t = [line_t(1:k); NaT; line_t(k+1:end)];
     line_gyro = [line_gyro(1:k); NaN; line_gyro(k+1:end)];
 end
-plot(ax, line_t, line_gyro, '-', 'Color', [0 0.4470 0.7410], 'LineWidth', 1.5);
+h_line = plot(ax, line_t, line_gyro, '-', 'Color', [0 0.4470 0.7410], 'LineWidth', 1.5);
+fins = sprintf('\\uparrow Fins to starboard - twists increase\n\\downarrow Fins to port - twists decrease');
+h_leg = h_line;
+leg_text = {fins};
 hold(ax, 'on');
 
 has_pressure = isfield(TwistTimeseries, 'pressure') && ~isempty(TwistTimeseries.pressure) ...
@@ -66,8 +69,8 @@ if has_pressure
     % MarkerSize kept small - at cruise-length sample counts (~1e6 points),
     % a normal-size marker fully occludes the underlying line.
     if any(is_upcast)
-        plot(ax, dtime(is_upcast), gyro(is_upcast), '.', 'Color', [0.8500 0.3250 0.0980], 'MarkerSize', 2);
-        legend(ax, {'twist count', 'upcast'}, 'Location', 'best');
+        h_leg(2) = plot(ax, dtime(is_upcast), gyro(is_upcast), '.', 'Color', [0.8500 0.3250 0.0980], 'MarkerSize', 2);
+        leg_text{2} = 'upcast';
     end
 end
 
@@ -75,7 +78,8 @@ currentcount = gyro(find(isfinite(gyro), 1, 'last'));
 title(ax, {sprintf('Twist Count vs. Time (Final count: %.2f)', currentcount), ...
     'Neutral is Negative - set fin to neutral to reduce count'}, 'FontWeight', 'normal')
 xlabel(ax, 'Time [UTC]')
-ylabel(ax, 'Twist Count [full rotations]')
+ylabel(ax, 'Twist counts')
+legend(ax, h_leg, leg_text, 'Location', 'best', 'AutoUpdate', 'off');
 
 % spool changes (count restarts from 0) and survey starts
 grey = [0.5 0.5 0.5];
@@ -94,61 +98,7 @@ if isfield(TwistTimeseries, 'survey_start_dnum') && isfield(TwistTimeseries, 'su
             TwistTimeseries.surveys{k}, 'Color', grey, 'Interpreter', 'none', 'HandleVisibility', 'off');
     end
 end
-fin_note(ax, TwistTimeseries.dnum(:), gyro);
 hold(ax, 'off');
 
 end
 
-function fin_note(ax, dnum, gyro)
-% which way the fins turn the count, in the corner of the axes the line
-% keeps clear of; the y limits are widened if no corner is clear
-note = {'\uparrow Fins to starboard - twists increase', ...
-    '\downarrow Fins to port - twists decrease'};
-need = 0.25;   % height of the two lines, as a fraction of the axes
-across = 0.5;  % width the note may cover, as a fraction of the axes
-ok = isfinite(dnum) & isfinite(gyro);
-if ~any(ok)
-    text(ax, 0.02, 0.97, note, 'Units', 'normalized', 'VerticalAlignment', 'top', 'FontSize', ax.FontSize, ...
-        'HandleVisibility', 'off');
-    return
-end
-t = dnum(ok);
-y = gyro(ok);
-lo = min(y);
-hi = max(y);
-if hi == lo
-    lo = lo - 0.5;
-    hi = hi + 0.5;
-end
-xn = (t - min(t)) / max(max(t) - min(t), eps);
-yn = (y - lo) / (hi - lo);
-% clearance of each corner: left/right x top/bottom
-side = {xn <= across, xn >= 1 - across};
-clear_top = cellfun(@(k) 1 - max([yn(k); 0]), side);
-clear_bottom = cellfun(@(k) min([yn(k); 1]), side);
-[c_top, i_top] = max(clear_top);
-[c_bottom, i_bottom] = max(clear_bottom);
-at_top = c_top >= c_bottom;
-if at_top
-    i = i_top;
-    if c_top < need % widen upward until that corner is clear
-        ylim(ax, [lo, lo + (1 - c_top) * (hi - lo) / (1 - need)]);
-    end
-else
-    i = i_bottom;
-    if c_bottom < need
-        ylim(ax, [hi - (1 - c_bottom) * (hi - lo) / (1 - need), hi]);
-    end
-end
-x = [0.02 0.98];
-h_align = {'left', 'right'};
-if at_top
-    yt = 0.97;
-    v_align = 'top';
-else
-    yt = 0.03;
-    v_align = 'bottom';
-end
-text(ax, x(i), yt, note, 'Units', 'normalized', 'HorizontalAlignment', h_align{i}, ...
-    'VerticalAlignment', v_align, 'FontSize', ax.FontSize, 'HandleVisibility', 'off');
-end

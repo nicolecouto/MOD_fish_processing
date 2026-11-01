@@ -261,7 +261,7 @@ The per-file `twist` fields come from the L1 file cache (see the next section), 
 ax = MODvis_twist_timeseries(TwistTimeseries, ax)
 ```
 
-Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`). Given the cruise twist count (`Processed/twist/twist_time_series.mat`), it also marks each spool change (dashed, with the spool's name) and each survey start (dotted, with its name); the line is broken at gaps. Which way the fins turn the count (starboard up, port down) is written on the axes, in the corner the line keeps clear of. "Neutral is Negative" - setting the fin to neutral makes the count go down. The realtime monitor's twist panel uses it; run it by hand on either file (`load(f).TwistTimeseries`).
+Plots `count_gyro` vs. time, highlighting upcast samples (`diff(pressure) < 0`). Given the cruise twist count (`Processed/twist/twist_time_series.mat`), it also marks each spool change (dashed, with the spool's name) and each survey start (dotted, with its name); the line is broken at gaps. The line's two-line legend entry says which way the fins turn the count (starboard up, port down). "Neutral is Negative" - setting the fin to neutral makes the count go down. The realtime monitor's twist panel uses it; run it by hand on either file (`load(f).TwistTimeseries`).
 
 ### `MODprocess_L1_make_pressure_timeseries.m` and `mod_L1_detect_profiling_direction.m`
 

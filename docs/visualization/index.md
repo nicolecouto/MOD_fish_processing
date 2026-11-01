@@ -213,7 +213,7 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   | FCTD | temperature (thermal), salinity_practical (haline), fluor.chla (algae), microconductivity.chi_tot (spectral) | both |
 
   Switching to a survey of the other fish type sets its defaults again. A colour range is auto -
-  from the "Auto colour range" percentile of the data shown to 100 minus it (default 7, so
+  from the "Auto color range" percentile of the data shown to 100 minus it (default 7, so
   7-93%), rounded outward - and written into its min/max fields, labelled "(auto)", so the fields
   always show the range in effect; a typed value is kept ("(set)") until you clear both fields
   or pick another variable. Click a section to pick a cast (the profiles at far left) and a time
@@ -241,7 +241,7 @@ app = MODvis_realtime_monitor('/path/to/Current_Cruise/Processed'); % or a folde
   a span in hours ending at the current time (UTC) or at a typed time, as in the FastCTD GUI
   (span 0 = all casts; choosing another survey, or opening on one the worker isn't running, fills
   the span and ending time so all its casts show, and the survey the worker is on goes back to 6 h
-  ending now), the auto colour range percentile; per section: variable, colormap, colour min/max; the T and C profile
+  ending now); then, above the section settings after a gap, the auto color range percentile, sigma0 contours; per section: variable, colormap, colour min/max; the T and C profile
   offsets; the last full profile's bottom search pad (s, default 10) and altimeter median (samples,
   default 5);
   the log; open the run in `MODvis_timeseries` or `MODvis_spectra`; Save PNG
@@ -258,10 +258,10 @@ reports it if it fails).
 
 Plots cable twist count (gyro method) vs. time, highlighting upcast samples (when the fin is
 normally adjusted). Given the cruise twist count, it also marks each spool change (dashed, with
-the spool) and each survey start (dotted, with its name); the line is broken at gaps. On the
-axes, in the corner the line keeps clear of (the y limits widen if none is): "↑ Fins to
-starboard - twists increase", "↓ Fins to port - twists decrease". The monitor's twist panel
-uses it.
+the spool) and each survey start (dotted, with its name); the line is broken at gaps. The y axis is "Twist counts"; the
+line's legend entry is two lines, "↑ Fins to starboard - twists increase" and "↓ Fins to port -
+twists decrease" (AutoUpdate off, so the spool and survey lines stay out of it). The monitor's
+twist panel uses it.
 
 ```matlab
 T = load(fullfile(processed_root, 'twist', 'twist_time_series.mat')).TwistTimeseries;  % cruise
